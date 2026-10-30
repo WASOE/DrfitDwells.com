@@ -3,10 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  CHECKOUT_STALE_RECOVERY_KEY,
   CHUNK_RECOVERY_KEY,
   PAYMENT_FLOW_KEY,
   SW_UPDATE_PENDING_KEY,
   activatePendingServiceWorkerUpdate,
+  attemptCheckoutStaleClientRecovery,
   attemptChunkLoadRecovery,
   checkDeferredServiceWorkerUpdate,
   handleServiceWorkerNeedRefresh,
@@ -103,6 +105,36 @@ describe('appReleaseUpdate', () => {
     const updateSW = registerSW.mock.results[0].value;
     captured.onNeedRefresh();
     expect(updateSW).toHaveBeenCalledWith(true);
+  });
+
+  it('attemptCheckoutStaleClientRecovery self-heals stale_client once', () => {
+    const storage = makeStorage();
+    const reload = vi.fn();
+    const first = attemptCheckoutStaleClientRecovery(
+      { ok: false, reason: 'stale_client_missing_v2', shouldReload: true },
+      { storage, reload, locationHref: 'https://driftdwells.com/book/confirm', now: 99 }
+    );
+    const second = attemptCheckoutStaleClientRecovery(
+      { ok: false, reason: 'stale_client_missing_finalize_support', shouldReload: true },
+      { storage, reload, locationHref: 'https://driftdwells.com/book/confirm', now: 100 }
+    );
+    expect(first.recovered).toBe(true);
+    expect(first.trigger).toBe('stale_client_missing_v2');
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(second.recovered).toBe(false);
+    expect(second.reason).toBe('already_attempted');
+    expect(storage.getItem(CHECKOUT_STALE_RECOVERY_KEY)).toBe('1');
+  });
+
+  it('attemptCheckoutStaleClientRecovery ignores server-side mismatches', () => {
+    const storage = makeStorage();
+    const reload = vi.fn();
+    const result = attemptCheckoutStaleClientRecovery(
+      { ok: false, reason: 'server_finalize_intent_persist_disabled', shouldReload: false },
+      { storage, reload }
+    );
+    expect(result).toEqual({ recovered: false, reason: 'not_stale_client' });
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it('attemptChunkLoadRecovery performs at most one cache-busted reload', () => {

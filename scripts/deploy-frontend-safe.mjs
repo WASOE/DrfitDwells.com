@@ -39,8 +39,13 @@ import {
   listHashedAssets,
   mergeReleaseManifest,
   readReleaseManifest,
+  stripInheritedPaymentManifestFields,
   validateWebroot
 } from './deploy-frontend-safe.lib.mjs';
+import {
+  assessPaymentContractBundle,
+  manifestFromCompiled
+} from './lib/verifyPaymentContractBundle.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -176,13 +181,28 @@ const releaseIdentifier = String(process.env.VITE_FRONTEND_RELEASE || process.en
 if (!/^(?:[a-f\d]{40}|[a-f\d]{64})$/i.test(releaseIdentifier)) {
   fail('Set VITE_FRONTEND_RELEASE or GIT_COMMIT to the full release commit SHA before publication.');
 }
+
+// Refuse to publish a shell whose compiled checkout contract is not production-ready.
+// Environment flags alone are not enough — the reachable JS must contain enabled flags.
+const paymentAssessment = assessPaymentContractBundle(distDir);
+if (!paymentAssessment.ok) {
+  fail(
+    `Compiled payment contract gate failed:\n  - ${paymentAssessment.errors.join('\n  - ')}`
+  );
+}
+if (paymentAssessment.compiled.frontendRelease !== releaseIdentifier) {
+  fail(
+    `Compiled frontendRelease (${paymentAssessment.compiled.frontendRelease}) does not match ` +
+      `VITE_FRONTEND_RELEASE/GIT_COMMIT (${releaseIdentifier}).`
+  );
+}
+
+const paymentManifest = manifestFromCompiled(paymentAssessment, process.env);
 const nextManifest = mergeReleaseManifest(
   previousManifest,
   {
-    ...(previousManifest || {
-      ok: true,
-      buildTimestamp: new Date().toISOString()
-    }),
+    ...stripInheritedPaymentManifestFields(previousManifest),
+    ...paymentManifest,
     frontendRelease: releaseIdentifier,
     applicationCommit: releaseIdentifier
   },

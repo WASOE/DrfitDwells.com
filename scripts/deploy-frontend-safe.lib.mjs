@@ -118,6 +118,36 @@ export function readReleaseManifest(manifestPath) {
   }
 }
 
+/**
+ * Payment capability fields must never be inherited from a previous release
+ * manifest. Spreading the prior manifest caused production to advertise
+ * checkoutSessionV2:true while the newly published ConfirmBooking chunk had
+ * compiled flags false.
+ */
+export const PAYMENT_MANIFEST_FIELDS = [
+  'paymentContractVersion',
+  'checkoutSessionV2',
+  'finalizeIntentPersist',
+  'finalizeIntentRequiredForPi',
+  'enabledCapabilities',
+  'v2Explicit',
+  'persist',
+  'required',
+  'assetJsFiles',
+  'buildTimestamp',
+  'applicationRelease',
+  'ok'
+];
+
+export function stripInheritedPaymentManifestFields(manifest) {
+  if (!manifest || typeof manifest !== 'object') return {};
+  const cleaned = { ...manifest };
+  for (const field of PAYMENT_MANIFEST_FIELDS) {
+    delete cleaned[field];
+  }
+  return cleaned;
+}
+
 export function mergeReleaseManifest(previous, next, assetFiles) {
   const previousAssets = [
     ...(Array.isArray(previous?.assetFiles) ? previous.assetFiles : []),

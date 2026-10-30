@@ -16,6 +16,7 @@ import {
   isProtectedPath,
   listHashedAssets,
   mergeReleaseManifest,
+  stripInheritedPaymentManifestFields,
   validateWebroot
 } from './deploy-frontend-safe.lib.mjs';
 
@@ -75,8 +76,11 @@ function runCLI(args = [], env = {}, { invalidRoute, missingRoute, verificationO
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(path.join(__dirname, '..', relative), target);
     }
+    fs.symlinkSync(path.join(__dirname, 'lib'), path.join(sandbox, 'scripts/lib'), 'dir');
+    fs.symlinkSync(path.join(__dirname, '../shared'), path.join(sandbox, 'shared'), 'dir');
     fs.symlinkSync(path.join(__dirname, '../client/node_modules'), path.join(sandbox, 'client/node_modules'), 'dir');
-    const dist = makeMockDist(sandbox);
+    const releaseSha = String(env.VITE_FRONTEND_RELEASE || TEST_RELEASE_SHA);
+    const dist = makeMockDist(sandbox, { frontendRelease: releaseSha });
     for (const route of prerenderContract.ROUTES) {
       const output = prerenderContract.artifactPath(dist, route);
       fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -90,6 +94,8 @@ function runCLI(args = [], env = {}, { invalidRoute, missingRoute, verificationO
       const html = fs.readFileSync(file, 'utf8').replace('</head>', `<meta name="${prerenderContract.VERIFICATION_MARKER}" content="not-for-publication"></head>`);
       fs.writeFileSync(file, html);
     }
+    // Prerender route "/" overwrites dist/index.html — keep SEO HTML and add the Vite entry.
+    ensureShellEntryOnRootIndex(dist);
     return spawnSync(
       process.execPath,
       [path.join(sandbox, 'scripts/deploy-frontend-safe.mjs'), ...args],
@@ -120,15 +126,54 @@ function parseCLISummary(stdout) {
 // Helper: create a minimal dist-like tree in a temp directory
 // ---------------------------------------------------------------------------
 
-function makeMockDist(tmpRoot) {
+function writeViteShellIndex(dist) {
+  fs.writeFileSync(
+    path.join(dist, 'index.html'),
+    '<!doctype html><script type="module" src="/assets/index-abc123.js"></script>'
+  );
+}
+
+function ensureShellEntryOnRootIndex(dist) {
+  const indexPath = path.join(dist, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    writeViteShellIndex(dist);
+    return;
+  }
+  const html = fs.readFileSync(indexPath, 'utf8');
+  if (html.includes('/assets/index-abc123.js')) return;
+  if (html.includes('</body>')) {
+    fs.writeFileSync(
+      indexPath,
+      html.replace('</body>', '<script type="module" src="/assets/index-abc123.js"></script></body>')
+    );
+    return;
+  }
+  fs.writeFileSync(
+    indexPath,
+    `${html}<script type="module" src="/assets/index-abc123.js"></script>`
+  );
+}
+
+function makeMockDist(tmpRoot, { frontendRelease = TEST_RELEASE_SHA, paymentFlagsEnabled = true } = {}) {
   const dist = path.join(tmpRoot, 'client', 'dist');
   const assets = path.join(dist, 'assets');
   fs.mkdirSync(assets, { recursive: true });
-  fs.writeFileSync(path.join(assets, 'index-abc123.js'), '// entry');
+  const flags = paymentFlagsEnabled ? '!0' : '!1';
+  const entry = [
+    'function readPaymentContractCompiled(){return {',
+    '"paymentContractVersion":"checkout-payment-v2-finalize-1",',
+    `"checkoutSessionV2":${flags},`,
+    `"finalizeIntentPersist":${flags},`,
+    `"finalizeIntentRequiredForPi":${flags},`,
+    `"frontendRelease":"${frontendRelease}"`,
+    '};}',
+    'const guestInfo=1,legalAcceptance=1,acceptedTermsAndCancellation=1;'
+  ].join('');
+  fs.writeFileSync(path.join(assets, 'index-abc123.js'), entry);
   fs.writeFileSync(path.join(assets, 'OpsReservationDetail-xyz.js'), '// ops chunk');
   fs.writeFileSync(path.join(assets, 'vendor-lPz.js'), '// vendor');
   fs.writeFileSync(path.join(assets, 'index-CSvj.css'), '/* css */');
-  fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html>');
+  writeViteShellIndex(dist);
   fs.writeFileSync(path.join(dist, 'sw.js'), '// service worker');
   fs.writeFileSync(path.join(dist, 'manifest.webmanifest'), '{}');
   fs.writeFileSync(path.join(dist, 'robots.txt'), 'User-agent: *');
@@ -208,7 +253,10 @@ test('executeLocalPublish writes assets first, shell last, in correct order', ()
 
   // Shell was written
   assert.ok(fs.existsSync(path.join(webroot, 'index.html')));
-  assert.equal(fs.readFileSync(path.join(webroot, 'index.html'), 'utf8'), '<!doctype html>');
+  assert.match(
+    fs.readFileSync(path.join(webroot, 'index.html'), 'utf8'),
+    /\/assets\/index-abc123\.js/
+  );
   assert.ok(fs.existsSync(path.join(webroot, 'sw.js')));
 
   // Static files were written
@@ -410,6 +458,136 @@ test('mergeReleaseManifest retains previous hashed assets', () => {
   assert.ok(merged.retainedAssetFiles.includes('index-current.js'));
   assert.ok(merged.retainedAssetFiles.includes('OpsReservationDetail-new.js'));
   assert.equal(merged.deployStrategy, 'additive-no-delete');
+});
+
+test('stripInheritedPaymentManifestFields drops capability claims from prior releases', () => {
+  const cleaned = stripInheritedPaymentManifestFields({
+    frontendRelease: 'old',
+    checkoutSessionV2: true,
+    finalizeIntentPersist: true,
+    finalizeIntentRequiredForPi: true,
+    paymentContractVersion: 'checkout-payment-v2-finalize-1',
+    enabledCapabilities: { checkoutSessionV2: true },
+    assetFiles: ['index-old.js']
+  });
+  assert.equal(cleaned.frontendRelease, 'old');
+  assert.deepEqual(cleaned.assetFiles, ['index-old.js']);
+  assert.equal(cleaned.checkoutSessionV2, undefined);
+  assert.equal(cleaned.paymentContractVersion, undefined);
+  assert.equal(cleaned.enabledCapabilities, undefined);
+});
+
+test('publisher refuses a dist whose compiled payment flags are false', () => {
+  const sandbox = fs.mkdtempSync(path.join(__dirname, '.deploy-cli-test-'));
+  try {
+    for (const relative of [
+      'scripts/deploy-frontend-safe.mjs',
+      'scripts/deploy-frontend-safe.lib.mjs',
+      'client/scripts/prerender-contract.cjs',
+      'client/src/data/publicSeoRoutes.json'
+    ]) {
+      const target = path.join(sandbox, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(__dirname, '..', relative), target);
+    }
+    fs.symlinkSync(path.join(__dirname, 'lib'), path.join(sandbox, 'scripts/lib'), 'dir');
+    fs.symlinkSync(path.join(__dirname, '../shared'), path.join(sandbox, 'shared'), 'dir');
+    fs.symlinkSync(path.join(__dirname, '../client/node_modules'), path.join(sandbox, 'client/node_modules'), 'dir');
+    const dist = makeMockDist(sandbox, {
+      frontendRelease: TEST_RELEASE_SHA,
+      paymentFlagsEnabled: false
+    });
+    for (const route of prerenderContract.ROUTES) {
+      const output = prerenderContract.artifactPath(dist, route);
+      fs.mkdirSync(path.dirname(output), { recursive: true });
+      fs.writeFileSync(output, createValidRouteHtml(route));
+    }
+    ensureShellEntryOnRootIndex(dist);
+    const webroot = makeMockWebroot(sandbox);
+    const result = spawnSync(
+      process.execPath,
+      [path.join(sandbox, 'scripts/deploy-frontend-safe.mjs')],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          WEBROOT: webroot,
+          REMOTE: '',
+          DRY_RUN: '',
+          VITE_FRONTEND_RELEASE: TEST_RELEASE_SHA
+        }
+      }
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Compiled payment contract gate failed/);
+    assert.match(result.stderr, /checkoutSessionV2 is not enabled/);
+  } finally {
+    fs.rmSync(sandbox, { recursive: true });
+  }
+});
+
+test('publisher refuses to inherit previous payment flags when building the next manifest', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-cli-no-inherit-'));
+  try {
+    const dist = makeMockDist(tmp, { frontendRelease: NEXT_RELEASE_SHA });
+    for (const route of prerenderContract.ROUTES) {
+      const output = prerenderContract.artifactPath(dist, route);
+      fs.mkdirSync(path.dirname(output), { recursive: true });
+      fs.writeFileSync(output, createValidRouteHtml(route));
+    }
+    ensureShellEntryOnRootIndex(dist);
+    // Copy CLI into tmp so we can run against this dist tree
+    for (const relative of [
+      'scripts/deploy-frontend-safe.mjs',
+      'scripts/deploy-frontend-safe.lib.mjs',
+      'client/scripts/prerender-contract.cjs',
+      'client/src/data/publicSeoRoutes.json'
+    ]) {
+      const target = path.join(tmp, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(__dirname, '..', relative), target);
+    }
+    fs.symlinkSync(path.join(__dirname, 'lib'), path.join(tmp, 'scripts/lib'), 'dir');
+    fs.symlinkSync(path.join(__dirname, '../shared'), path.join(tmp, 'shared'), 'dir');
+    fs.symlinkSync(path.join(__dirname, '../client/node_modules'), path.join(tmp, 'client/node_modules'), 'dir');
+    const webroot = makeMockWebroot(tmp);
+    fs.writeFileSync(
+      path.join(webroot, 'release-manifest.json'),
+      JSON.stringify({
+        ok: true,
+        frontendRelease: 'old-release',
+        checkoutSessionV2: true,
+        finalizeIntentPersist: true,
+        finalizeIntentRequiredForPi: true,
+        paymentContractVersion: 'checkout-payment-v2-finalize-1',
+        buildTimestamp: '2020-01-01T00:00:00.000Z',
+        assetFiles: ['assets/old.js'],
+        retainedAssetFiles: ['assets/old.js']
+      })
+    );
+    const result = spawnSync(
+      process.execPath,
+      [path.join(tmp, 'scripts/deploy-frontend-safe.mjs')],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          WEBROOT: webroot,
+          REMOTE: '',
+          DRY_RUN: '',
+          VITE_FRONTEND_RELEASE: NEXT_RELEASE_SHA
+        }
+      }
+    );
+    assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+    const manifest = JSON.parse(fs.readFileSync(path.join(webroot, 'release-manifest.json'), 'utf8'));
+    assert.equal(manifest.frontendRelease, NEXT_RELEASE_SHA);
+    assert.equal(manifest.checkoutSessionV2, true);
+    assert.notEqual(manifest.buildTimestamp, '2020-01-01T00:00:00.000Z');
+    assert.ok(manifest.retainedAssetFiles.includes('assets/old.js'));
+  } finally {
+    fs.rmSync(tmp, { recursive: true });
+  }
 });
 
 test('publisher CLI refreshes the release id while retaining prior assets', () => {
