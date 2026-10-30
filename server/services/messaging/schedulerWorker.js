@@ -177,50 +177,33 @@ function computeBackoffMs(nextAttempt) {
  *     fire-and-forget. The dispatcher owns the terminal job status (or
  *     reschedules for retry).
  */
-async function evaluateClaimGate(jobLean) {
-  try {
-    const {
-      isArrivalAutomationWorkerMode,
-      evaluateArrivalWorkerClaim
-    } = require('./arrival/arrivalWorkerClaimPolicy');
-    if (!isArrivalAutomationWorkerMode()) {
-      return { ok: true };
-    }
-    let booking = null;
-    if (jobLean?.bookingId) {
-      const Booking = require('../../models/Booking');
-      booking = await Booking.findById(jobLean.bookingId)
-        .select('guestInfo.email manualReservationPurpose status')
-        .lean();
-    }
-    return evaluateArrivalWorkerClaim({ job: jobLean, booking });
-  } catch (err) {
-    logLine('error', 'claim_gate_error', {
-      _id: jobLean?._id ? String(jobLean._id) : null,
-      error: err?.message || String(err)
-    });
-    // Fail closed in dedicated arrival-worker mode.
-    return { ok: false, reason: 'claim_gate_error' };
-  }
-}
-
 async function tickOnce({ now = new Date() } = {}) {
   const result = {
     candidatesCount: 0,
     claimed: 0,
     lost: 0,
     errors: 0,
-    skippedByClaimGate: 0
+    skippedByClaimGate: 0,
+    scopedQuery: false
   };
   const workerId = ensureWorkerId();
   try {
-    // Over-fetch when a claim gate may skip rows so a staff-scoped worker
-    // still finds its allowlisted jobs among a mixed due queue.
-    const fetchLimit = Math.min(Math.max(state.batchSize * 5, state.batchSize), 250);
+    const {
+      buildDueCandidateFilter
+    } = require('./arrival/arrivalWorkerClaimPolicy');
+    const Booking = require('../../models/Booking');
+    const { filter: dueFilter, scoped } = await buildDueCandidateFilter({
+      now,
+      Booking
+    });
+    result.scopedQuery = Boolean(scoped);
+
+    // Dedicated worker filters at the DB (V2 rules + optional email bookingIds),
+    // so staff jobs remain reachable even when >250 unrelated due jobs exist.
     const candidates = await ScheduledMessageJob
-      .find({ status: 'scheduled', scheduledFor: { $lte: now } })
+      .find(dueFilter)
       .sort({ scheduledFor: 1 })
-      .limit(fetchLimit)
+      .limit(state.batchSize)
       .select('_id ruleKey bookingId payloadSnapshot')
       .lean();
     result.candidatesCount = candidates.length;
@@ -230,11 +213,35 @@ async function tickOnce({ now = new Date() } = {}) {
     for (const cand of candidates) {
       if (result.claimed >= state.batchSize) break;
       try {
-        const gate = await evaluateClaimGate(cand);
-        if (!gate.ok) {
+        // Defence in depth for dedicated worker: re-check email allowlist
+        // before claiming (mirrors sweep gate).
+        try {
+          const {
+            isArrivalAutomationWorkerMode,
+            evaluateArrivalWorkerClaim
+          } = require('./arrival/arrivalWorkerClaimPolicy');
+          if (isArrivalAutomationWorkerMode()) {
+            let booking = null;
+            if (cand.bookingId) {
+              booking = await Booking.findById(cand.bookingId)
+                .select('guestInfo.email')
+                .lean();
+            }
+            const gate = evaluateArrivalWorkerClaim({ job: cand, booking });
+            if (!gate.ok) {
+              result.skippedByClaimGate += 1;
+              continue;
+            }
+          }
+        } catch (err) {
           result.skippedByClaimGate += 1;
+          logLine('error', 'claim_gate_error', {
+            _id: String(cand._id),
+            error: err?.message || String(err)
+          });
           continue;
         }
+
         const claimed = await ScheduledMessageJob.findOneAndUpdate(
           { _id: cand._id, status: 'scheduled' },
           {
@@ -369,18 +376,53 @@ async function tickOnce({ now = new Date() } = {}) {
  *   - DOES NOT mark any job `sent`. DOES NOT write `MessageDispatch`.
  */
 async function sweepStaleClaimedOnce({ now = new Date() } = {}) {
-  const result = { staleCount: 0, rescheduled: 0, failed: 0, lost: 0, errors: 0 };
+  const result = {
+    staleCount: 0,
+    rescheduled: 0,
+    failed: 0,
+    lost: 0,
+    errors: 0,
+    scopedQuery: false,
+    skippedOutOfScope: 0
+  };
   ensureWorkerId();
   try {
+    const {
+      buildStaleClaimedFilter,
+      isArrivalAutomationWorkerMode,
+      evaluateArrivalWorkerClaim
+    } = require('./arrival/arrivalWorkerClaimPolicy');
+    const Booking = require('../../models/Booking');
+    const { filter: staleFilter, scoped } = await buildStaleClaimedFilter({
+      now,
+      Booking
+    });
+    result.scopedQuery = Boolean(scoped);
+
     const stale = await ScheduledMessageJob
-      .find({ status: 'claimed', visibilityTimeoutAt: { $lte: now } })
+      .find(staleFilter)
       .limit(state.batchSize)
-      .select('_id attemptCount maxAttempts')
+      .select('_id attemptCount maxAttempts ruleKey bookingId payloadSnapshot')
       .lean();
     result.staleCount = stale.length;
 
     for (const job of stale) {
       try {
+        // Defence in depth: re-evaluate scope before mutating (email allowlist).
+        if (isArrivalAutomationWorkerMode()) {
+          let booking = null;
+          if (job.bookingId) {
+            booking = await Booking.findById(job.bookingId)
+              .select('guestInfo.email')
+              .lean();
+          }
+          const gate = evaluateArrivalWorkerClaim({ job, booking });
+          if (!gate.ok) {
+            result.skippedOutOfScope += 1;
+            continue;
+          }
+        }
+
         const currentAttempt = Number.isFinite(job.attemptCount) ? job.attemptCount : 0;
         const cap = Number.isFinite(job.maxAttempts) && job.maxAttempts > 0 ? job.maxAttempts : 3;
         const nextAttempt = currentAttempt + 1;

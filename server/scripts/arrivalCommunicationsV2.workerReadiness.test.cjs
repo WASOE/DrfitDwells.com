@@ -406,7 +406,8 @@ test('staff-scoped worker claims only jose@; leaves guest V2 job scheduled', asy
       setAwaitDispatcherForTests(false);
 
       assert.equal(tick.claimed, 1, JSON.stringify(tick));
-      assert.ok(tick.skippedByClaimGate >= 1, JSON.stringify(tick));
+      assert.equal(tick.scopedQuery, true);
+      assert.equal(tick.candidatesCount, 1, 'DB filter must exclude guest job');
       assert.equal(sendEmailCalls.length, 1);
 
       const staffJob = await ScheduledMessageJob.findOne({ bookingId: staff._id }).lean();
@@ -453,7 +454,8 @@ test('unrelated GMA due job is not claimed by arrival worker mode', async () => 
       const tick = await tickOnce({ now: new Date() });
       setAwaitDispatcherForTests(false);
       assert.equal(tick.claimed, 0, JSON.stringify(tick));
-      assert.ok(tick.skippedByClaimGate >= 1);
+      assert.equal(tick.scopedQuery, true);
+      assert.equal(tick.candidatesCount, 0);
       const job = await ScheduledMessageJob.findOne({ ruleKey: 'some_other_gma_rule' }).lean();
       assert.equal(job.status, 'scheduled');
       assert.equal(sendEmailCalls.length, 0);
@@ -640,6 +642,341 @@ test('adapter accepts ObjectId argument without mistaking it for a job doc', asy
       const r = await processArrivalAutomationJob(job._id);
       assert.equal(r.terminal, 'sent', JSON.stringify(r));
       assert.equal(sendEmailCalls.length, 1);
+    }
+  );
+});
+
+test('staff job remains claimable behind >250 ineligible due jobs', async () => {
+  const cabinId = await insertCabin();
+  const checkIn = checkInDaysFromNow(10);
+  const checkOut = moment(checkIn).add(2, 'days').toDate();
+  const staff = await makeBooking({
+    cabinId,
+    email: 'jose@driftdwells.com',
+    checkIn,
+    checkOut,
+    overrides: { manualReservationPurpose: 'staff_stay' }
+  });
+
+  const junk = [];
+  const junkBookingIds = [];
+  for (let i = 0; i < 260; i += 1) {
+    const bookingId = new mongoose.Types.ObjectId();
+    junkBookingIds.push(bookingId);
+    junk.push({
+      ruleKey: i % 2 === 0 ? 'some_other_gma_rule' : 'arrival_instructions_pre_arrival_cabin',
+      ruleVersionAtSchedule: 1,
+      bookingId,
+      audience: 'guest',
+      propertyKind: 'cabin',
+      // Older than staff job so they sort first if unfiltered
+      scheduledFor: new Date(Date.now() - 60_000 - i * 1000),
+      status: 'scheduled',
+      payloadSnapshot:
+        i % 2 === 0
+          ? { purpose: 'gma' }
+          : { purpose: 'initial', arrivalAutomationV2: true }
+    });
+  }
+  await ScheduledMessageJob.insertMany(junk);
+
+  await withEnv(
+    {
+      [ENV_ARRIVAL_EMAIL_V2]: '1',
+      [ENV_ARRIVAL_AUTOMATION_V2]: '1',
+      MESSAGE_DISPATCHER_ENABLED: '0',
+      [ENV_WORKER_MODE]: '1',
+      [ENV_EMAIL_ALLOWLIST]: 'jose@driftdwells.com'
+    },
+    async () => {
+      const { syncArrivalAutomationForBooking } = require('../services/messaging/arrival/arrivalAutomationScheduler');
+      const { tickOnce, setAwaitDispatcherForTests } = require('../services/messaging/schedulerWorker');
+      await syncArrivalAutomationForBooking({ bookingId: staff._id });
+      await ScheduledMessageJob.updateOne(
+        { bookingId: staff._id },
+        { $set: { scheduledFor: new Date(Date.now() - 500) } }
+      );
+
+      setAwaitDispatcherForTests(true);
+      const tick = await tickOnce({ now: new Date() });
+      setAwaitDispatcherForTests(false);
+
+      assert.equal(tick.scopedQuery, true);
+      assert.equal(tick.claimed, 1, JSON.stringify(tick));
+      assert.equal(sendEmailCalls.length, 1);
+      const staffJob = await ScheduledMessageJob.findOne({ bookingId: staff._id }).lean();
+      assert.equal(staffJob.status, 'sent');
+      // None of the 260 backlog rows may leave scheduled.
+      assert.equal(
+        await ScheduledMessageJob.countDocuments({
+          bookingId: { $in: junkBookingIds },
+          status: { $ne: 'scheduled' }
+        }),
+        0
+      );
+    }
+  );
+});
+
+test('sweep recovers only scoped V2 staff jobs; leaves GMA and guest claimed untouched', async () => {
+  const cabinId = await insertCabin();
+  const checkIn = checkInDaysFromNow(10);
+  const checkOut = moment(checkIn).add(2, 'days').toDate();
+  const staff = await makeBooking({
+    cabinId,
+    email: 'jose@driftdwells.com',
+    checkIn,
+    checkOut
+  });
+  const guest = await makeBooking({
+    cabinId,
+    email: 'guest@example.com',
+    checkIn,
+    checkOut
+  });
+
+  const past = new Date(Date.now() - 60_000);
+  const staffJob = await ScheduledMessageJob.create({
+    ruleKey: 'arrival_instructions_pre_arrival_cabin',
+    ruleVersionAtSchedule: 1,
+    bookingId: staff._id,
+    audience: 'guest',
+    propertyKind: 'cabin',
+    scheduledFor: past,
+    status: 'claimed',
+    attemptCount: 0,
+    maxAttempts: 3,
+    claimedBy: 'dead-worker',
+    claimedAt: past,
+    visibilityTimeoutAt: past,
+    payloadSnapshot: { purpose: 'initial', arrivalAutomationV2: true, scheduleGeneration: 1 }
+  });
+  const guestJob = await ScheduledMessageJob.create({
+    ruleKey: 'arrival_instructions_pre_arrival_cabin',
+    ruleVersionAtSchedule: 1,
+    bookingId: guest._id,
+    audience: 'guest',
+    propertyKind: 'cabin',
+    scheduledFor: past,
+    status: 'claimed',
+    attemptCount: 0,
+    maxAttempts: 3,
+    claimedBy: 'dead-worker',
+    claimedAt: past,
+    visibilityTimeoutAt: past,
+    payloadSnapshot: { purpose: 'initial', arrivalAutomationV2: true, scheduleGeneration: 1 }
+  });
+  const gmaJob = await ScheduledMessageJob.create({
+    ruleKey: 'some_other_gma_rule',
+    ruleVersionAtSchedule: 1,
+    bookingId: guest._id,
+    audience: 'guest',
+    propertyKind: 'cabin',
+    scheduledFor: past,
+    status: 'claimed',
+    attemptCount: 0,
+    maxAttempts: 3,
+    claimedBy: 'dead-worker',
+    claimedAt: past,
+    visibilityTimeoutAt: past,
+    payloadSnapshot: { purpose: 'gma' }
+  });
+
+  await withEnv(
+    {
+      [ENV_WORKER_MODE]: '1',
+      [ENV_EMAIL_ALLOWLIST]: 'jose@driftdwells.com'
+    },
+    async () => {
+      const { sweepStaleClaimedOnce } = require('../services/messaging/schedulerWorker');
+      const sweep = await sweepStaleClaimedOnce({ now: new Date() });
+      assert.equal(sweep.scopedQuery, true);
+      assert.equal(sweep.rescheduled, 1, JSON.stringify(sweep));
+      assert.equal(sweep.failed, 0);
+
+      const staffAfter = await ScheduledMessageJob.findById(staffJob._id).lean();
+      const guestAfter = await ScheduledMessageJob.findById(guestJob._id).lean();
+      const gmaAfter = await ScheduledMessageJob.findById(gmaJob._id).lean();
+      assert.equal(staffAfter.status, 'scheduled');
+      assert.equal(staffAfter.lastError, 'visibility_timeout_reclaim');
+      assert.equal(guestAfter.status, 'claimed', 'guest claimed must not be swept');
+      assert.equal(gmaAfter.status, 'claimed', 'GMA claimed must not be swept');
+    }
+  );
+});
+
+test('staff schedule CLI force path works with shared ARRIVAL_AUTOMATION_V2=0', async () => {
+  const cabinId = await insertCabin();
+  const checkIn = checkInDaysFromNow(10);
+  const checkOut = moment(checkIn).add(2, 'days').toDate();
+  const booking = await makeBooking({
+    cabinId,
+    email: 'jose@driftdwells.com',
+    checkIn,
+    checkOut,
+    overrides: { manualReservationPurpose: 'staff_stay' }
+  });
+
+  await withEnv(
+    {
+      [ENV_ARRIVAL_EMAIL_V2]: '1',
+      [ENV_ARRIVAL_AUTOMATION_V2]: null,
+      [ENV_EMAIL_ALLOWLIST]: 'jose@driftdwells.com'
+    },
+    async () => {
+      const { syncArrivalAutomationForBooking } = require('../services/messaging/arrival/arrivalAutomationScheduler');
+      const disabled = await syncArrivalAutomationForBooking({ bookingId: booking._id });
+      assert.equal(disabled.disabled, true);
+      assert.equal(await ScheduledMessageJob.countDocuments({ bookingId: booking._id }), 0);
+
+      const forced = await syncArrivalAutomationForBooking({
+        bookingId: booking._id,
+        reason: 'staff_schedule_cli',
+        force: true
+      });
+      assert.equal(forced.purpose, 'initial', JSON.stringify(forced));
+      const job = await ScheduledMessageJob.findOne({ bookingId: booking._id }).lean();
+      assert.ok(job);
+      assert.equal(job.payloadSnapshot.arrivalAutomationV2, true);
+    }
+  );
+});
+
+test('staff force schedule refuses non-allowlisted guest email (policy helper)', () => {
+  const env = { [ENV_EMAIL_ALLOWLIST]: 'jose@driftdwells.com' };
+  const { isEmailAllowlisted } = require('../services/messaging/arrival/arrivalWorkerClaimPolicy');
+  assert.equal(isEmailAllowlisted('jose@driftdwells.com', env), true);
+  assert.equal(isEmailAllowlisted('guest@example.com', env), false);
+});
+
+test('unscoped scheduler with automation OFF does not claim or cancel staff V2 jobs', async () => {
+  const cabinId = await insertCabin();
+  const checkIn = checkInDaysFromNow(10);
+  const checkOut = moment(checkIn).add(2, 'days').toDate();
+  const booking = await makeBooking({
+    cabinId,
+    email: 'jose@driftdwells.com',
+    checkIn,
+    checkOut
+  });
+
+  await withEnv(
+    {
+      [ENV_ARRIVAL_EMAIL_V2]: '1',
+      [ENV_ARRIVAL_AUTOMATION_V2]: null,
+      [ENV_WORKER_MODE]: null,
+      MESSAGE_DISPATCHER_ENABLED: '0'
+    },
+    async () => {
+      const { syncArrivalAutomationForBooking } = require('../services/messaging/arrival/arrivalAutomationScheduler');
+      const { tickOnce, setAwaitDispatcherForTests } = require('../services/messaging/schedulerWorker');
+      await syncArrivalAutomationForBooking({
+        bookingId: booking._id,
+        force: true,
+        reason: 'staff_schedule_cli'
+      });
+      await ScheduledMessageJob.updateOne(
+        { bookingId: booking._id },
+        { $set: { scheduledFor: new Date(Date.now() - 1000) } }
+      );
+
+      const staffJobId = (await ScheduledMessageJob.findOne({ bookingId: booking._id }).lean())._id;
+
+      setAwaitDispatcherForTests(true);
+      const tick = await tickOnce({ now: new Date() });
+      setAwaitDispatcherForTests(false);
+
+      // Shared tick may claim unrelated non-V2 backlog; must never touch this V2 job.
+      const job = await ScheduledMessageJob.findById(staffJobId).lean();
+      assert.equal(job.status, 'scheduled', JSON.stringify({ tick, job }));
+      assert.equal(job.payloadSnapshot.arrivalAutomationV2, true);
+      assert.equal(job.cancelReason || null, null);
+      assert.equal(sendEmailCalls.length, 0);
+    }
+  );
+});
+
+test('dispatch cancels when booking email leaves staff allowlist', async () => {
+  const cabinId = await insertCabin();
+  const checkIn = checkInDaysFromNow(10);
+  const checkOut = moment(checkIn).add(2, 'days').toDate();
+  const booking = await makeBooking({
+    cabinId,
+    email: 'jose@driftdwells.com',
+    checkIn,
+    checkOut
+  });
+
+  await withEnv(
+    {
+      [ENV_ARRIVAL_EMAIL_V2]: '1',
+      [ENV_ARRIVAL_AUTOMATION_V2]: '1',
+      [ENV_WORKER_MODE]: '1',
+      [ENV_EMAIL_ALLOWLIST]: 'jose@driftdwells.com'
+    },
+    async () => {
+      const { syncArrivalAutomationForBooking } = require('../services/messaging/arrival/arrivalAutomationScheduler');
+      const { processArrivalAutomationJob } = require('../services/messaging/arrival/arrivalAutoDispatchAdapter');
+      await syncArrivalAutomationForBooking({ bookingId: booking._id });
+      booking.guestInfo.email = 'guest@example.com';
+      await booking.save();
+      const job = await ScheduledMessageJob.findOneAndUpdate(
+        { bookingId: booking._id },
+        {
+          $set: {
+            status: 'claimed',
+            claimedBy: 'test',
+            claimedAt: new Date(),
+            visibilityTimeoutAt: new Date(Date.now() + 60_000),
+            scheduledFor: new Date(Date.now() - 1000)
+          }
+        },
+        { new: true }
+      );
+      const r = await processArrivalAutomationJob(String(job._id));
+      assert.equal(r.terminal, 'cancelled', JSON.stringify(r));
+      assert.equal(r.reason, 'email_not_allowlisted');
+      assert.equal(sendEmailCalls.length, 0);
+    }
+  );
+});
+
+test('production hooks schedule automatically when automation authorized (isolated)', async () => {
+  const cabinId = await insertValleyCabin();
+  const checkIn = checkInDaysFromNow(12);
+  const checkOut = moment(checkIn).add(2, 'days').toDate();
+  const booking = await makeBooking({
+    cabinId,
+    email: 'future.guest@example.com',
+    checkIn,
+    checkOut
+  });
+
+  await withEnv(
+    {
+      [ENV_ARRIVAL_EMAIL_V2]: '1',
+      [ENV_ARRIVAL_AUTOMATION_V2]: '1',
+      MESSAGE_ORCHESTRATOR_ENABLED: '0'
+    },
+    async () => {
+      const { notifyBookingStatusChange } = require('../services/messaging/messageOrchestrator');
+      await notifyBookingStatusChange({
+        bookingId: booking._id,
+        previousStatus: 'pending',
+        nextStatus: 'confirmed',
+        transitionKind: 'confirm'
+      });
+      for (let i = 0; i < 40; i += 1) {
+        const n = await ScheduledMessageJob.countDocuments({
+          bookingId: booking._id,
+          'payloadSnapshot.arrivalAutomationV2': true
+        });
+        if (n >= 1) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      const job = await ScheduledMessageJob.findOne({ bookingId: booking._id }).lean();
+      assert.ok(job);
+      assert.equal(job.ruleKey, 'arrival_instructions_pre_arrival_valley');
     }
   );
 });

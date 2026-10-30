@@ -1,4 +1,4 @@
-# Arrival Automation V2 — environment topology (PR2)
+# Arrival Automation V2 — environment topology and activation
 
 ## Flags
 
@@ -6,110 +6,177 @@
 |------|---------|---------|
 | `ARRIVAL_EMAIL_V2` | unset/OFF | PR1 manual Send/Resend + confirmation prep |
 | `ARRIVAL_AUTOMATION_V2` | unset/OFF | PR2 automatic T-3 schedule + allowlisted dispatch |
-| `MESSAGE_ORCHESTRATOR_ENABLED` | should be `0` | Full GMA rule scheduling (keep off unless intentionally enabling broader GMA) |
+| `MESSAGE_ORCHESTRATOR_ENABLED` | `0` | Full GMA rule scheduling (keep off) |
 | `MESSAGE_SCHEDULER_WORKER_ENABLED` | `0` | Claims due `ScheduledMessageJob` rows |
-| `MESSAGE_DISPATCHER_ENABLED` | **must be `0` in shared `.env`** | Legacy GMA dispatcher (WhatsApp/templates) |
+| `MESSAGE_DISPATCHER_ENABLED` | `0` in shared `.env` | Legacy GMA dispatcher (WhatsApp/templates) |
+| `ARRIVAL_AUTOMATION_WORKER_MODE` | unset | `1` only on dedicated arrival worker |
+| `ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST` | unset | Staff emails for scoped claim/sweep |
+| `ARRIVAL_AUTOMATION_WORKER_ALLOW_ALL_GUESTS` | unset | Guest cutover on dedicated worker only |
 
-Automation dispatch for allowlisted arrival rules uses the PR1 `sendArrivalEmailV2` path when
-`ARRIVAL_AUTOMATION_V2=1` **and** `ARRIVAL_EMAIL_V2=1`, even if `MESSAGE_DISPATCHER_ENABLED=0`.
-Unrelated GMA rules are not sent.
+## Proven flag topology
 
-## Shared `.env` inconsistency (known)
+| Concern | Behavior |
+|---------|----------|
+| `MESSAGE_ORCHESTRATOR_ENABLED=0` | Does **not** block V2 scheduling when `ARRIVAL_AUTOMATION_V2=1` (hooks call `fireAndForgetSync` independently). |
+| `MESSAGE_DISPATCHER_ENABLED=0` | Does **not** block V2 SMTP. Dedicated worker hands allowlisted V2 jobs to `arrivalAutoDispatchAdapter` → `sendArrivalEmailV2`. |
+| Shared API automation OFF | Normal booking hooks do **not** create V2 jobs. Staff jobs are scheduled only via `scheduleStaffArrivalAutomationV2.cjs` (`force: true`). |
+| Dedicated worker mode | Claims/sweeps only Cabin/Valley rules with `arrivalAutomationV2: true`, optionally restricted by email allowlist (DB-level filter). |
 
-Production shared release `.env` historically had `MESSAGE_DISPATCHER_ENABLED=1` while the
-API PM2 process forced `0`. A naive restart that reloads `.env` into a process without the
-PM2 override can accidentally enable unrelated messaging.
+### Process topology
 
-### Safe correction (do **not** apply during PR2 implementation)
+| Process | Effective flags |
+|---------|-----------------|
+| Shared API | `ARRIVAL_EMAIL_V2=1`, `ARRIVAL_AUTOMATION_V2=0`, scheduler `0`, dispatcher `0`, orchestrator `0` |
+| Dedicated worker (`driftdwells-arrival-automation-worker`) | Email `1`, Automation `1`, `WORKER_MODE=1`, email allowlist (staff) or `ALLOW_ALL_GUESTS=1`, scheduler `1` when active, dispatcher `0`, orchestrator `0` |
 
-1. Set in shared release `server/.env`:
-   - `MESSAGE_DISPATCHER_ENABLED=0`
-   - `MESSAGE_ORCHESTRATOR_ENABLED=0`
-   - `MESSAGE_SCHEDULER_WORKER_ENABLED=0` (unless a dedicated worker config sets `1`)
-2. When activating PR2 automation, enable on a **dedicated** messaging/scheduler worker config only:
-   - `ARRIVAL_EMAIL_V2=1`
-   - `ARRIVAL_AUTOMATION_V2=1`
-   - `MESSAGE_SCHEDULER_WORKER_ENABLED=1`
-   - keep `MESSAGE_DISPATCHER_ENABLED=0`
-3. API process retains disabled worker flags via guarded deploy `DISABLED_API_FLAGS`.
+Entrypoint: `server/scripts/runArrivalAutomationWorker.js`
+PM2 app: `driftdwells-arrival-automation-worker` in `ecosystem.config.cjs`
 
-## Allowlist
+Allowlisted rules only:
 
 - `arrival_instructions_pre_arrival_cabin`
 - `arrival_instructions_pre_arrival_valley`
 
-Day-before access rules remain independently disabled.
-
-## MessageDispatch unique index (required for SMTP single-flight)
-
-Production API sets `autoIndex: false`. Arrival initial/resend/correction
-idempotency depends on the unique index declared on `MessageDispatch.idempotencyKey`.
-
-Before enabling automation (and as a PR1 production health check), verify:
+## MessageDispatch unique index
 
 ```js
 db.messagedispatches.getIndexes().find((i) => i.name === 'idempotencyKey_1' && i.unique)
 ```
 
-If missing, create it via the project's approved index migration path (do not
-rely on runtime `syncIndexes` in the API process).
+Required before any SMTP automation. Create via approved index migration if missing.
 
-## Flag topology (proven)
+## Exact activation sequence
 
-| Flag | Shared API `.env` | Dedicated arrival worker |
-|------|-------------------|--------------------------|
-| `ARRIVAL_EMAIL_V2` | `1` (PR1) | `1` |
-| `ARRIVAL_AUTOMATION_V2` | `0` until cutover | `1` (process-local) |
-| `MESSAGE_ORCHESTRATOR_ENABLED` | `0` | `0` (required) |
-| `MESSAGE_SCHEDULER_WORKER_ENABLED` | `0` | `1` only when testing/live |
-| `MESSAGE_DISPATCHER_ENABLED` | `0` | `0` (required) |
-| `ARRIVAL_AUTOMATION_WORKER_MODE` | unset | `1` |
-| `ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST` | unset | staff emails for test; empty only with `ALLOW_ALL_GUESTS=1` |
+Do not skip steps. Do not enable the shared API scheduler. Each “approval” gate is an owner decision.
 
-**Orchestrator OFF does not block V2 scheduling.** Booking/reservation hooks call
-`fireAndForgetSync` independently of `MESSAGE_ORCHESTRATOR_ENABLED`. GMA rule
-scheduling stays disabled; arrival V2 sync still runs when automation is authorized.
+### 1. Dark deploy
 
-**Dispatcher OFF does not block V2 SMTP.** With `ARRIVAL_AUTOMATION_V2=1` +
-`ARRIVAL_EMAIL_V2=1`, the scheduler hands allowlisted V2 jobs to
-`arrivalAutoDispatchAdapter` → `sendArrivalEmailV2` even when
-`MESSAGE_DISPATCHER_ENABLED=0`. Unrelated GMA rules are not dispatched.
+Deploy the release that contains the dedicated worker + isolation fixes.
+Shared API must keep:
 
-Dedicated process: `server/scripts/runArrivalAutomationWorker.js` /
-PM2 app `driftdwells-arrival-automation-worker`.
+- `ARRIVAL_AUTOMATION_V2=0`
+- `MESSAGE_SCHEDULER_WORKER_ENABLED=0`
+- `MESSAGE_DISPATCHER_ENABLED=0`
+- `MESSAGE_ORCHESTRATOR_ENABLED=0`
+- `ARRIVAL_EMAIL_V2=1` (PR1 remains active)
 
-## Enablement order (required)
+PM2 arrival worker may be defined but must stay with `MESSAGE_SCHEDULER_WORKER_ENABLED=0` until step 3.
 
-1. Keep the scheduler worker from claiming until reconcile apply is reviewed
-   (`MESSAGE_SCHEDULER_WORKER_ENABLED=0` on API **and** dedicated worker).
-2. Run `node scripts/reconcileArrivalAutomationV2.cjs` (dry-run default) and review
-   classification counts. Dry-run does not require automation flags.
-3. Prove staff path with email allowlist (`jose@driftdwells.com`) on the dedicated
-   worker only — never enable the global API scheduler for testing.
-4. Retire legacy pre-V2 arrival jobs (dry-run first):
-   `node scripts/retireLegacyArrivalJobs.cjs`
-   Apply only after owner approval: `--apply --confirm-retire-legacy`.
-5. After owner approval, run reconcile apply on a one-off process with flags set but worker still off:
-   - `ARRIVAL_EMAIL_V2=1`
-   - `ARRIVAL_AUTOMATION_V2=1`
-   - `MESSAGE_SCHEDULER_WORKER_ENABLED=0`
-   - `node scripts/reconcileArrivalAutomationV2.cjs --apply --confirm-schedule-only`
-   This writes **schedule rows only**. In-window bookings without a V2 initial become
-   catch-up schedules (now+5m). Do **not** enable the worker until that backlog is
-   reviewed — otherwise those jobs will SMTP once claimed.
-6. Staff-scoped enable: set `MESSAGE_SCHEDULER_WORKER_ENABLED=1` **only** on
-   `driftdwells-arrival-automation-worker` with email allowlist set. Keep
-   `MESSAGE_DISPATCHER_ENABLED=0`.
-7. Guest cutover: after staff proof, retire allowlist via
-   `ARRIVAL_AUTOMATION_WORKER_ALLOW_ALL_GUESTS=1` (owner gated) and clear catch-up risk.
-8. Legacy PR1 manual sends without `arrivalCommsV2.lastCommunicatedStateKey` are baselined
-   to the *current* itinerary on first sync (no retrospective correction for
-   pre-enablement changes).
+### 2. Staff-only scheduling
 
-## Rollback
+Shared API automation stays **OFF**. Create a confirmed staff booking to `jose@driftdwells.com`, then schedule **without** enabling global hooks:
 
-1. `pm2 stop driftdwells-arrival-automation-worker` (or set its
-   `MESSAGE_SCHEDULER_WORKER_ENABLED=0` and restart).
-2. Keep/set `ARRIVAL_AUTOMATION_V2=0` on API shared env.
-3. Cancel any due V2 `scheduled`/`claimed` jobs if needed (audited).
-4. PR1 manual Send/Resend remains available while `ARRIVAL_EMAIL_V2=1`.
+```bash
+cd /path/to/release/server
+node scripts/scheduleStaffArrivalAutomationV2.cjs \
+  --booking-id <BOOKING_OBJECT_ID> \
+  --confirm-staff-email jose@driftdwells.com
+```
+
+This calls `syncArrivalAutomationForBooking({ force: true })` and refuses non-matching emails.
+It does not send SMTP and does not start a worker.
+
+Verify a `ScheduledMessageJob` exists with `payloadSnapshot.arrivalAutomationV2 === true`.
+
+### 3. Staff-only worker activation
+
+Start/enable **only** the dedicated worker with process-local env:
+
+```text
+ARRIVAL_EMAIL_V2=1
+ARRIVAL_AUTOMATION_V2=1
+ARRIVAL_AUTOMATION_WORKER_MODE=1
+ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST=jose@driftdwells.com
+MESSAGE_SCHEDULER_WORKER_ENABLED=1
+MESSAGE_DISPATCHER_ENABLED=0
+MESSAGE_ORCHESTRATOR_ENABLED=0
+```
+
+```bash
+pm2 start ecosystem.config.cjs --only driftdwells-arrival-automation-worker --env production
+# Ensure MESSAGE_SCHEDULER_WORKER_ENABLED=1 on that app only (pm2 env / restart).
+```
+
+Do **not** set `MESSAGE_SCHEDULER_WORKER_ENABLED=1` on the API process.
+
+### 4. Staff SMTP verification
+
+Confirm for the staff booking:
+
+- Worker claims only the allowlisted job
+- `MessageDispatch` `arrival_v2:email:<id>:initial` → `accepted`
+- SMTP delivered to `jose@driftdwells.com`
+- Guest / GMA due jobs remain untouched
+- Manual Send of the same initial is a duplicate (no second SMTP)
+
+Optional: date change + cancel on the staff booking; re-run staff schedule CLI after edits if needed while API automation is still OFF.
+
+### 5. Stop staff worker
+
+```bash
+pm2 stop driftdwells-arrival-automation-worker
+# or set MESSAGE_SCHEDULER_WORKER_ENABLED=0 on that app and restart
+```
+
+Leave shared API automation OFF.
+
+### 6. Legacy-job retirement (separate approval)
+
+Dry-run first:
+
+```bash
+node scripts/retireLegacyArrivalJobs.cjs
+```
+
+After owner approval only:
+
+```bash
+node scripts/retireLegacyArrivalJobs.cjs --apply --confirm-retire-legacy
+```
+
+Preserves history (`status → cancelled`). Does **not** create V2 replacements.
+
+### 7. Reconciliation dry-run
+
+```bash
+node scripts/reconcileArrivalAutomationV2.cjs
+```
+
+Review catch-up vs nominal counts. No writes.
+
+### 8. Controlled schedule-only apply (after approval)
+
+One-off process with automation authorized and worker **still off**:
+
+```bash
+ARRIVAL_EMAIL_V2=1 ARRIVAL_AUTOMATION_V2=1 MESSAGE_SCHEDULER_WORKER_ENABLED=0 \
+  node scripts/reconcileArrivalAutomationV2.cjs --apply --confirm-schedule-only
+```
+
+Writes schedule rows only. Review catch-up jobs (historically ~2) before any worker enablement. Quarantine/cancel unexpected guest catch-ups if needed.
+
+### 9. Guest activation (explicit approval)
+
+Only after catch-up review:
+
+1. Set dedicated worker to guest scope: `ARRIVAL_AUTOMATION_WORKER_ALLOW_ALL_GUESTS=1` (clear or keep staff allowlist per owner decision).
+2. Enable `MESSAGE_SCHEDULER_WORKER_ENABLED=1` on the dedicated worker only.
+3. Enable shared API `ARRIVAL_AUTOMATION_V2=1` so normal booking hooks schedule automatically going forward.
+4. Keep `MESSAGE_DISPATCHER_ENABLED=0` and `MESSAGE_ORCHESTRATOR_ENABLED=0` everywhere.
+
+### 10. Monitoring and rollback
+
+Monitor: dedicated worker health logs, `arrival-auto-dispatch` / `arrival-automation-v2` lines, `MessageDispatch` accepted keys, job terminal statuses.
+
+Rollback:
+
+```bash
+pm2 stop driftdwells-arrival-automation-worker
+# Shared API: ARRIVAL_AUTOMATION_V2=0 (PR1 email may remain 1)
+```
+
+Cancel due V2 `scheduled`/`claimed` jobs if required (audited). PR1 manual Send/Resend remains available while `ARRIVAL_EMAIL_V2=1`.
+
+## Shared `.env` note
+
+Historically `MESSAGE_DISPATCHER_ENABLED` could be `1` in shared `.env` while API PM2 forced `0`. Keep shared `.env` at `0`. Never enable the GMA dispatcher for Arrival V2.

@@ -1,23 +1,31 @@
-# Arrival Automation V2 — staff-only automation test
+# Arrival Automation V2 — staff-only test (detail)
 
-## Goal
+Canonical activation order lives in `arrival-automation-v2-env.md` (steps 1–5).
+This page expands the staff SMTP proof only.
 
-Prove automatic Cabin/Valley T-3 delivery to `jose@driftdwells.com` without
-claiming genuine guest jobs or enabling the global API scheduler.
+## Why a separate schedule CLI?
 
-## Preconditions
+Shared API keeps `ARRIVAL_AUTOMATION_V2=0` during staff testing, so normal booking
+hooks do **not** create V2 jobs. Use:
 
-- Production SHA includes dedicated worker + ObjectId adapter fix (Phase 12 PR).
-- PR1 `ARRIVAL_EMAIL_V2=1` remains on.
-- Shared API keeps `ARRIVAL_AUTOMATION_V2=0`, `MESSAGE_SCHEDULER_WORKER_ENABLED=0`,
-  `MESSAGE_DISPATCHER_ENABLED=0`, `MESSAGE_ORCHESTRATOR_ENABLED=0`.
-- Legacy retirement **not** required for staff-only test if the worker email
-  allowlist is set (legacy rows lack V2 payload → never claimed).
-- Do **not** run `reconcile --apply` for guests during staff test.
+```bash
+node scripts/scheduleStaffArrivalAutomationV2.cjs \
+  --booking-id <BOOKING_OBJECT_ID> \
+  --confirm-staff-email jose@driftdwells.com
+```
 
-## Worker topology (staff)
+Requirements:
 
-PM2 app `driftdwells-arrival-automation-worker` with process-local env:
+- Booking `guestInfo.email` must equal `--confirm-staff-email`
+- Address must be on `ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST` (defaults to the confirm address)
+- Uses `force: true` — works with shared automation OFF
+- Never sends SMTP; never starts a worker; refuses guest emails
+
+After authorized production activation (`ARRIVAL_AUTOMATION_V2=1` on the API),
+normal confirm/date/cancel hooks schedule automatically via `fireAndForgetSync`
+(even with `MESSAGE_ORCHESTRATOR_ENABLED=0`).
+
+## Staff worker env
 
 ```text
 ARRIVAL_EMAIL_V2=1
@@ -29,50 +37,14 @@ MESSAGE_DISPATCHER_ENABLED=0
 MESSAGE_ORCHESTRATOR_ENABLED=0
 ```
 
-Start only after deploy of Phase 12 code:
+Claim and sweep are DB-scoped to V2 Cabin/Valley jobs for allowlisted emails only.
 
-```bash
-pm2 start ecosystem.config.cjs --only driftdwells-arrival-automation-worker --env production
-# then enable claiming via pm2 env set / restart with MESSAGE_SCHEDULER_WORKER_ENABLED=1
-```
+## Checklist
 
-## Test booking
-
-Create (Ops) a confirmed **staff_stay** reservation:
-
-- Guest email: `jose@driftdwells.com`
-- Property: Cabin **and** separately Valley
-- Check-in ≥ 4 days out (nominal T-3 @ 17:00 Sofia) **and** one late booking
-  (catch-up ~now+5m)
-
-Expected:
-
-1. Confirm/create → `ScheduledMessageJob` with `arrivalAutomationV2: true`
-2. Nominal job `scheduledFor` = T-3 calendar day 17:00 Europe/Sofia
-3. Worker claims **only** allowlisted email jobs
-4. SMTP to jose@; `MessageDispatch` `arrival_v2:email:<id>:initial` accepted
-5. Manual Send of same initial → duplicate, no second SMTP
-6. Date change → correction schedule / coalesce
-7. Cancel → active jobs cancelled; no further SMTP
-
-## Isolation proof
-
-While worker runs, insert or observe a due guest V2 job (or leave guest jobs
-absent). Guest rows must remain `scheduled`. Unrelated GMA rule keys must remain
-unclaimed.
-
-## Rollback
-
-```bash
-pm2 stop driftdwells-arrival-automation-worker
-# or MESSAGE_SCHEDULER_WORKER_ENABLED=0 on that app only
-```
-
-Do not flip shared API automation flags for this test.
-
-## After staff proof (owner gated — not this phase)
-
-1. Dry-run `retireLegacyArrivalJobs.cjs` → apply with confirm
-2. Dry-run reconcile → review catch-up (=2 historically) → apply with worker off
-3. Quarantine/cancel catch-up guest jobs before enabling ALLOW_ALL_GUESTS
-4. Enable guest scope only with owner GO
+1. Dark deploy (API automation OFF).
+2. Create confirmed staff booking → `jose@driftdwells.com` (Cabin and/or Valley).
+3. Run `scheduleStaffArrivalAutomationV2.cjs` for that booking.
+4. Activate dedicated worker with allowlist.
+5. Verify SMTP + `MessageDispatch` accepted; guest/GMA jobs untouched.
+6. `pm2 stop driftdwells-arrival-automation-worker`.
+7. Stop — further steps require separate owner approvals (legacy retire, reconcile, guest GO).

@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * Claim filter for the dedicated Arrival Automation V2 scheduler worker.
+ * Claim/sweep filter for the dedicated Arrival Automation V2 scheduler worker.
  *
  * When ARRIVAL_AUTOMATION_WORKER_MODE=1 (set by runArrivalAutomationWorker):
- *   - Only Cabin/Valley T-3 allowlisted rule keys are claimable
+ *   - Only Cabin/Valley T-3 allowlisted rule keys are claimable/recoverable
  *   - Only jobs marked payloadSnapshot.arrivalAutomationV2 === true
  *   - Optional ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST restricts by guest email
  *
@@ -12,6 +12,7 @@
  */
 
 const {
+  ARRIVAL_AUTOMATION_RULE_KEYS,
   isArrivalAutomationRuleKey
 } = require('./arrivalFeatureFlags');
 
@@ -79,7 +80,7 @@ function assertArrivalWorkerEnv(env = process.env) {
 
 /**
  * Decide whether a lean ScheduledMessageJob (+ optional booking) may be claimed
- * by this worker process.
+ * or swept by this worker process.
  *
  * @returns {{ ok: true } | { ok: false, reason: string }}
  */
@@ -108,6 +109,135 @@ function evaluateArrivalWorkerClaim({ job, booking = null, env = process.env } =
   return { ok: true };
 }
 
+/**
+ * Base Mongo filter for dedicated-worker V2 arrival jobs (no time/status).
+ */
+function buildArrivalV2JobScopeFilter(env = process.env) {
+  return {
+    ruleKey: { $in: [...ARRIVAL_AUTOMATION_RULE_KEYS] },
+    'payloadSnapshot.arrivalAutomationV2': true
+  };
+}
+
+/**
+ * Resolve bookingIds for the email allowlist (empty array if none match).
+ * Returns null when allowlist is not configured (ALLOW_ALL_GUESTS path).
+ */
+async function resolveAllowlistedBookingIds({ Booking, env = process.env } = {}) {
+  const allowlist = parseEmailAllowlist(env);
+  if (!allowlist) return null;
+  const emails = [...allowlist];
+  // Bounded allowlist → safe case-insensitive exact match per address.
+  const rows = await Booking.find({
+    $or: emails.map((e) => ({
+      'guestInfo.email': new RegExp(`^${e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+    }))
+  })
+    .select('_id')
+    .lean();
+  return rows.map((r) => r._id);
+}
+
+/**
+ * Due-candidate filter for tickOnce.
+ * Shared mode: all scheduled due jobs EXCEPT V2-marked arrival allowlist rows
+ *   when ARRIVAL_AUTOMATION_V2 is not authorized — those belong to the dedicated
+ *   worker / staff CLI and must not be claimed+cancelled by an unscoped tick.
+ * Worker mode: V2 arrival rules only; email allowlist applied via bookingId $in.
+ */
+async function buildDueCandidateFilter({ now, Booking, env = process.env } = {}) {
+  const base = {
+    status: 'scheduled',
+    scheduledFor: { $lte: now }
+  };
+  if (!isArrivalAutomationWorkerMode(env)) {
+    let automationOn = false;
+    try {
+      const { isArrivalAutomationAuthorized } = require('./arrivalFeatureFlags');
+      automationOn = isArrivalAutomationAuthorized(env);
+    } catch (_) {
+      automationOn = false;
+    }
+    if (!automationOn) {
+      // Protect force-scheduled staff/V2 jobs while shared automation is OFF.
+      return {
+        filter: {
+          ...base,
+          $nor: [
+            {
+              ruleKey: { $in: [...ARRIVAL_AUTOMATION_RULE_KEYS] },
+              'payloadSnapshot.arrivalAutomationV2': true
+            }
+          ]
+        },
+        scoped: false,
+        protectV2WhileAutomationOff: true,
+        allowlistedBookingCount: null
+      };
+    }
+    return { filter: base, scoped: false, allowlistedBookingCount: null };
+  }
+
+  const filter = {
+    ...base,
+    ...buildArrivalV2JobScopeFilter(env)
+  };
+
+  const allowlist = parseEmailAllowlist(env);
+  if (allowlist) {
+    const ids = await resolveAllowlistedBookingIds({ Booking, env });
+    filter.bookingId = { $in: ids && ids.length ? ids : [] };
+    return {
+      filter,
+      scoped: true,
+      allowlistedBookingCount: ids ? ids.length : 0
+    };
+  }
+  if (!allowsAllGuests(env)) {
+    // Fail closed: match nothing
+    filter.bookingId = { $in: [] };
+    return { filter, scoped: true, allowlistedBookingCount: 0 };
+  }
+  return { filter, scoped: true, allowlistedBookingCount: null };
+}
+
+/**
+ * Stale-claimed filter for sweepStaleClaimedOnce.
+ * Worker mode never selects GMA / non-V2 / non-allowlisted guest jobs.
+ */
+async function buildStaleClaimedFilter({ now, Booking, env = process.env } = {}) {
+  const base = {
+    status: 'claimed',
+    visibilityTimeoutAt: { $lte: now }
+  };
+  if (!isArrivalAutomationWorkerMode(env)) {
+    return { filter: base, scoped: false };
+  }
+
+  const filter = {
+    ...base,
+    ...buildArrivalV2JobScopeFilter(env)
+  };
+  const allowlist = parseEmailAllowlist(env);
+  if (allowlist) {
+    const ids = await resolveAllowlistedBookingIds({ Booking, env });
+    filter.bookingId = { $in: ids && ids.length ? ids : [] };
+  } else if (!allowsAllGuests(env)) {
+    filter.bookingId = { $in: [] };
+  }
+  return { filter, scoped: true };
+}
+
+/**
+ * Staff-only schedule gate: booking email must be on allowlist.
+ */
+function isEmailAllowlisted(email, env = process.env) {
+  const allowlist = parseEmailAllowlist(env);
+  if (!allowlist) return false;
+  const normalized = String(email || '').trim().toLowerCase();
+  return Boolean(normalized && allowlist.has(normalized));
+}
+
 module.exports = {
   ENV_WORKER_MODE,
   ENV_EMAIL_ALLOWLIST,
@@ -116,5 +246,10 @@ module.exports = {
   parseEmailAllowlist,
   allowsAllGuests,
   assertArrivalWorkerEnv,
-  evaluateArrivalWorkerClaim
+  evaluateArrivalWorkerClaim,
+  buildArrivalV2JobScopeFilter,
+  resolveAllowlistedBookingIds,
+  buildDueCandidateFilter,
+  buildStaleClaimedFilter,
+  isEmailAllowlisted
 };
