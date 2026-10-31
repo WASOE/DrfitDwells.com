@@ -65,11 +65,11 @@
     "cabin": {
       "name": "The Cabin",
       "tagline": "Solitary • Stoic • Deep Detox",
-      "description": "Nestled in the rugged folds of the Pirin Mountains, The Cabin is a testament to the beauty of subtraction. Formerly 'Bucephalus', this is a sanctuary for the over-connected.",
+      "description": "Near Bachevo, in the Razlog area of southwestern Bulgaria, The Cabin is a testament to the beauty of subtraction. Formerly 'Bucephalus', this is a sanctuary for the over-connected.",
       "price": "From €55/night",
       "cta": "View The Cabin",
       "details": {
-        "access": "3km Rugged Trail (SUV/Jeep Required)",
+        "access": "Remote forest road; high clearance recommended",
         "power": "Off-Grid (Solar/Gas - No Hair Dryers)",
         "wifiOffGrid": "Off-Grid",
         "wifiStarlink": "Starlink"
@@ -78,7 +78,7 @@
     "valley": {
       "name": "The Valley",
       "tagline": "Ethereal • Communal • Light",
-      "description": "Suspended between earth and sky at 1,550m. A collection of 13 A-frames and a communal Stone House designed for the modern drifter.",
+      "description": "The Valley currently offers five A-frame cabins, a private Luxury Cabin and a traditional Stone House, with accommodation for up to 18 guests.",
       "price": "From €60/night",
       "cta": "View The Valley",
       "details": {

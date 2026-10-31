@@ -109,7 +109,7 @@
       "stone-house": {
         "title": "Stone House",
         "sleeps": "up to 6",
-        "bullets": ["Historic stone construction with generous shared spaces", "Starlink internet and coworking space", "Perfect for families or small groups"]
+        "bullets": ["Historic stone construction with generous shared spaces", "Starlink internet in the Stone House", "Perfect for families or small groups"]
       },
       "a-frames": {
         "title": "A-Frames",
@@ -125,7 +125,7 @@
     "hotspots": {
       "drifters": {
         "title": "The Drifters",
-        "body": "13 Geometric Cocoons."
+        "body": "Five A-frame cabins."
       },
       "swing": {
         "title": "Panoramic Swing",
@@ -167,7 +167,7 @@
     "pronunciation": "[eye-ly-ack]",
     "partOfSpeech": "noun",
     "definition": "A deliberate refusal to be rushed. The art of not worrying.",
-    "wifiNote": "Wi-Fi is available inside the cabins. Outdoor and shared spaces are intentionally offline."
+    "wifiNote": "Starlink connectivity is available in the Stone House. Individual cabins do not have guest Wi-Fi; outdoor and shared spaces are intentionally offline."
   },
   "trust": {
     "guestRatingsBlurb": "Rated by hundreds of guests across Airbnb, Booking, and direct stays."

@@ -14,7 +14,7 @@ const LayOfLandSection = ({ scrollToAccommodations }) => {
   const svgRef = useRef(null);
 
   const MAP_PINS = [
-    { id: 'drifters', x: 644, y: 804, label: 'The Drifters', subtitle: '13 Geometric Cocoons', tabId: 'drifters' },
+    { id: 'drifters', x: 644, y: 804, label: 'The Drifters', subtitle: 'Five A-frame cabins', tabId: 'drifters' },
     { id: 'swing', x: 1205, y: 60, label: 'Panoramic Swing', subtitle: 'Overlook the valley', tabId: null },
     { id: 'fire', x: 1679, y: 527, label: 'Fireplace', subtitle: 'Gather around the fire', tabId: null },
     { id: 'stone', x: 1701, y: 764, label: 'The Stone House', subtitle: 'Starlink & Community', tabId: 'stone' },

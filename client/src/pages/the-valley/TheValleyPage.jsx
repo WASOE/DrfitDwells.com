@@ -175,8 +175,8 @@ const TheValleyPage = () => {
       : 'Mountain Stone House Retreat – The Valley by Drift & Dwells';
   const seoDescription =
     language === 'bg'
-      ? 'The Valley в Черешово: каменна къща на 1550 м с 360° гледка, A-frame къщи, обща кухня, огнище и Starlink в каменната къща. За почивка и фокусирана работа.'
-      : 'Stay at The Valley in Chereshovo—a historic stone house at 1,550m for deep rest and work. A-frame cabins, 360° views, shared kitchen, firepit, Starlink in the stone house.';
+      ? 'The Valley край Черешово и Орцево: пет A-frame къщички, Luxury Cabin и каменна къща за до 18 гости, огнище, гореща вана и Starlink в каменната къща.'
+      : 'The Valley near Chereshovo and Ortsevo: five A-frame cabins, a Luxury Cabin and Stone House for up to 18 guests, shared fire pit, outdoor hot tub and Starlink in the Stone House.';
 
   return (
     <>

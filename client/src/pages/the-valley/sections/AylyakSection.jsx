@@ -68,7 +68,7 @@ const AylyakSection = ({ aylyakRef }) => {
         className="mt-12 md:mt-16 text-center max-w-2xl mx-auto px-4"
       >
         <p className="text-xs md:text-sm text-[#aaaaaa] leading-relaxed font-serif italic" style={{ lineHeight: '1.6' }}>
-          Wi-Fi is available inside the cabins. Outdoor and shared spaces are intentionally offline.
+          Starlink is available in the Stone House. Individual cabins do not have guest Wi-Fi; outdoor and shared spaces are intentionally offline.
         </p>
       </motion.div>
     </section>

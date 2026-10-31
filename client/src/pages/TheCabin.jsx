@@ -227,12 +227,12 @@ const TheCabin = () => {
   };
   const seoTitle =
     language === 'bg'
-      ? 'Рустик къща в Родопи – The Cabin от Drift & Dwells'
-      : 'Rustic Cabin in Rhodope Mountains – The Cabin by Drift & Dwells';
+      ? 'Оф-грид къща край Бачево – The Cabin от Drift & Dwells'
+      : 'Off-Grid Cabin near Bachevo – The Cabin by Drift & Dwells';
   const seoDescription =
     language === 'bg'
-      ? 'Глемпинг в Бачево: уютна оф-грид дървена къща за двама с камина и звездно небе. За любители на природата и планинските маршрути.'
-      : 'Glamping in Bachevo, Bulgaria: a cosy off-grid wooden cabin for two with a wood stove and clear night skies. For nature lovers and hikers in the Rhodopes.';
+      ? 'Оф-грид дървена къща за двама близо до Бачево, район Разлог: без Wi-Fi за гости, отопление на дърва и отдалечен горски достъп.'
+      : 'Off-grid wooden cabin for two near Bachevo, in the Razlog area of southwestern Bulgaria: no guest Wi-Fi, wood-burning heat and remote forest-road access.';
 
   return (
     <>
@@ -274,8 +274,8 @@ const TheCabin = () => {
           {!shouldPlayVideo ? (
             <img
               src={CABIN_STILLS[season]}
-              alt={getSEOAlt(CABIN_STILLS[season]) || 'The Cabin (Bucephalus) - Off-grid mountain cabin exterior showing rustic wooden structure in forest setting near Bachevo, Rhodope Mountains, Bulgaria'}
-              title={getSEOTitle(CABIN_STILLS[season]) || 'The Cabin - Off-Grid Mountain Retreat in Rhodope Mountains'}
+              alt={getSEOAlt(CABIN_STILLS[season]) || 'The Cabin (Bucephalus) - Off-grid mountain cabin exterior showing rustic wooden structure in forest setting near Bachevo, Razlog area, southwestern Bulgaria'}
+              title={getSEOTitle(CABIN_STILLS[season]) || 'The Cabin - Off-Grid Mountain Retreat near Bachevo, Razlog area'}
               className="absolute inset-0 w-full h-full object-cover"
               loading="eager"
               fetchPriority="high"
@@ -305,7 +305,7 @@ const TheCabin = () => {
               playsInline
               preload="none"
               poster={CABIN_STILLS[season]}
-              aria-label={getSEOAlt(CABIN_STILLS[season]) || 'Video showing The Cabin (Bucephalus) off-grid mountain cabin in forest setting near Bachevo, Rhodope Mountains, Bulgaria'}
+              aria-label={getSEOAlt(CABIN_STILLS[season]) || 'Video showing The Cabin (Bucephalus) off-grid mountain cabin in forest setting near Bachevo, Razlog area, southwestern Bulgaria'}
               style={{
                 minWidth: '100%',
                 minHeight: '100%',
@@ -335,7 +335,7 @@ const TheCabin = () => {
             transition={{ duration: 0.8, delay: 0.2 }}
               className="font-['Playfair_Display'] text-5xl md:text-7xl lg:text-8xl text-[#F1ECE2] font-semibold tracking-tight leading-tight drop-shadow-2xl mb-4"
           >
-              <span className="sr-only">Off grid cabin in the Rhodope Mountains | Drift & Dwells </span>{t('hero.title')}
+              <span className="sr-only">Off grid cabin near Bachevo, Razlog area | Drift & Dwells </span>{t('hero.title')}
           </motion.h1>
             
           <motion.p 

@@ -3,11 +3,11 @@ export const locations = [
     id: "cabin",
     name: "The Cabin",
     tagline: "Unplug. Unwind. Disappear.",
-    description: "Nestled in the rugged folds of the Pirin Mountains, The Cabin is a testament to the beauty of subtraction. Formerly 'Bucephalus', this is a sanctuary for the over-connected.",
+    description: "Near Bachevo, in the Razlog area of southwestern Bulgaria, The Cabin is a testament to the beauty of subtraction. Formerly 'Bucephalus', this is a sanctuary for the over-connected.",
     price: "From €55/night",
     cta: "View The Cabin",
     details: {
-      access: "3km Rugged Trail (SUV/Jeep Required)",
+      access: "Remote forest road; high clearance recommended",
       power: "Off-Grid (Solar/Gas - No Hair Dryers)",
       sleeps: "2 Guests (Queen Bed)",
       heat: "Indoor Fireplace + Gas Heater",
@@ -23,15 +23,15 @@ export const locations = [
     id: "valley",
     name: "The Valley",
     tagline: "A Village Above the Clouds.",
-    description: "Suspended between earth and sky at 1,550m. A collection of 13 A-frames and a communal Stone House designed for the modern drifter.",
+    description: "The Valley currently offers five A-frame cabins, a private Luxury Cabin and a traditional Stone House, with accommodation for up to 18 guests.",
     price: "From €60/night",
     cta: "View The Valley",
     details: {
       access: "Normal car to Chereshovo parking; final ~2.5 km walk or arranged transfer",
       connectivity: "Starlink (Stone House Only)",
       altitude: "1,550m (Highest Inhabited Village in Balkans)",
-      highlight: "Communal Stone House & Coworking",
-      wifi: "Starlink Available",
+      highlight: "Communal Stone House & shared outdoor spaces",
+      wifi: "Starlink at Stone House",
       philosophy: "Drift"
     },
     image: "/uploads/The%20Valley/1760891828283-4dj2r5qvw0p-WhatsApp-Image-2025-10-14-at-2.05.18-PM-(3).jpeg",
@@ -76,7 +76,7 @@ export const home = {
   },
   mission: {
     title: "Handcrafted Stories",
-    narrative: "We are not a hotel. We are a collection of hideaways designed for those who seek the edge of the map. Drift & Dwells was born from a simple duality: the urge to roam the untamed heights and the need to root oneself in raw, unvarnished comfort. Whether you crave the absolute, off-grid silence of the Pirin forests or the ethereal, high-altitude community of the Rhodope meadows, we offer the rarest amenity of all: presence."
+    narrative: "We are not a hotel. We are a collection of hideaways designed for those who seek the edge of the map. Drift & Dwells was born from a simple duality: the urge to roam the untamed heights and the need to root oneself in raw, unvarnished comfort. Whether you crave the absolute, off-grid silence near Bachevo or the ethereal, high-altitude community of the Rhodope meadows, we offer the rarest amenity of all: presence."
   },
   trust: [
     { 
@@ -92,7 +92,7 @@ export const home = {
     { 
       icon: WifiIcon, 
       title: "Starlink", 
-      subtitle: "150 Mbps" 
+      subtitle: "Stone House" 
     }
   ]
 };

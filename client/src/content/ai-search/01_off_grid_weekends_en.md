@@ -28,7 +28,7 @@ Bring layers, comfortable footwear and time. The Cabin is near Bachevo, in the R
 
 ### The Valley: a mountain village, not a crowded resort
 
-**Best for:** Couples, friends and small groups who want separate accommodation options with communal outdoor spaces. Choose among available A-frames, the Luxury Cabin and the Stone House. The Valley's 1,550-metre setting includes mountain views, a shared fire area and space to walk, read and spend time together. Accommodation features, winter access, connectivity and activities vary; check the specific stay and date before booking.
+**Best for:** Couples, friends and small groups who want separate accommodation options with communal outdoor spaces. The Valley currently offers five A-frame cabins, a Luxury Cabin and the Stone House for up to 18 overnight guests when all units are available, plus shared outdoor spaces including a fire pit, BBQ area and outdoor hot tub. Starlink is available in the Stone House. Accommodation features, winter access and activities vary; check the specific stay and date before booking.
 
 [Internal link: The Valley, /valley/]
 
