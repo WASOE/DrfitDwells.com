@@ -42,19 +42,14 @@ function allowsAllGuests(env = process.env) {
 
 /**
  * Validate dedicated-worker env before start. Throws Error with reason.
+ *
+ * When activation flags are OFF the worker may park (dormant: true) — it must
+ * not claim jobs or send SMTP. Active claim/send still requires EMAIL=1,
+ * AUTOMATION=1, SCHEDULER=1, plus allowlist (or ALLOW_ALL_GUESTS).
  */
 function assertArrivalWorkerEnv(env = process.env) {
   if (!isArrivalAutomationWorkerMode(env)) {
     throw new Error(`${ENV_WORKER_MODE} must be 1 for the dedicated arrival worker`);
-  }
-  if (String(env.ARRIVAL_EMAIL_V2 || '').trim() !== '1') {
-    throw new Error('ARRIVAL_EMAIL_V2=1 required');
-  }
-  if (String(env.ARRIVAL_AUTOMATION_V2 || '').trim() !== '1') {
-    throw new Error('ARRIVAL_AUTOMATION_V2=1 required');
-  }
-  if (String(env.MESSAGE_SCHEDULER_WORKER_ENABLED || '').trim() !== '1') {
-    throw new Error('MESSAGE_SCHEDULER_WORKER_ENABLED=1 required');
   }
   if (String(env.MESSAGE_DISPATCHER_ENABLED || '').trim() === '1') {
     throw new Error(
@@ -66,6 +61,23 @@ function assertArrivalWorkerEnv(env = process.env) {
       'MESSAGE_ORCHESTRATOR_ENABLED must be 0 on the dedicated arrival worker (GMA isolation)'
     );
   }
+
+  const emailOn = String(env.ARRIVAL_EMAIL_V2 || '').trim() === '1';
+  const automationOn = String(env.ARRIVAL_AUTOMATION_V2 || '').trim() === '1';
+  const schedulerOn = String(env.MESSAGE_SCHEDULER_WORKER_ENABLED || '').trim() === '1';
+
+  if (!emailOn || !automationOn || !schedulerOn) {
+    return {
+      dormant: true,
+      reason: 'activation_off',
+      emailOn,
+      automationOn,
+      schedulerOn,
+      emailAllowlist: null,
+      allowAllGuests: false
+    };
+  }
+
   const allowlist = parseEmailAllowlist(env);
   if (!allowlist && !allowsAllGuests(env)) {
     throw new Error(
@@ -73,6 +85,7 @@ function assertArrivalWorkerEnv(env = process.env) {
     );
   }
   return {
+    dormant: false,
     emailAllowlist: allowlist,
     allowAllGuests: allowsAllGuests(env)
   };

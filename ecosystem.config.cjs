@@ -149,8 +149,10 @@ module.exports = {
       kill_timeout: 15000,
       env: {
         NODE_ENV: 'development',
-        ARRIVAL_EMAIL_V2: '1',
-        ARRIVAL_AUTOMATION_V2: '1',
+        // Default OFF — never hardcode activation ON in ecosystem.
+        // Staff/guest cutover sets these to 1 via explicit pm2 env override.
+        ARRIVAL_EMAIL_V2: '0',
+        ARRIVAL_AUTOMATION_V2: '0',
         ARRIVAL_AUTOMATION_WORKER_MODE: '1',
         MESSAGE_SCHEDULER_WORKER_ENABLED: '0',
         MESSAGE_DISPATCHER_ENABLED: '0',
@@ -159,10 +161,10 @@ module.exports = {
       },
       env_production: {
         NODE_ENV: 'production',
-        ARRIVAL_EMAIL_V2: '1',
-        ARRIVAL_AUTOMATION_V2: '1',
+        // Parked until owner-approved staff test / guest enablement.
+        ARRIVAL_EMAIL_V2: '0',
+        ARRIVAL_AUTOMATION_V2: '0',
         ARRIVAL_AUTOMATION_WORKER_MODE: '1',
-        // Disabled until explicit staff-test / guest cutover.
         MESSAGE_SCHEDULER_WORKER_ENABLED: '0',
         MESSAGE_DISPATCHER_ENABLED: '0',
         MESSAGE_ORCHESTRATOR_ENABLED: '0',

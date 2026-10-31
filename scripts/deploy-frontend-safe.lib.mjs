@@ -9,6 +9,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { assessPaymentContractBundle } from './lib/verifyPaymentContractBundle.mjs';
 
 // ---------------------------------------------------------------------------
 // Protected paths
@@ -237,10 +238,33 @@ export function ensureAvifMimeType(webroot, { dryRun = false } = {}) {
  * Phase 4: index.html + sw.js last (switch the shell)
  * Phase 5: release-manifest.json
  */
-export function executeLocalPublish({ distDir, webroot, uploadsDir = null, dryRun = false }) {
+/**
+ * Local additive publish. Production callers must pass
+ * `requirePaymentContract: true` (or set REQUIRE_PAYMENT_CONTRACT_PUBLISH=1)
+ * so a dist with false compiled payment flags cannot be copied. The CLI
+ * `deploy-frontend-safe.mjs` always enables this gate.
+ */
+export function executeLocalPublish({
+  distDir,
+  webroot,
+  uploadsDir = null,
+  dryRun = false,
+  requirePaymentContract = false
+} = {}) {
   const dist = path.resolve(distDir);
   const root = path.resolve(webroot);
   const log = [];
+
+  const mustGate =
+    requirePaymentContract === true || process.env.REQUIRE_PAYMENT_CONTRACT_PUBLISH === '1';
+  if (mustGate) {
+    const assessment = assessPaymentContractBundle(dist);
+    if (!assessment.ok) {
+      throw new Error(
+        `Payment contract gate blocked local publish:\n  - ${assessment.errors.join('\n  - ')}`
+      );
+    }
+  }
 
   // Phase 1: assets — additive
   const assetsWritten = copyDirAdditive(

@@ -125,7 +125,7 @@ try {
     fs.mkdirSync(path.join(webroot, 'uploads'), { recursive: true });
     fs.writeFileSync(path.join(webroot, 'uploads/preserve.txt'), 'Existing uploads must survive');
     if (mode === 'local') {
-      executeLocalPublish({ distDir, webroot });
+      executeLocalPublish({ distDir, webroot, requirePaymentContract: false });
     } else {
       for (const phase of buildRemoteRsyncPhases({ distDir, remoteRoot: webroot })) {
         const filters = (phase.excludes || []).map((value) => `--exclude=${value}`);

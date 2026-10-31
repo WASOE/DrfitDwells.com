@@ -232,6 +232,16 @@ test('validateWebroot accepts valid deep paths', () => {
 // Local WEBROOT publication: assets before shell, no delete
 // ---------------------------------------------------------------------------
 
+test('executeLocalPublish payment gate refuses false compiled flags when required', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-deploy-gate-'));
+  const dist = makeMockDist(tmp, { paymentFlagsEnabled: false });
+  const webroot = makeMockWebroot(tmp);
+  assert.throws(
+    () => executeLocalPublish({ distDir: dist, webroot, requirePaymentContract: true }),
+    /Payment contract gate blocked local publish/
+  );
+});
+
 test('executeLocalPublish writes assets first, shell last, in correct order', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-deploy-local-'));
   const dist = makeMockDist(tmp);

@@ -167,7 +167,21 @@ test('claim policy: assertArrivalWorkerEnv requires allowlist or ALLOW_ALL_GUEST
     MESSAGE_ORCHESTRATOR_ENABLED: '0',
     ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST: 'jose@driftdwells.com'
   });
+  assert.equal(ok.dormant, false);
   assert.equal(ok.emailAllowlist.has('jose@driftdwells.com'), true);
+});
+
+test('claim policy: parks dormant when activation flags are OFF (no SMTP path)', () => {
+  const parked = assertArrivalWorkerEnv({
+    ARRIVAL_AUTOMATION_WORKER_MODE: '1',
+    ARRIVAL_EMAIL_V2: '0',
+    ARRIVAL_AUTOMATION_V2: '0',
+    MESSAGE_SCHEDULER_WORKER_ENABLED: '0',
+    MESSAGE_DISPATCHER_ENABLED: '0',
+    MESSAGE_ORCHESTRATOR_ENABLED: '0'
+  });
+  assert.equal(parked.dormant, true);
+  assert.equal(parked.reason, 'activation_off');
 });
 
 test('claim policy: refuses MESSAGE_DISPATCHER_ENABLED=1', () => {
