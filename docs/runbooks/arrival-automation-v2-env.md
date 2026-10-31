@@ -26,8 +26,9 @@
 
 | Process | Effective flags |
 |---------|-----------------|
-| Shared API | `ARRIVAL_EMAIL_V2=1`, `ARRIVAL_AUTOMATION_V2=0`, scheduler `0`, dispatcher `0`, orchestrator `0` |
-| Dedicated worker (`driftdwells-arrival-automation-worker`) | Email `1`, Automation `1`, `WORKER_MODE=1`, email allowlist (staff) or `ALLOW_ALL_GUESTS=1`, scheduler `1` when active, dispatcher `0`, orchestrator `0` |
+| Shared API (activation OFF) | `ARRIVAL_EMAIL_V2=0`, `ARRIVAL_AUTOMATION_V2=0`, scheduler `0`, dispatcher `0`, orchestrator `0` |
+| Dedicated worker parked | `WORKER_MODE=1`, Email `0`, Automation `0`, scheduler `0` — process parks; no claim / no SMTP |
+| Dedicated worker active (owner cutover only) | Email `1`, Automation `1`, scheduler `1`, allowlist or `ALLOW_ALL_GUESTS=1`, dispatcher `0`, orchestrator `0` |
 
 Entrypoint: `server/scripts/runArrivalAutomationWorker.js`
 PM2 app: `driftdwells-arrival-automation-worker` in `ecosystem.config.cjs`

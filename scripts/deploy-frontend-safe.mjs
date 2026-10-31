@@ -237,7 +237,8 @@ if (webrootEnv) {
     distDir,
     webroot: validation.resolved,
     uploadsDir: path.join(repoRoot, 'uploads'),
-    dryRun
+    dryRun,
+    requirePaymentContract: true
   });
 
   const avifMimeUpdated = ensureAvifMimeType(validation.resolved, { dryRun });

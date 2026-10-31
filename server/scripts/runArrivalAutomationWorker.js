@@ -4,19 +4,19 @@
  * Dedicated Arrival Automation V2 scheduler/dispatcher worker.
  *
  * Process-local flags (do not enable on the shared API process):
- *   ARRIVAL_EMAIL_V2=1
- *   ARRIVAL_AUTOMATION_V2=1
- *   MESSAGE_SCHEDULER_WORKER_ENABLED=1
+ *   ARRIVAL_AUTOMATION_WORKER_MODE=1          (always for this entrypoint)
  *   MESSAGE_DISPATCHER_ENABLED=0
  *   MESSAGE_ORCHESTRATOR_ENABLED=0
- *   ARRIVAL_AUTOMATION_WORKER_MODE=1
+ *   ARRIVAL_EMAIL_V2=0|1                     (default 0 — park when off)
+ *   ARRIVAL_AUTOMATION_V2=0|1                (default 0 — park when off)
+ *   MESSAGE_SCHEDULER_WORKER_ENABLED=0|1     (default 0 — park when off)
  *   ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST=jose@driftdwells.com
- *     — required for staff testing; omit only with
+ *     — required for active staff testing; omit only with
  *       ARRIVAL_AUTOMATION_WORKER_ALLOW_ALL_GUESTS=1 after owner approval
  *
- * Claims only Cabin/Valley T-3 jobs with arrivalAutomationV2 payload.
- * Dispatches via arrivalAutoDispatchAdapter → sendArrivalEmailV2 (SMTP).
- * Never enables GMA WhatsApp / unrelated rules.
+ * When any activation flag is OFF the process parks (no claim / no SMTP).
+ * Active mode claims only Cabin/Valley T-3 jobs with arrivalAutomationV2 payload
+ * and dispatches via arrivalAutoDispatchAdapter → sendArrivalEmailV2 (SMTP).
  *
  *   pm2 start ecosystem.config.cjs --only driftdwells-arrival-automation-worker --env production
  */
@@ -99,12 +99,31 @@ async function main() {
     JSON.stringify({
       source: 'arrival-automation-worker',
       phase: 'boot',
+      dormant: Boolean(cfg.dormant),
+      reason: cfg.reason || null,
       emailAllowlistSize: cfg.emailAllowlist ? cfg.emailAllowlist.size : 0,
       allowAllGuests: cfg.allowAllGuests,
       dispatcherEnabled: process.env.MESSAGE_DISPATCHER_ENABLED || null,
       orchestratorEnabled: process.env.MESSAGE_ORCHESTRATOR_ENABLED || null
     })
   );
+
+  process.on('SIGTERM', () => {
+    shutdown('SIGTERM');
+  });
+  process.on('SIGINT', () => {
+    shutdown('SIGINT');
+  });
+
+  if (cfg.dormant) {
+    console.log(
+      '[arrival-automation-worker] parked: activation OFF (no claim / no SMTP). ' +
+        'Set ARRIVAL_EMAIL_V2=1 ARRIVAL_AUTOMATION_V2=1 MESSAGE_SCHEDULER_WORKER_ENABLED=1 to activate.'
+    );
+    // Keep process alive so PM2 does not thrash; never start the scheduler.
+    setInterval(() => {}, 1 << 30);
+    return;
+  }
 
   const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
   await mongoose.connect(mongoUri);
@@ -119,13 +138,6 @@ async function main() {
     process.exit(78);
     return;
   }
-
-  process.on('SIGTERM', () => {
-    shutdown('SIGTERM');
-  });
-  process.on('SIGINT', () => {
-    shutdown('SIGINT');
-  });
 
   healthTimer = setInterval(logHealth, 60_000);
   if (typeof healthTimer.unref === 'function') healthTimer.unref();

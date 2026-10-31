@@ -4,7 +4,7 @@ import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'reac
 import { X } from 'lucide-react';
 import { getStripePromise } from '../lib/stripeClient';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { cabinAPI, cabinTypeAPI, bookingAPI } from '../services/api';
+import { cabinAPI, cabinTypeAPI, bookingAPI, stayAPI } from '../services/api';
 import { CONFIRM_BOOKING_SIMPLE_KEY } from '../hooks/useBookingNavigation';
 import ChangeDatesModal from '../components/booking/ChangeDatesModal';
 import ChangeGuestsModal from '../components/booking/ChangeGuestsModal';
@@ -41,6 +41,10 @@ import {
   customerMessageForCheckoutCapability
 } from '../utils/checkoutCapabilityHandshake';
 import { attemptCheckoutStaleClientRecovery } from '../utils/appReleaseUpdate';
+import {
+  entityFromStayResolve,
+  initialConfirmBookingEntity
+} from '../utils/confirmBookingEntity';
 import { isCheckoutRecoveryUxEnabled } from '../utils/checkoutRecoveryUxFlags';
 import {
   readCheckoutRecoveryState,
@@ -1014,7 +1018,7 @@ export function SplitPaymentChoiceOptions({
 
 const ConfirmBooking = () => {
   const stripePromise = getStripePromise();
-  const { id } = useParams();
+  const { id, slug: routeSlug } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1052,6 +1056,14 @@ const ConfirmBooking = () => {
       const data = JSON.parse(stored);
       if (data.confirmPath && data.confirmPath !== window.location.pathname) return passedState;
       if (!data.confirmPath && id && data.cabinId !== id) return passedState;
+      if (
+        !data.confirmPath &&
+        routeSlug &&
+        data.bookingEntitySlug &&
+        data.bookingEntitySlug !== routeSlug
+      ) {
+        return passedState;
+      }
       return data;
     } catch (e) {
       return passedState;
@@ -1072,9 +1084,16 @@ const ConfirmBooking = () => {
     return g?.trim().toUpperCase() || null;
   })();
 
-  const bookingEntityType = initialState.bookingEntityType || 'cabin';
-  const bookingEntityId = initialState.bookingEntityId || initialState.cabinId || id || null;
-  const bookingEntitySlug = initialState.bookingEntitySlug || null;
+  const seededEntity = initialConfirmBookingEntity({
+    routeId: id || null,
+    routeSlug: routeSlug || null,
+    initialState
+  });
+  const [bookingEntityType, setBookingEntityType] = useState(
+    seededEntity.bookingEntityType || (seededEntity.needsSlugResolve ? null : 'cabin')
+  );
+  const [bookingEntityId, setBookingEntityId] = useState(seededEntity.bookingEntityId);
+  const [bookingEntitySlug, setBookingEntitySlug] = useState(seededEntity.bookingEntitySlug);
   const confirmPath = initialState.confirmPath || window.location.pathname;
 
   const [formData, setFormData] = useState(() => initialState.formData || {
@@ -1410,13 +1429,37 @@ const ConfirmBooking = () => {
   }, [promoDraft]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadStay = async () => {
+      setLoading(true);
+      setError(null);
       try {
-        if (bookingEntityType === 'cabinType') {
-          if (!bookingEntitySlug) {
+        let entityType = bookingEntityType;
+        let entityId = bookingEntityId;
+        let entitySlug = bookingEntitySlug;
+
+        if (!entityId && entitySlug) {
+          const resolved = await stayAPI.resolve(entitySlug);
+          if (cancelled) return;
+          const mapped = entityFromStayResolve(resolved.data?.data, entitySlug);
+          if (!mapped.ok) {
+            throw new Error(t('confirm.failedToLoadStay'));
+          }
+          entityType = mapped.bookingEntityType;
+          entityId = mapped.bookingEntityId;
+          entitySlug = mapped.bookingEntitySlug;
+          setBookingEntityType(entityType);
+          setBookingEntityId(entityId);
+          setBookingEntitySlug(entitySlug);
+        }
+
+        if (entityType === 'cabinType') {
+          if (!entitySlug) {
             throw new Error('Missing cabin type slug');
           }
-          const res = await cabinTypeAPI.getBySlug(bookingEntitySlug);
+          const res = await cabinTypeAPI.getBySlug(entitySlug);
+          if (cancelled) return;
           if (res.data.success) {
             setCabin(res.data.data.cabinType);
             return;
@@ -1424,25 +1467,34 @@ const ConfirmBooking = () => {
           throw new Error('Failed to load stay');
         }
 
-        if (!bookingEntityId) {
+        if (!entityId) {
           throw new Error('Missing cabin id');
         }
 
-        const res = await cabinAPI.getById(bookingEntityId);
+        const res = await cabinAPI.getById(entityId);
+        if (cancelled) return;
         if (res.data.success) {
           setCabin(res.data.data.cabin);
           return;
         }
         throw new Error('Failed to load cabin');
       } catch (err) {
-        setError(err.message || t('confirm.failedToLoadStay'));
+        if (!cancelled) {
+          setCabin(null);
+          setError(err.message || t('confirm.failedToLoadStay'));
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     loadStay();
-  }, [bookingEntityId, bookingEntitySlug, bookingEntityType, t]);
+    return () => {
+      cancelled = true;
+    };
+    // `t` is unstable from i18n mocks/providers; keep entity identity as the only reload triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [bookingEntityId, bookingEntitySlug, bookingEntityType]);
 
   useEffect(() => {
     if (!bookingEntityId || !checkIn || !checkOut) return;
@@ -2742,7 +2794,7 @@ const ConfirmBooking = () => {
     return () => window.clearTimeout(id);
   }, [clientSecret, skipCardPaymentUi, stripePromise]);
 
-  if (loading || !cabin) {
+  if (loading) {
     return (
       <>
         <Seo
@@ -2753,6 +2805,33 @@ const ConfirmBooking = () => {
         />
         <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#81887A]" />
+        </div>
+      </>
+    );
+  }
+
+  if (!cabin) {
+    return (
+      <>
+        <Seo
+          title={t('confirm.seoLoadingTitle')}
+          description={t('confirm.seoLoadingDescription')}
+          canonicalPath={confirmPath}
+          noindex
+        />
+        <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center px-4">
+          <div className="max-w-md w-full p-6 bg-white border border-red-200 rounded-xl text-red-800 text-sm">
+            {error || t('confirm.failedToLoadStay')}
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                className="text-[#81887A] underline"
+              >
+                {t('confirm.closeAria')}
+              </button>
+            </div>
+          </div>
         </div>
       </>
     );

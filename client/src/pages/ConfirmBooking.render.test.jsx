@@ -11,6 +11,7 @@ vi.mock('../lib/stripeClient', () => ({ getStripePromise: vi.fn() }));
 vi.mock('../services/api', () => ({
   cabinAPI: { getById: vi.fn() },
   cabinTypeAPI: { getBySlug: vi.fn() },
+  stayAPI: { resolve: vi.fn() },
   bookingAPI: {
     quote: vi.fn(),
     getConfig: vi.fn(),
