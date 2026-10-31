@@ -222,8 +222,8 @@
         "valley has hot tub",
         "tub at valley"
       ],
-      "short_answer": "No. The hot tub is at The Cabin. The Valley has showers, ATV, and horse riding.",
-      "full_answer": "No. The hot tub is at The Cabin. The Valley has full hot water showers, ATV transfer, and horse riding. Different experience—message us to arrange Valley activities.",
+      "short_answer": "Yes. The Valley has a newly installed outdoor hot tub, plus a shared fire pit and outdoor BBQ area. Confirm seasonal use details when you book.",
+      "full_answer": "Yes. The Valley now has an outdoor hot tub available for guests, along with a shared outdoor fire pit and BBQ area. Seasonal conditions can affect use—ask us about your dates. ATV transfer and horse riding can be arranged on request and are not included by default.",
       "escalation_rule": null,
       "upsell_hint": "ATV, horse riding"
     },
@@ -248,8 +248,8 @@
         "wifi speed",
         "internet connection"
       ],
-      "short_answer": "The Cabin: no WiFi, weak or no phone signal. The Valley: Starlink in Stone House (~150 Mbps). If you need to work remotely, The Valley is the fit.",
-      "full_answer": "The Cabin: no WiFi—fully off-grid. Phone signal is weak or absent. The Valley: Starlink in the Stone House, around 150 Mbps, reliable for video calls. If connectivity matters, The Valley is the better fit. Save directions before you lose signal.",
+      "short_answer": "The Cabin: no guest WiFi, weak or no phone signal. The Valley: Starlink in the Stone House only—not in every cabin. Confirm if you need reliable work connectivity.",
+      "full_answer": "The Cabin: no guest WiFi—fully off-grid. Phone signal is weak or absent. The Valley: Starlink is available in the Stone House; individual A-frames and the Luxury Cabin do not have guest Wi-Fi. If uninterrupted work connectivity matters, say so in your enquiry so we can confirm what is realistic for your dates. Save directions before you lose signal.",
       "escalation_rule": null,
       "upsell_hint": null
     },
@@ -679,8 +679,8 @@
         "how many people",
         "sleeps how many"
       ],
-      "short_answer": "The Cabin sleeps 2. The Valley has 13 A-frames and the Stone House. Check the booking calendar.",
-      "full_answer": "The Cabin sleeps 2 guests. The Valley has 13 A-frames and the Stone House. Check the booking calendar for availability. For extra guests or specific needs, message us.",
+      "short_answer": "The Cabin sleeps 2. The Valley currently sleeps up to 18: five A-frames (2 each), Luxury Cabin (2), and Stone House (up to 6). Check the booking calendar.",
+      "full_answer": "The Cabin sleeps 2 guests. The Valley currently offers five A-frame cabins (2 guests each), a Luxury Cabin (2), and the Stone House (up to 6)—about 18 overnight guests when all units are available for your dates. Additional tents may be deployable for suitable group bookings on request and are not part of the standard 18-guest capacity. Check the booking calendar for availability.",
       "escalation_rule": null,
       "upsell_hint": null
     },

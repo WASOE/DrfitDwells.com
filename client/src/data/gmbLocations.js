@@ -28,7 +28,7 @@ export const GMB_LOCATIONS = {
     businessName: 'The Cabin – Drift & Dwells',
     slug: 'cabin',
     url: `${ORIGIN}/cabin`,
-    description: 'Off-grid mountain cabin for two in the Rhodope Mountains, Bulgaria. Wood stove heating, spring water, and no wifi for a deep digital detox.',
+    description: 'Off-grid mountain cabin for two near Bachevo, in the Razlog area of southwestern Bulgaria. Wood stove heating, spring water, and no guest wifi for a deep digital detox.',
     address: {
       street: '',
       locality: 'Bachevo',
@@ -50,7 +50,7 @@ export const GMB_LOCATIONS = {
     businessName: 'The Valley – Drift & Dwells',
     slug: 'valley',
     url: `${ORIGIN}/valley`,
-    description: 'A private mountain village retreat above the clouds in the Bulgarian mountains with individual cabins, a historic stone house, and shared outdoor spaces.',
+    description: 'Private mountain village near Chereshovo and Ortsevo in the Rhodope Mountains: five A-frame cabins, a Luxury Cabin and Stone House for up to 18 guests, shared outdoor spaces, outdoor hot tub and Starlink in the Stone House.',
     address: {
       street: '',
       locality: 'Chereshovo',

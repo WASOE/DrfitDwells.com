@@ -453,7 +453,7 @@ async function retrieve(query, opts = {}) {
     });
     const fallbackClarify = propertyContext
       ? propertyContext === 'valley'
-        ? "You're on The Valley page. I didn't find a direct match. The Valley has showers, ATV, and horse riding—the hot tub is at The Cabin. Reach me on WhatsApp for more."
+        ? "You're on The Valley page. I didn't find a direct match. The Valley currently sleeps up to 18 guests across five A-frames, the Luxury Cabin and Stone House, with an outdoor hot tub, fire pit and Starlink in the Stone House. Reach me on WhatsApp for more."
         : "You're on The Cabin page. I didn't find a direct match. The Cabin has the hot tub and off-grid setup. Reach me on WhatsApp for more."
       : "I'm not sure I understood. Are you asking about access, amenities, the hot tub, or something else? You can also reach me on WhatsApp.";
     return {

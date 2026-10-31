@@ -19,7 +19,7 @@ const faqTextAnswers = {
   'Is there phone signal?': 'Mobile reception is weak or completely absent at the cabin. Do not rely on having phone signal during your stay.',
   'Should I bring my own food?': 'Yes. You must bring all food and drinks for your stay. There are no nearby shops or restaurants.',
   'What wildlife might I encounter?': 'The area is home to various wildlife including bears, wolves, wild boar, and smaller animals. Store food securely and never feed wildlife.',
-  'Where exactly is The Cabin located?': 'The Cabin is located near Bachevo in the Rhodope Mountains, Bulgaria. Exact GPS coordinates are provided after booking confirmation.'
+  'Where exactly is The Cabin located?': 'The Cabin is located near Bachevo, in the Razlog area of southwestern Bulgaria. Exact GPS coordinates are provided after booking confirmation.'
 };
 
 const CabinFaqPage = () => {
@@ -492,7 +492,7 @@ const CabinFaqPage = () => {
           question: 'Where exactly is The Cabin located?',
           answer: (
             <ul className="list-disc list-inside space-y-2 ml-4">
-              <li>The Cabin is located near Bachevo in the Rhodope Mountains, Bulgaria.</li>
+              <li>The Cabin is located near Bachevo, in the Razlog area of southwestern Bulgaria.</li>
               <li>Exact GPS coordinates and detailed directions are provided after booking confirmation.</li>
               <li>The location is remote, accessed via forest roads from the nearest main road.</li>
             </ul>

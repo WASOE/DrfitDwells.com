@@ -295,9 +295,9 @@
   "stayContent": {
     "the-cabin": {
       "highlights": [
-        "Firepit + starry sky in a protected valley",
+        "Firepit + starry sky in a remote forest setting",
         "Off-grid comfort: wood stove, steaming hot tub",
-        "1 km protected walk-in → true seclusion"
+        "Remote forest-road access → true seclusion"
       ],
       "amenities": [
         "Double bed",
@@ -328,14 +328,13 @@
         "Bed linen and towels",
         "Solar electricity",
         "Mountain and forest views",
-        "Starlink internet",
         "Dogs not permitted"
       ]
     },
     "stone-house": {
       "highlights": [
         "Historic stone house with generous shared living spaces",
-        "Starlink internet and coworking in the valley hub",
+        "Starlink internet available in the Stone House",
         "Perfect for families or small groups",
         "Panoramic valley setting at 1,550 m"
       ],
@@ -346,7 +345,6 @@
         "Shared kitchen",
         "Fireplace",
         "Starlink internet",
-        "Coworking space",
         "Historic stone construction",
         "Valley access trails",
         "Bed linen and towels",
@@ -371,7 +369,7 @@
         "Shared outdoor showers",
         "Shared toilets",
         "Fire pit",
-        "Starlink internet in communal area",
+        "Starlink available in the Stone House",
         "Dogs welcome"
       ]
     }

@@ -10,7 +10,6 @@ const tEn = (key, opts = {}) => {
     'stayContent.lux-cabin.amenities': [
       'Double bed',
       'Private fully equipped kitchen',
-      'Starlink internet',
       'Dogs not permitted'
     ],
     'stayContent.the-cabin.highlights': [
@@ -40,7 +39,7 @@ describe('stayPageContent', () => {
       t: tEn
     });
     expect(amenities.join(' ')).not.toMatch(/hot tub/i);
-    expect(amenities).toContain('Starlink internet');
+    expect(amenities.join(' ')).not.toMatch(/starlink/i);
     expect(amenities).toContain('Dogs not permitted');
   });
 

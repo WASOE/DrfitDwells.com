@@ -2,13 +2,13 @@
   "hero": {
     "title": "The Cabin",
     "subtitle": "The Art of Subtraction",
-    "body": "Off grid mountain cabin for two in the Rhodope Mountains, Bulgaria. High clearance recommended. No wifi.",
+    "body": "Off grid mountain cabin for two near Bachevo, in the Razlog area of southwestern Bulgaria. High clearance recommended. No wifi.",
     "ctaPrimary": "Check availability",
     "ctaSecondary": "Is this for you?"
   },
   "narrative": {
-    "intro1": "Nestled in the rugged folds of the Pirin Mountains in Bulgaria, The Cabin is a testament to the beauty of subtraction. Here, every unnecessary element has been stripped away, leaving only what matters: the crackle of firewood, the whisper of wind through pines, and the profound silence that follows when you finally unplug.",
-    "intro2": "This is not a place for convenience. It is a place for presence. A deliberate choice to step away from the noise and rediscover what it means to truly dwell in the Rhodope Mountains.",
+    "intro1": "Near Bachevo, in the Razlog area of southwestern Bulgaria, The Cabin is a testament to the beauty of subtraction. Here, every unnecessary element has been stripped away, leaving only what matters: the crackle of firewood, the whisper of wind through pines, and the profound silence that follows when you finally unplug.",
+    "intro2": "This is not a place for convenience. It is a place for presence. A deliberate choice to step away from the noise and rediscover what it means to truly dwell in a remote forest setting.",
     "statement": "This is not a hotel. It is a commitment.",
     "readReality": "Read the reality"
   },
@@ -50,7 +50,7 @@
       },
       "location": {
         "label": "Location",
-        "value": "Near Bachevo, Rhodope Mountains"
+        "value": "Near Bachevo, Razlog area, southwestern Bulgaria"
       },
       "access": {
         "label": "Access",

@@ -34,8 +34,8 @@ const Home = () => {
       : 'Off-Grid Mountain Retreats in Bulgaria – Drift & Dwells';
   const seoDescription =
     language === 'bg'
-      ? 'Тишина и природа в Родопите и Пирин: оф-грид къщи и глемпинг за двойки и малки групи. The Cabin и The Valley—резервирайте престой сред планината.'
-      : 'Escape to quiet mountain retreats in Bulgaria\'s Rhodopes and Pirin. Off-grid cabins and glamping for hikers and nature lovers—The Cabin and The Valley. Book your stay.';
+      ? 'Тишина и природа в югозападна България: оф-грид къща близо до Бачево и планинско селце The Valley в Родопите за двойки и групи до 18 гости. Резервирайте престой сред планината.'
+      : 'Quiet mountain stays in southwestern Bulgaria: an off-grid cabin near Bachevo and The Valley in the Rhodopes—five A-frames, Luxury Cabin and Stone House for up to 18 guests.';
 
   return (
     <>

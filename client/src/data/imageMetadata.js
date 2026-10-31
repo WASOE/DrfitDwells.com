@@ -27,9 +27,9 @@ export const imageMetadata = {
       perspective: 'interior',
       content: 'Interior view of the main living space showing wooden walls, queen bed, warm lighting, cozy rustic cabin atmosphere',
       seo: {
-        alt: 'Interior of Bucephalus cabin showing rustic wooden walls, queen bed, and warm ambient lighting in off-grid mountain cabin near Bachevo, Rhodope Mountains, Bulgaria',
+        alt: 'Interior of Bucephalus cabin showing rustic wooden walls, queen bed, and warm ambient lighting in off-grid mountain cabin near Bachevo, Razlog area, southwestern Bulgaria',
         title: 'Bucephalus Cabin Interior - Rustic Off-Grid Mountain Cabin',
-        description: 'The main living space of the Bucephalus cabin, showcasing rustic wooden interior, comfortable queen bed, and the cozy atmosphere of this off-grid mountain retreat near Bachevo in the Rhodope Mountains.'
+        description: 'The main living space of the Bucephalus cabin, showcasing rustic wooden interior, comfortable queen bed, and the cozy atmosphere of this off-grid mountain retreat near Bachevo, in the Razlog area of southwestern Bulgaria.'
       },
       tags: ['interior', 'bedroom', 'living-space', 'wooden-walls', 'rustic', 'bucephalus', 'main-room'],
       useCases: ['cabin-hero', 'cabin-interior-showcase', 'cabin-lifestyle', 'booking-card']
@@ -41,7 +41,7 @@ export const imageMetadata = {
       perspective: 'interior',
       content: 'Close-up interior detail showing a journal, reading nook, or cozy writing space with natural lighting',
       seo: {
-        alt: 'Cozy reading nook with journal and natural lighting inside Bucephalus off-grid cabin, Rhodope Mountains, Bulgaria',
+        alt: 'Cozy reading nook with journal and natural lighting inside Bucephalus off-grid cabin near Bachevo, Razlog area, southwestern Bulgaria',
         title: 'Cabin Reading Nook - Cozy Interior Detail at Bucephalus',
         description: 'A peaceful reading and writing space inside the Bucephalus cabin, featuring natural lighting, wooden surfaces, and the quiet atmosphere perfect for journaling and reflection.'
       },
@@ -55,7 +55,7 @@ export const imageMetadata = {
       perspective: 'exterior',
       content: 'Wooden path or trail leading through forest to the cabin, showing approach route through nature',
       seo: {
-        alt: 'Wooden forest path leading to Bucephalus off-grid cabin through pine trees, Rhodope Mountains, Bulgaria',
+        alt: 'Wooden forest path leading to Bucephalus off-grid cabin through pine trees near Bachevo, Razlog area, southwestern Bulgaria',
         title: 'Forest Path to Bucephalus Cabin - Nature Trail Approach',
         description: 'The scenic wooden path that winds through the pine forest, leading guests to the secluded Bucephalus cabin near Bachevo. This trail showcases the natural beauty and peaceful approach to the off-grid mountain retreat.'
       },
@@ -69,9 +69,9 @@ export const imageMetadata = {
       perspective: 'exterior',
       content: 'Exterior view of cabin in rain showing eaves, roof structure, and atmospheric rainy weather',
       seo: {
-        alt: 'Exterior view of Bucephalus cabin roof and eaves during rainy weather, showing rustic wooden structure in forest setting, Rhodope Mountains',
+        alt: 'Exterior view of Bucephalus cabin roof and eaves during rainy weather, showing rustic wooden structure in forest setting near Bachevo, Razlog area',
         title: 'Cabin Exterior in Rain - Rustic Roof Details at Bucephalus',
-        description: 'The atmospheric exterior of the Bucephalus cabin during rainfall, showcasing the rustic wooden roof structure, eaves, and the cozy shelter it provides in the Rhodope Mountain forest.'
+        description: 'The atmospheric exterior of the Bucephalus cabin during rainfall, showcasing the rustic wooden roof structure, eaves, and the cozy shelter it provides in the forest near Bachevo.'
       },
       tags: ['exterior', 'roof', 'eaves', 'rain', 'weather', 'atmosphere', 'wooden-structure'],
       useCases: ['cabin-exterior', 'weather-atmosphere', 'rustic-details', 'seasonal-content']
@@ -83,9 +83,9 @@ export const imageMetadata = {
       perspective: 'exterior',
       content: 'Detailed botanical study or illustration of ferns and forest flora near the cabin',
       seo: {
-        alt: 'Fern and forest flora botanical study near Bucephalus cabin, showing natural Rhodope Mountain vegetation',
+        alt: 'Fern and forest flora botanical study near Bucephalus cabin, showing native forest vegetation near Bachevo',
         title: 'Forest Flora Near Cabin - Botanical Study of Mountain Ferns',
-        description: 'A detailed botanical illustration showing the native ferns and forest vegetation that surrounds the Bucephalus cabin, highlighting the rich biodiversity of the Rhodope Mountain ecosystem.'
+        description: 'A detailed botanical illustration showing the native ferns and forest vegetation that surrounds the Bucephalus cabin, highlighting the rich biodiversity of the forest ecosystem near Bachevo.'
       },
       tags: ['nature', 'botanical', 'ferns', 'flora', 'forest', 'vegetation', 'illustration'],
       useCases: ['nature-detail', 'botanical-content', 'illustration', 'artistic']
@@ -97,9 +97,9 @@ export const imageMetadata = {
       perspective: 'landscape',
       content: 'Dawn or early morning landscape showing lake, mist, and natural scenery near cabin area',
       seo: {
-        alt: 'Dawn landscape with misty lake and forest near Bachevo in Rhodope Mountains, Bulgaria, showing peaceful morning atmosphere',
+        alt: 'Dawn landscape with misty lake and forest near Bachevo, Razlog area, southwestern Bulgaria, showing peaceful morning atmosphere',
         title: 'Dawn Lake View Near Cabin - Misty Mountain Morning Landscape',
-        description: 'A serene dawn landscape near the Bucephalus cabin area, featuring a misty lake, surrounding forest, and the peaceful morning atmosphere of the Rhodope Mountains at first light.'
+        description: 'A serene dawn landscape near the Bucephalus cabin area, featuring a misty lake, surrounding forest, and the peaceful morning atmosphere near Bachevo at first light.'
       },
       tags: ['landscape', 'dawn', 'morning', 'lake', 'mist', 'nature', 'scenery', 'atmosphere'],
       useCases: ['nature-landscape', 'atmosphere', 'time-of-day', 'scenic-view']
@@ -118,7 +118,7 @@ export const imageMetadata = {
       },
       seo: {
         alt: 'Bucephalus off-grid cabin',
-        baseDescription: 'Authentic images of the Bucephalus off-grid mountain cabin near Bachevo, Rhodope Mountains, Bulgaria'
+        baseDescription: 'Authentic images of the Bucephalus off-grid mountain cabin near Bachevo, Razlog area, southwestern Bulgaria'
       },
       useCases: ['cabin-gallery', 'cabin-details-page', 'booking-presentation', 'lifestyle-content']
     }
@@ -763,7 +763,7 @@ export const imageMetadata = {
       seo: {
         alt: 'Aerial drone view of The Valley showing multiple A-frame cabins, village layout, paths, and mountain landscape at 1,550m altitude, Rhodope Mountains, Bulgaria',
         title: 'Aerial View of The Valley - A-Frame Village Layout from Above',
-        description: 'A stunning aerial view of The Valley showing the collection of 13 geometric A-frame cabins, the walkable village layout, connecting paths, and the dramatic mountain landscape at 1,550m altitude - the highest inhabited village in the Balkans.'
+        description: 'A stunning aerial view of The Valley showing the A-frame cabin cluster, Stone House, walkable village layout, connecting paths, and the dramatic mountain landscape at 1,550m altitude near Chereshovo and Ortsevo in the Rhodope Mountains.'
       },
       tags: ['aerial', 'drone-view', 'a-frames', 'village-layout', 'overview', 'geometric', 'paths', '1-550m'],
       useCases: ['valley-map', 'village-overview', 'interactive-map', 'hero-background', 'layout-explanation']
@@ -853,7 +853,7 @@ export const imageMetadata = {
       perspective: 'exterior',
       content: 'Hero image showing Bucephalus cabin exterior in forest setting, used as video poster and header image',
       seo: {
-        alt: 'The Cabin (Bucephalus) - Off-grid mountain cabin exterior showing rustic wooden structure in forest setting near Bachevo, Rhodope Mountains, Bulgaria',
+        alt: 'The Cabin (Bucephalus) - Off-grid mountain cabin exterior showing rustic wooden structure in forest setting near Bachevo, Razlog area, southwestern Bulgaria',
         title: 'The Cabin - Off-Grid Mountain Retreat in Rhodope Mountains',
         description: 'Hero image of The Cabin (formerly Bucephalus), an off-grid mountain retreat nestled in the forest near Bachevo in the Rhodope Mountains, showcasing rustic wooden architecture and natural setting.'
       },
@@ -1037,7 +1037,7 @@ export function getImageMetadata(imagePath) {
       seo: {
         alt: 'Bucephalus off-grid cabin image, Rhodope Mountains, Bulgaria',
         title: 'Bucephalus Cabin Image',
-        description: 'An image from the Bucephalus off-grid mountain cabin near Bachevo in the Rhodope Mountains.'
+        description: 'An image from the Bucephalus off-grid mountain cabin near Bachevo, in the Razlog area of southwestern Bulgaria.'
       },
       tags: ['cabin', 'bucephalus', 'bachevo'],
       note: '⚠️ Needs specific metadata - add to database for precise categorization'

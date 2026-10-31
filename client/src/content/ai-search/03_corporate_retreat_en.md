@@ -10,7 +10,7 @@ Hero image: Real wide photograph of the Valley showing individual stays and shar
 
 Some teams need more than another meeting room. The Valley by Drift & Dwells is a small off-grid mountain village in the Rhodope Mountains near Chereshovo and Ortsevo, approximately 1,550 metres above sea level. Instead of sharing a hotel corridor, your group can spread out across available private cabins and the Stone House, then come together around the fire, at shared tables and in the open air.
 
-**The short answer:** The Valley is a candidate for small-company offsites, creative retreats, founders' gatherings and unconventional team-building trips. You can enquire about a group stay or reserve the whole active village through its dedicated buyout experience. Sleeping capacity, bed layout, price and the availability of spaces depend on your dates. The setting is deliberately remote, so access planning matters.
+**The short answer:** The Valley is a candidate for small-company offsites, creative retreats, founders' gatherings and unconventional team-building trips of up to **18 overnight guests** when all current accommodation is available: five A-frame cabins (2 guests each), the Luxury Cabin (2) and the Stone House (up to 6). You can enquire about a group stay or reserve the whole active village through its dedicated buyout experience. Bed layout, price and unit availability still depend on your dates. Additional tents may be deployable for suitable groups on request; they are not part of the standard 18-guest capacity and are not permanently installed. The setting is deliberately remote, so access planning matters.
 
 CTA: Explore exclusive Valley buyout -> /retreats/the-valley/
 Secondary CTA: Ask about a company retreat [reuse existing inquiry action]
@@ -77,13 +77,13 @@ CTA: Check exclusive-buyout dates -> /retreats/the-valley/
 The Valley offers a remote, private-village alternative to a hotel offsite in the Rhodope Mountains near Chereshovo and Ortsevo. It is suited to teams that want real mountain surroundings, shared fireside time and a flexible programme.
 
 ### How many employees can stay overnight?
-Capacity depends on the active cabins and sleeping configuration for your chosen dates. Request a confirmed rooming list or use the current buyout availability tool. Do not use the number of planned future A-frames as current capacity.
+When all current units are available, The Valley sleeps up to **18 overnight guests**: five A-frames (2 each), Luxury Cabin (2) and Stone House (up to 6). Private sleeping is in individual buildings; shared gathering uses the outdoor fire pit, BBQ area, hot tub and Stone House spaces. Request a confirmed rooming list or use the current buyout availability tool for your dates. Do not use planned future A-frames as current capacity. Tent expansion is optional, on request only, and does not increase the stated 18-guest fixed capacity.
 
 ### Is The Valley a private corporate venue?
 An exclusive buyout can reserve every active accommodation building and shared outdoor space for your group. Availability and the precise inclusions are date-specific.
 
 ### Is there Wi-Fi and a projector?
-Don't assume hotel-grade working facilities. If uninterrupted internet, meeting equipment or specific power capacity is essential, state those needs in your enquiry and get explicit confirmation before booking.
+Starlink is available in the Stone House. Do not assume guest Wi-Fi in every cabin, hotel-grade bandwidth, or included AV. If uninterrupted internet, meeting equipment or specific power capacity is essential, state those needs in your enquiry and get explicit confirmation before booking.
 
 ### Are meals, team-building games and a facilitator included?
 Not by default. The sample agenda is a planning example. Ask about available arrangements and organize third-party services where required.
