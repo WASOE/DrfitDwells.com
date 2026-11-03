@@ -97,7 +97,11 @@ function inspectDocument(document, route, expectedHeading, seoContext) {
     fail('head does not identify this route');
   }
   if (document.documentElement.lang !== locale) fail('incorrect document locale');
-  if (document.querySelector('meta[name="robots"]')?.content?.includes('noindex')) fail('noindex route');
+  if (document.querySelector('meta[name="robots"]')?.content?.includes('noindex')) {
+    if (entry.robots !== 'noindex') fail('noindex route');
+  } else if (entry.robots === 'noindex') {
+    fail('expected noindex robots meta');
+  }
   const ogTitle = document.querySelector('meta[property="og:title"]')?.content?.trim();
   const ogDescription = document.querySelector('meta[property="og:description"]')?.content?.trim();
   const ogUrl = document.querySelector('meta[property="og:url"]')?.content?.trim();
@@ -124,7 +128,8 @@ function inspectDocument(document, route, expectedHeading, seoContext) {
   if (JSON.stringify(alternates) !== JSON.stringify(expectedAlternates)) {
     fail('missing or incorrect EN/BG hreflang alternates');
   }
-  if (!heading || heading.length < 3 || text.length < 180) fail('empty, generic or loading-only main content');
+  const minText = entry.robots === 'noindex' ? 120 : 180;
+  if (!heading || heading.length < 3 || text.length < minText) fail('empty, generic or loading-only main content');
   if ([...main.querySelectorAll('h1')].every((node) => node.style.opacity !== '' && Number(node.style.opacity) === 0)) {
     fail('heading hidden in serialized HTML');
   }

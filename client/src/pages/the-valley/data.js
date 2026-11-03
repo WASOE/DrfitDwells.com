@@ -285,7 +285,7 @@ export const STAY_CARDS = [
     listingSlug: 'lux-cabin',
     route: '/stays/lux-cabin',
     sleeps: '2',
-    price: '€85/night',
+    price: '€110/night',
     fallbackImage: '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
     imagePath: '/uploads/The Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
     bullets: [

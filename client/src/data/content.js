@@ -4,7 +4,7 @@ export const locations = [
     name: "The Cabin",
     tagline: "Unplug. Unwind. Disappear.",
     description: "Near Bachevo, in the Razlog area of southwestern Bulgaria, The Cabin is a testament to the beauty of subtraction. Formerly 'Bucephalus', this is a sanctuary for the over-connected.",
-    price: "From €55/night",
+    price: "From €100/night",
     cta: "View The Cabin",
     details: {
       access: "Remote forest road; high clearance recommended",

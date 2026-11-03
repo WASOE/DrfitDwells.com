@@ -67,10 +67,11 @@ const seedDatabase = async () => {
     const keepCabins = await Cabin.find({ name: { $in: KEEP_CABIN_NAMES } });
     const keepCabinIds = keepCabins.map((cabin) => cabin._id);
 
-    // Update Bucephalus/The Cabin pricing (€55/night, min 2 nights)
+    // Preserve existing The Cabin nightly rate; do not mass-write prices in reseed.
+    // Geography/i18n fill below remains safe for empty fields only.
     await Cabin.updateMany(
-      { name: { $in: KEEP_CABIN_NAMES } },
-      { $set: { pricePerNight: 55, minNights: 2 } }
+      { name: 'The Cabin' },
+      { $set: { minNights: 2 } }
     );
 
     // Ensure the kept "The Cabin" carries Bulgarian content (parity with
@@ -78,9 +79,9 @@ const seedDatabase = async () => {
     // ops-edited translations are never clobbered by a reseed.
     const theCabinBg = {
       name: 'Къщата',
-      location: 'Пирин планина, край Бачево',
+      location: 'Край Бачево, в района на Разлог, югозападна България',
       description:
-        'Скътана в суровите гънки на Пирин, Къщата е доказателство за красотата на изваждането. Позната преди като „Буцефал“, тя е убежище за свръхсвързаните. Офгрид, с печка на дърва, компостна тоалетна и джакузи, подгрявано на дърва.'
+        'Край Бачево, в района на Разлог в югозападна България, Къщата е доказателство за красотата на изваждането. Позната преди като „Буцефал“, тя е убежище за свръхсвързаните. Офгрид, с печка на дърва, компостна тоалетна и джакузи, подгрявано на дърва.'
     };
     for (const [field, value] of Object.entries(theCabinBg)) {
       await Cabin.updateMany(

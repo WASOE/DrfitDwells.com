@@ -51,7 +51,7 @@ const baseUnit = (slug, overrides = {}) => ({
 const fullData = {
   units: [
     baseUnit('a-frame'),
-    baseUnit('lux-cabin', { fromPrice: 'From €85/night' }),
+    baseUnit('lux-cabin', { fromPrice: 'From €110/night' }),
     baseUnit('stone-house', { fromPrice: 'From €75/night', sleeps: 'Sleeps 6' })
   ],
   buyout: {

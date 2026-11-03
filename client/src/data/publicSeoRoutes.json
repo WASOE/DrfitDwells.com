@@ -16,5 +16,9 @@
   { "path": "/stays/the-cabin", "locales": ["en", "bg"], "ogImage": "/media/hero/cabin-summer-1200w.webp", "stayId": "the-cabin", "headings": { "en": "The Cabin", "bg": "The Cabin" } },
   { "path": "/stays/a-frame", "locales": ["en", "bg"], "ogImage": "/media/enduro/aframes-sunset-1200w.webp", "stayId": "valley-a-frame", "headings": { "en": "The Valley A-Frame", "bg": "The Valley A-Frame" } },
   { "path": "/stays/lux-cabin", "locales": ["en", "bg"], "ogImage": "/media/enduro/lux-cabin-cover-1200w.webp", "stayId": "valley-lux-cabin", "headings": { "en": "The Valley Lux Cabin", "bg": "The Valley Lux Cabin" } },
-  { "path": "/stays/stone-house", "locales": ["en", "bg"], "ogImage": "/media/enduro/stone-house-cover-1200w.webp", "stayId": "valley-stone-house", "headings": { "en": "The Valley Stone House", "bg": "The Valley — Каменна къща" } }
+  { "path": "/stays/stone-house", "locales": ["en", "bg"], "ogImage": "/media/enduro/stone-house-cover-1200w.webp", "stayId": "valley-stone-house", "headings": { "en": "The Valley Stone House", "bg": "The Valley — Каменна къща" } },
+  { "path": "/privacy", "locales": ["en"], "ogImage": "/media/hero/cabin-summer-1200w.webp", "headings": { "en": "Privacy Policy" }, "robots": "noindex" },
+  { "path": "/terms", "locales": ["en"], "ogImage": "/media/hero/cabin-summer-1200w.webp", "headings": { "en": "Terms & Conditions" }, "robots": "noindex" },
+  { "path": "/cancellation-policy", "locales": ["en"], "ogImage": "/media/hero/cabin-summer-1200w.webp", "headings": { "en": "Cancellation Policy" }, "robots": "noindex" },
+  { "path": "/career", "locales": ["en"], "ogImage": "/media/hero/cabin-summer-1200w.webp", "headings": { "en": "Careers" }, "robots": "noindex" }
 ]

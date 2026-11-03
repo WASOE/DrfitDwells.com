@@ -25,13 +25,20 @@ describe('staySeo', () => {
     const schema = buildStayLodgingJsonLd({
       name: 'Lux Cabin',
       description: 'Private cabin with views',
-      location: 'The Valley',
+      location: 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria',
+      occupancy: 2,
       imageUrl: '/media/hero/cabin-summer-960w.webp',
       slug: 'lux-cabin'
     });
     expect(schema.url).toBe('https://driftdwells.com/stays/lux-cabin/');
     expect(schema['@type']).toEqual(['LodgingBusiness', 'Accommodation']);
     expect(schema['@id']).toBe('https://driftdwells.com/stays/lux-cabin/#lodging');
+    expect(schema.address).toEqual({
+      '@type': 'PostalAddress',
+      addressCountry: 'BG',
+      addressLocality: 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria'
+    });
+    expect(schema.occupancy).toEqual({ '@type': 'QuantitativeValue', maxValue: 2 });
     expect(schema).not.toHaveProperty('priceRange');
     expect(schema).not.toHaveProperty('aggregateRating');
     expect(schema.image[0]).toContain('https://driftdwells.com/media/hero/cabin-summer-960w.webp');

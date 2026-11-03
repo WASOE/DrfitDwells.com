@@ -136,7 +136,7 @@ try {
       }
     }
     assert.equal(fs.readFileSync(path.join(webroot, 'uploads/preserve.txt'), 'utf8'), 'Existing uploads must survive');
-    assert.equal(contract.validateArtifacts(webroot).length, 34);
+    assert.equal(contract.validateArtifacts(webroot).length, 38);
     if (verification) assert.throws(() => contract.assertProductionArtifacts(webroot), /must never be published/);
     const missing = contract.artifactPath(webroot, '/bg/stays/stone-house');
     const saved = fs.readFileSync(missing);

@@ -93,7 +93,7 @@ test('all six raw HTML pages preserve approved editorial copy, metadata, links, 
   const routes = registry.flatMap(({ path, locales }) =>
     locales.map((locale) => locale === 'bg' ? `/bg${path}` : path)
   );
-  assert.equal(routes.length, 34);
+  assert.equal(routes.length, 38);
   assert.ok(routes.includes('/off-grid-cabins-bulgaria'));
   assert.ok(routes.includes('/bg/off-grid-cabins-bulgaria'));
   assert.ok(!routes.includes('/off-grid-stays-bulgaria'));
