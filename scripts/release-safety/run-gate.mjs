@@ -14,7 +14,6 @@ import {
   assessReferencedAssets,
   assessBuiltServiceWorker,
   assessServiceWorkerSource,
-  assessStagingEnvironment,
   decideRelease
 } from './frontend-compat.mjs';
 import { faultyIndexRedirect } from './routing-contract.mjs';
@@ -24,7 +23,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 const distDir = path.join(repoRoot, 'client/dist');
 const htaccessPath = path.join(repoRoot, 'client/public/.htaccess');
 const swSourcePath = path.join(repoRoot, 'client/src/sw.js');
-const reportPath = process.env.RELEASE_SAFETY_REPORT || path.join(repoRoot, 'release-safety-report.json');
+const evidencePath = process.env.RELEASE_APACHE_EVIDENCE || path.join(repoRoot, 'apache-evidence.json');
 
 if (!fs.existsSync(path.join(distDir, 'index.html'))) {
   console.error('[release-safety] BLOCK: client/dist is missing. Build the production artifact first.');
@@ -48,7 +47,6 @@ const routing = htaccessCheck.ok
 const faulty = await runRoutingAgainstHtaccess(distDir, faultyIndexRedirect(htaccess));
 const failedIds = idsThatFailed(faulty);
 const faultyRedirectDetected = failedIds.includes('search') && failedIds.includes('checkout') && faulty.ok === false;
-const staging = assessStagingEnvironment(process.env);
 const decision = decideRelease({
   routing,
   faultyRedirectDetected,
@@ -56,21 +54,37 @@ const decision = decideRelease({
   payment,
   serviceWorker,
   htaccess: htaccessCheck,
-  staging
+  staging: { present: false }
 });
 
-const report = {
-  ...decision,
-  frontendRelease: process.env.VITE_FRONTEND_RELEASE || null,
-  faultyFailedIds: failedIds,
-  routingFailures: routing.failures,
-  coverage: {
-    apache: 'apache-2.4-htaccess',
-    browser: process.env.RELEASE_SAFETY_BROWSER_COVERAGE || null,
-    staging: staging.ok ? 'isolated-staging-integration' : null
+function routeEvidence(results, id) {
+  const row = results.find((item) => item.id === id);
+  return {
+    ok: row?.ok === true,
+    finalStatus: row?.finalStatus ?? null,
+    finalPath: row?.finalPath ?? null
+  };
+}
+
+const sha = process.env.VITE_FRONTEND_RELEASE || process.env.GITHUB_SHA || null;
+const evidence = {
+  sha,
+  workflowRunId: process.env.GITHUB_RUN_ID || null,
+  search: routeEvidence(routing.results, 'search'),
+  checkout: routeEvidence(routing.results, 'checkout'),
+  faultyRule: {
+    searchRedirectedHome: failedIds.includes('search'),
+    checkoutRedirectedHome: failedIds.includes('checkout')
   }
 };
-fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-console.log(JSON.stringify({ reportPath, ...decision, faultyFailedIds: failedIds }, null, 2));
+if (decision.artifactOk) {
+  fs.writeFileSync(evidencePath, `${JSON.stringify(evidence)}\n`);
+}
+console.log(JSON.stringify({
+  evidencePath: decision.artifactOk ? evidencePath : null,
+  ...decision,
+  faultyFailedIds: failedIds,
+  search: evidence.search,
+  checkout: evidence.checkout
+}, null, 2));
 if (!decision.artifactOk) process.exit(1);
-if (process.env.RELEASE_SAFETY_REQUIRE_DEPLOY === '1' && !decision.deployOk) process.exit(2);

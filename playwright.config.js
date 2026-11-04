@@ -8,7 +8,9 @@ module.exports = defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 1,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: process.env.RELEASE_BROWSER_JSON
+    ? [['list'], ['json', { outputFile: process.env.RELEASE_BROWSER_JSON }]]
+    : [['list'], ['html', { open: 'never' }]],
   timeout: 45_000,
   expect: {
     timeout: 10_000

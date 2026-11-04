@@ -270,6 +270,13 @@ app.get('/uploads/PDFs/drift-dwells-docs-v2/terms.pdf', (req, res) => {
 });
 
 // Health check (no DB required)
+function publicStripeMode(secret = process.env.STRIPE_SECRET_KEY) {
+  const key = String(secret || '');
+  if (key.startsWith('sk_test_')) return 'test';
+  if (key.startsWith('sk_live_')) return 'live';
+  return 'unset';
+}
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
@@ -277,7 +284,8 @@ app.get('/api/health', (req, res) => {
     database: db.isConnected && db.isConnected() ? 'connected' : 'disconnected',
     applicationRelease: applicationReleaseFromEnv(),
     frontendRelease: frontendReleaseFromEnv(),
-    paymentContractVersion: PRODUCTION_PAYMENT_CONTRACT_VERSION
+    paymentContractVersion: PRODUCTION_PAYMENT_CONTRACT_VERSION,
+    stripeMode: publicStripeMode()
   });
 });
 

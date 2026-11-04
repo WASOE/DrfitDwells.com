@@ -17,8 +17,8 @@ import {
   decideRelease
 } from './frontend-compat.mjs';
 import { faultyIndexRedirect } from './routing-contract.mjs';
-import { assertReleaseSafetyReport } from './report.mjs';
-import { restoreFrontendShell, snapshotFrontendShell } from './rollback.mjs';
+import { assertReleaseSafetyReport, assertStagingEvidence, buildPassingEvidence } from './report.mjs';
+import { resolveSnapshotDir, restoreFrontendShell, snapshotFrontendShell } from './rollback.mjs';
 import { idsThatFailed, runRoutingAgainstHtaccess } from './run-routing.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -99,6 +99,15 @@ test('apache config mismatch and missing staging block the corresponding gates',
     RELEASE_STAGING_ALLOW_PAYMENT_INIT: '1'
   });
   assert.equal(ready.ok, true);
+  const envOnly = path.join(dir, 'env-only.json');
+  fs.writeFileSync(envOnly, JSON.stringify({
+    frontendRelease: 'e'.repeat(40),
+    coverage: { staging: 'isolated-staging-integration' }
+  }));
+  assert.throws(
+    () => assertReleaseSafetyReport(envOnly, 'e'.repeat(40), { verifyRun: () => {} }),
+    /staging/i
+  );
 
   const decision = decideRelease({
     routing: { ok: true },
@@ -142,14 +151,11 @@ test('rollback restores the shell and keeps the previous hashed asset', async ()
 
   const reportPath = path.join(root, 'report.json');
   const releaseSha = 'c'.repeat(40);
+  const evidence = buildPassingEvidence(releaseSha, '9001');
   fs.writeFileSync(reportPath, JSON.stringify({
-    artifactOk: true,
-    deployOk: true,
     frontendRelease: releaseSha,
-    coverage: {
-      browser: 'mocked-apache-artifact',
-      staging: 'isolated-staging-integration'
-    }
+    workflowRunId: '9001',
+    evidence
   }));
 
   const activated = await activateTestedRelease({
@@ -158,9 +164,11 @@ test('rollback restores the shell and keeps the previous hashed asset', async ()
     reportPath,
     releaseSha,
     requirePaymentContract: false,
+    verifyRun: () => {},
     probe: async () => ({ ok: false, errors: ['/checkout redirected to the homepage'] })
   });
   assert.equal(activated.rolledBack, true);
+  assert.equal(activated.snapshot.snapshotDir.startsWith(`${root}${path.sep}`), false);
   assert.equal(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), 'old-shell');
   assert.equal(fs.readFileSync(path.join(root, '.htaccess'), 'utf8'), 'old-htaccess');
   assert.equal(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), 'old-sw');
@@ -169,7 +177,11 @@ test('rollback restores the shell and keeps the previous hashed asset', async ()
 
   const kept = executeLocalPublish({ distDir: dist, webroot: root, requirePaymentContract: false });
   assert.ok(kept.assetsWritten.includes('new-app.js'));
-  const snap = snapshotFrontendShell(root, path.join(root, '.release-snapshots', 'manual'));
+  assert.throws(
+    () => snapshotFrontendShell(root, path.join(root, '.release-snapshots', 'manual')),
+    /document root/
+  );
+  const snap = snapshotFrontendShell(root, resolveSnapshotDir(root, 'd'.repeat(40)));
   fs.writeFileSync(path.join(root, 'index.html'), 'broken-shell');
   restoreFrontendShell(root, snap.snapshotDir);
   assert.equal(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), 'new-shell');
@@ -187,6 +199,10 @@ test('publication refuses a report that did not pass staging coverage', () => {
   }));
   assert.throws(
     () => assertReleaseSafetyReport(reportPath, 'd'.repeat(40)),
-    /blocked|staging/i
+    /staging/i
   );
+  const attempted = buildPassingEvidence('d'.repeat(40), '9001');
+  attempted.staging.responses[1].status = 500;
+  attempted.staging.responses[1].success = false;
+  assert.ok(assertStagingEvidence(attempted.staging, 'd'.repeat(40), '9001').some((error) => /finalize-intent/.test(error)));
 });

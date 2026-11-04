@@ -7,12 +7,15 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   artifact-and-browser:
     name: Apache, browser, and payment contract
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      VITE_FRONTEND_RELEASE: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,10 +34,11 @@ jobs:
           CHROME=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -path '*chrome-linux*' | head -1)
           test -n "$CHROME"
           echo "PRERENDER_BROWSER_PATH=$CHROME" >> "$GITHUB_ENV"
+      - name: Fetch public cabin originals required by the production build
+        run: node scripts/release-safety/fetch-public-media.mjs
       - name: Build the production artifact
         working-directory: client
         env:
-          VITE_FRONTEND_RELEASE: ${{ github.sha }}
           VITE_CHECKOUT_SESSION_V2: '1'
           VITE_FINALIZE_INTENT_PERSIST: '1'
           VITE_FINALIZE_INTENT_REQUIRED_FOR_PI: '1'
@@ -43,19 +47,16 @@ jobs:
         run: npm run build
       - name: Apache routing, regression, and compatibility
         run: node scripts/release-safety/run-gate.mjs
-        env:
-          VITE_FRONTEND_RELEASE: ${{ github.sha }}
       - name: Mocked booking browser gate
         run: node scripts/release-safety/run-browser-gate.mjs
-      - name: Record mocked browser coverage
-        run: |
-          node --input-type=module -e '
-            import fs from "node:fs";
-            const report = JSON.parse(fs.readFileSync("release-safety-report.json", "utf8"));
-            report.coverage.browser = "mocked-apache-artifact";
-            fs.writeFileSync("release-safety-report.json", JSON.stringify(report, null, 2) + "\n");
-            if (report.artifactOk !== true) process.exit(1);
-          '
+      - name: Upload Apache and browser evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: apache-browser-evidence
+          path: |
+            apache-evidence.json
+            browser-evidence.json
+          if-no-files-found: error
 
   staging-booking-integration:
     name: Isolated staging booking
@@ -82,3 +83,9 @@ jobs:
           RELEASE_STAGING_BASE_URL: ${{ secrets.RELEASE_STAGING_BASE_URL }}
           RELEASE_STAGING_STRIPE_MODE: ${{ secrets.RELEASE_STAGING_STRIPE_MODE }}
           RELEASE_STAGING_ALLOW_PAYMENT_INIT: ${{ secrets.RELEASE_STAGING_ALLOW_PAYMENT_INIT }}
+      - name: Upload staging evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-evidence
+          path: staging-evidence.json
+          if-no-files-found: error

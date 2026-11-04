@@ -46,8 +46,9 @@ import {
   assessPaymentContractBundle,
   manifestFromCompiled
 } from './lib/verifyPaymentContractBundle.mjs';
+import { probeCriticalRoutes } from './release-safety/probe.mjs';
 import { assertReleaseSafetyReport } from './release-safety/report.mjs';
-import { snapshotFrontendShell } from './release-safety/rollback.mjs';
+import { resolveSnapshotDir, restoreFrontendShell, snapshotFrontendShell } from './release-safety/rollback.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -90,6 +91,7 @@ Env vars:
   REMOTE                rsync destination (optional).
   PREVIOUS_MANIFEST     Path to previous release-manifest.json to merge from.
   VITE_FRONTEND_RELEASE Release identifier written into the manifest.
+  RELEASE_SAFETY_REPORT Verified report for that exact SHA. Required.
 
 Protected from deletion:
   uploads/              User-uploaded content.
@@ -199,12 +201,10 @@ if (paymentAssessment.compiled.frontendRelease !== releaseIdentifier) {
   );
 }
 
-if (process.env.REQUIRE_RELEASE_SAFETY_REPORT === '1') {
-  try {
-    assertReleaseSafetyReport(process.env.RELEASE_SAFETY_REPORT, releaseIdentifier);
-  } catch (error) {
-    fail(error.message);
-  }
+try {
+  assertReleaseSafetyReport(process.env.RELEASE_SAFETY_REPORT, releaseIdentifier);
+} catch (error) {
+  fail(error.message);
 }
 
 const paymentManifest = manifestFromCompiled(paymentAssessment, process.env);
@@ -243,31 +243,45 @@ if (webrootEnv) {
     console.log('[deploy-frontend-safe] DRY RUN — no files will be written.');
   }
 
-  if (!dryRun && process.env.REQUIRE_RELEASE_SAFETY_REPORT === '1') {
-    const snap = snapshotFrontendShell(
-      validation.resolved,
-      path.join(validation.resolved, '.release-snapshots', releaseIdentifier)
-    );
-    console.log(`[deploy-frontend-safe] snapshot: ${snap.snapshotDir} (${snap.files.join(', ')})`);
+  const snapshotDir = dryRun ? null : resolveSnapshotDir(validation.resolved, releaseIdentifier);
+  const snap = snapshotDir
+    ? snapshotFrontendShell(validation.resolved, snapshotDir)
+    : null;
+  if (snap) {
+    console.log(`[deploy-frontend-safe] snapshot: ${snap.snapshotDir} (${snap.files.join(', ') || 'empty shell'})`);
   }
 
-  const result = executeLocalPublish({
-    distDir,
-    webroot: validation.resolved,
-    uploadsDir: path.join(repoRoot, 'uploads'),
-    dryRun,
-    requirePaymentContract: true
-  });
-
-  const avifMimeUpdated = ensureAvifMimeType(validation.resolved, { dryRun });
-  console.log(
-    `[deploy-frontend-safe] avif-mime: ${avifMimeUpdated ? (dryRun ? 'would-update' : 'updated') : 'already-configured'}`
-  );
+  let result;
+  try {
+    result = executeLocalPublish({
+      distDir,
+      webroot: validation.resolved,
+      uploadsDir: path.join(repoRoot, 'uploads'),
+      dryRun,
+      requirePaymentContract: true
+    });
+    const avifMimeUpdated = ensureAvifMimeType(validation.resolved, { dryRun });
+    console.log(
+      `[deploy-frontend-safe] avif-mime: ${avifMimeUpdated ? (dryRun ? 'would-update' : 'updated') : 'already-configured'}`
+    );
+    if (!dryRun) {
+      await probeCriticalRoutes(validation.resolved);
+      console.log('[deploy-frontend-safe] critical routes stayed on /search and /checkout');
+    }
+  } catch (error) {
+    if (snap) {
+      restoreFrontendShell(validation.resolved, snap.snapshotDir);
+      console.error(`[deploy-frontend-safe] shell restored from ${snap.snapshotDir}`);
+    }
+    fail(error.message);
+  }
 
   for (const entry of result.log) {
     console.log(`[deploy-frontend-safe] ${entry.phase}: ${entry.files} files${entry.dryRun ? ' (dry-run)' : ''}`);
   }
 
+} else if (!dryRun) {
+  fail('Remote publication cannot snapshot or roll back the live shell. Use WEBROOT on the server.');
 } else {
   // Optional: remote rsync
   console.log(`[deploy-frontend-safe] REMOTE mode → ${remoteEnv}`);

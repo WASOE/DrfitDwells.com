@@ -17,9 +17,27 @@ export function assertRollbackAllowed(webroot, env = process.env) {
   return resolved;
 }
 
-export function snapshotFrontendShell(webroot, snapshotDir) {
+export function assertSnapshotOutsideWebroot(webroot, snapshotDir) {
   const root = path.resolve(webroot);
   const dest = path.resolve(snapshotDir);
+  if (dest === root || dest.startsWith(`${root}${path.sep}`)) {
+    throw new Error(`Release snapshots must not be stored inside the public document root: ${dest}`);
+  }
+  return dest;
+}
+
+export function resolveSnapshotDir(webroot, releaseSha) {
+  const safe = String(releaseSha || '');
+  if (!/^[a-f0-9]{40,64}$/i.test(safe)) {
+    throw new Error('Snapshot directory requires the full release SHA.');
+  }
+  const dest = path.resolve(path.resolve(webroot), '..', 'private-release-snapshots', safe);
+  return assertSnapshotOutsideWebroot(webroot, dest);
+}
+
+export function snapshotFrontendShell(webroot, snapshotDir) {
+  const root = path.resolve(webroot);
+  const dest = assertSnapshotOutsideWebroot(root, snapshotDir);
   fs.mkdirSync(dest, { recursive: true });
   const copied = [];
   for (const name of SHELL_FILES) {
@@ -30,6 +48,7 @@ export function snapshotFrontendShell(webroot, snapshotDir) {
   }
   fs.writeFileSync(path.join(dest, 'snapshot.json'), `${JSON.stringify({
     createdAt: new Date().toISOString(),
+    webroot: root,
     files: copied
   }, null, 2)}\n`);
   return { snapshotDir: dest, files: copied };
@@ -38,15 +57,22 @@ export function snapshotFrontendShell(webroot, snapshotDir) {
 export function restoreFrontendShell(webroot, snapshotDir) {
   const root = path.resolve(webroot);
   const source = path.resolve(snapshotDir);
+  const metaPath = path.join(source, 'snapshot.json');
+  if (!fs.existsSync(metaPath)) {
+    throw new Error('Snapshot metadata is missing; rollback refused.');
+  }
+  const copied = JSON.parse(fs.readFileSync(metaPath, 'utf8')).files || [];
   const restored = [];
   for (const name of SHELL_FILES) {
     const file = path.join(source, name);
-    if (!fs.existsSync(file)) continue;
-    fs.copyFileSync(file, path.join(root, name));
-    restored.push(name);
-  }
-  if (!restored.includes('index.html') || !restored.includes('.htaccess')) {
-    throw new Error('Snapshot is missing index.html or .htaccess; rollback refused.');
+    const dest = path.join(root, name);
+    if (copied.includes(name) && fs.existsSync(file)) {
+      fs.copyFileSync(file, dest);
+      restored.push(name);
+    } else if (!copied.includes(name) && fs.existsSync(dest)) {
+      fs.unlinkSync(dest);
+      restored.push(`removed:${name}`);
+    }
   }
   return { restored };
 }

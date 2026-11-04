@@ -33,6 +33,9 @@ coverage/
 playwright-report/
 test-results/
 release-safety-report.json
+apache-evidence.json
+browser-evidence.json
+staging-evidence.json
 tests/e2e/.auth/
 
 # Temporary files

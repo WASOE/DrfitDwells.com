@@ -5,10 +5,9 @@
  * already copied are kept so browsers that loaded the previous shell can
  * still fetch it. The API is not restarted.
  */
-import path from 'node:path';
 import { executeLocalPublish } from '../deploy-frontend-safe.lib.mjs';
 import { assertReleaseSafetyReport } from './report.mjs';
-import { restoreFrontendShell, snapshotFrontendShell } from './rollback.mjs';
+import { resolveSnapshotDir, restoreFrontendShell, snapshotFrontendShell } from './rollback.mjs';
 
 export async function activateTestedRelease({
   distDir,
@@ -17,13 +16,11 @@ export async function activateTestedRelease({
   releaseSha,
   probe,
   uploadsDir = null,
-  requirePaymentContract = true
+  requirePaymentContract = true,
+  verifyRun
 }) {
-  assertReleaseSafetyReport(reportPath, releaseSha);
-  const snapshot = snapshotFrontendShell(
-    webroot,
-    path.join(webroot, '.release-snapshots', releaseSha)
-  );
+  assertReleaseSafetyReport(reportPath, releaseSha, verifyRun ? { verifyRun } : undefined);
+  const snapshot = snapshotFrontendShell(webroot, resolveSnapshotDir(webroot, releaseSha));
   executeLocalPublish({
     distDir,
     webroot,
