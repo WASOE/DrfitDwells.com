@@ -60,13 +60,13 @@ function startStripeMock() {
   phase('docker run stripe-mock');
   let docker = { status: 1, signal: null };
   try {
-    // Inherit stdio. Capturing docker pull progress overflows spawnSync's
-    // buffer and aborts the process before the booking checks run.
+    // Ignore stdio. Inheriting it lets docker close this process's stdin on
+    // detach, and capturing the pull log overflows spawnSync and aborts it.
     docker = spawnSync('docker', [
       'run', '--rm', '-d', '--name', name,
       '-p', '127.0.0.1:12111:12111',
       'stripe/stripe-mock'
-    ], { stdio: 'inherit' });
+    ], { stdio: 'ignore' });
   } catch (error) {
     phase(`docker spawn failed ${error.code || error.message}`);
   }
@@ -149,9 +149,11 @@ async function run() {
   phase('starting stripe-mock');
   const stopMock = startStripeMock();
   phase('stripe-mock launched');
+  phase('opening a free port');
   let server = null;
   let serverLog = '';
   const apiPort = await freePort();
+  phase(`api port ${apiPort}`);
   const env = stagingEnv(apiPort);
   try {
     await waitForHttp(STRIPE_API_BASE, 'stripe-mock');
@@ -213,7 +215,14 @@ for (const signal of ['SIGHUP', 'SIGTERM', 'SIGINT']) {
   });
 }
 
-run().catch((error) => {
+const stayAlive = setInterval(() => {}, 60_000);
+run().then(() => {
+  if (!fs.existsSync(evidencePath) || fs.statSync(evidencePath).size < 20) {
+    throw new Error('Staging finished without an evidence file.');
+  }
+}).catch((error) => {
   console.error(redact(error.stack || error.message || error));
-  process.exit(1);
+  process.exitCode = 1;
+}).finally(() => {
+  clearInterval(stayAlive);
 });
