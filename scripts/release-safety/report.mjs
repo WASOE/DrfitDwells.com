@@ -122,6 +122,14 @@ function sameEvidence(actual, expected, label) {
   }
 }
 
+export function assertCheckedOutSha({ headSha, evidenceSha, lookup }) {
+  if (headSha === evidenceSha) return;
+  const commit = lookup(evidenceSha);
+  const parents = Array.isArray(commit?.parents) ? commit.parents : [];
+  if (commit?.sha === evidenceSha && parents.includes(headSha)) return;
+  throw new Error(`GitHub Actions run is SHA ${headSha}, not the tested commit ${evidenceSha}.`);
+}
+
 export function verifyGitHubEvidence({ runId, sha, report, spawn = spawnSync, tmp = os.tmpdir() }) {
   if (!/^\d+$/.test(String(runId || ''))) {
     throw new Error('Release report has no numeric GitHub Actions run id.');
@@ -134,9 +142,22 @@ export function verifyGitHubEvidence({ runId, sha, report, spawn = spawnSync, tm
   if (data.status !== 'completed' || data.conclusion !== 'success') {
     throw new Error(`GitHub Actions run ${runId} concluded ${data.conclusion || data.status}. Refusing to publish.`);
   }
-  if (data.headSha !== sha) {
-    throw new Error(`GitHub Actions run ${runId} is SHA ${data.headSha}, not ${sha}.`);
-  }
+  assertCheckedOutSha({
+    headSha: data.headSha,
+    evidenceSha: sha,
+    lookup: (commitSha) => {
+      const commit = spawn('gh', [
+        'api',
+        `repos/WASOE/DrfitDwells.com/commits/${commitSha}`,
+        '--jq',
+        '{sha:.sha,parents:[.parents[].sha]}'
+      ], { encoding: 'utf8' });
+      if (commit.status !== 0) {
+        throw new Error(`Tested commit ${commitSha} could not be verified. Refusing to publish.`);
+      }
+      return JSON.parse(commit.stdout);
+    }
+  });
   const dir = fs.mkdtempSync(path.join(tmp, 'dd-evidence-'));
   try {
     for (const name of ['apache-browser-evidence', 'staging-evidence']) {

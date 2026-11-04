@@ -27,7 +27,7 @@ Both jobs upload evidence only after they pass. A coverage label or an environme
 - `apache-browser-evidence` — `/search` and `/checkout` stayed on path, and the historical redirect failed
 - `staging-evidence` — quote, finalize-intent, then create-payment-intent each returned HTTP 200 `success: true`, with a finalize hash and a `pi_` client secret
 
-The publisher re-downloads those artifacts with `gh` and rejects a report that does not match them. Create the report from the green run, which checks it again:
+The report SHA is the commit GitHub built. On a pull request that is the merge commit, which must have the branch head as a parent. On `master` it is the pushed commit. Create the report from that green run; publication downloads the artifacts again and rejects any difference.
 
 ```bash
 node scripts/release-safety/assemble-report.mjs <run-id> <full-sha>

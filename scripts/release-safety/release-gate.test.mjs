@@ -17,7 +17,7 @@ import {
   decideRelease
 } from './frontend-compat.mjs';
 import { faultyIndexRedirect } from './routing-contract.mjs';
-import { assertReleaseSafetyReport, assertStagingEvidence, buildPassingEvidence } from './report.mjs';
+import { assertCheckedOutSha, assertReleaseSafetyReport, assertStagingEvidence, buildPassingEvidence } from './report.mjs';
 import { resolveSnapshotDir, restoreFrontendShell, snapshotFrontendShell } from './rollback.mjs';
 import { idsThatFailed, runRoutingAgainstHtaccess } from './run-routing.mjs';
 
@@ -185,6 +185,24 @@ test('rollback restores the shell and keeps the previous hashed asset', async ()
   fs.writeFileSync(path.join(root, 'index.html'), 'broken-shell');
   restoreFrontendShell(root, snap.snapshotDir);
   assert.equal(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), 'new-shell');
+});
+
+test('the tested commit may be the pull request merge of the branch head', () => {
+  const head = 'b'.repeat(40);
+  const tested = 'c'.repeat(40);
+  assert.doesNotThrow(() => assertCheckedOutSha({
+    headSha: head,
+    evidenceSha: tested,
+    lookup: () => ({ sha: tested, parents: ['a'.repeat(40), head] })
+  }));
+  assert.throws(
+    () => assertCheckedOutSha({
+      headSha: head,
+      evidenceSha: 'd'.repeat(40),
+      lookup: () => ({ sha: 'd'.repeat(40), parents: ['a'.repeat(40)] })
+    }),
+    /tested commit/
+  );
 });
 
 test('publication refuses a report that did not pass staging coverage', () => {
