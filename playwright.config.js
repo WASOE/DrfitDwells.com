@@ -36,7 +36,7 @@ module.exports = defineConfig({
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 }
       },
-      testIgnore: ['**/admin-auth/**', '**/ops/**', '**/permissions/operator-boundary.spec.js', '**/setup/**']
+      testIgnore: ['**/admin-auth/**', '**/ops/**', '**/permissions/operator-boundary.spec.js', '**/setup/**', '**/release-safety/**']
     },
     {
       name: 'chromium-admin-auth',
@@ -73,7 +73,36 @@ module.exports = defineConfig({
       use: {
         ...devices['Pixel 7']
       },
-      testIgnore: ['**/admin-auth/**', '**/ops/**', '**/permissions/**', '**/api/**', '**/setup/**', '**/attribution/**']
+      testIgnore: ['**/admin-auth/**', '**/ops/**', '**/permissions/**', '**/api/**', '**/setup/**', '**/attribution/**', '**/release-safety/**']
+    },
+    {
+      name: 'release-safety',
+      testMatch: ['**/release-safety/booking-protection.spec.js'],
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+        baseURL: process.env.RELEASE_GATE_BASE_URL,
+        ignoreHTTPSErrors: true
+      }
+    },
+    {
+      name: 'release-safety-mobile',
+      testMatch: ['**/release-safety/booking-protection.spec.js'],
+      use: {
+        ...devices['Pixel 7'],
+        baseURL: process.env.RELEASE_GATE_BASE_URL,
+        ignoreHTTPSErrors: true
+      }
+    },
+    {
+      name: 'release-safety-staging',
+      testMatch: ['**/release-safety/staging-booking.integration.spec.js'],
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+        baseURL: process.env.RELEASE_STAGING_BASE_URL,
+        ignoreHTTPSErrors: true
+      }
     }
   ]
 });

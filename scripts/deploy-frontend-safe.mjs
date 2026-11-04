@@ -46,6 +46,8 @@ import {
   assessPaymentContractBundle,
   manifestFromCompiled
 } from './lib/verifyPaymentContractBundle.mjs';
+import { assertReleaseSafetyReport } from './release-safety/report.mjs';
+import { snapshotFrontendShell } from './release-safety/rollback.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -197,6 +199,14 @@ if (paymentAssessment.compiled.frontendRelease !== releaseIdentifier) {
   );
 }
 
+if (process.env.REQUIRE_RELEASE_SAFETY_REPORT === '1') {
+  try {
+    assertReleaseSafetyReport(process.env.RELEASE_SAFETY_REPORT, releaseIdentifier);
+  } catch (error) {
+    fail(error.message);
+  }
+}
+
 const paymentManifest = manifestFromCompiled(paymentAssessment, process.env);
 const nextManifest = mergeReleaseManifest(
   previousManifest,
@@ -231,6 +241,14 @@ if (webrootEnv) {
   console.log(`[deploy-frontend-safe] LOCAL mode → ${validation.resolved}`);
   if (dryRun) {
     console.log('[deploy-frontend-safe] DRY RUN — no files will be written.');
+  }
+
+  if (!dryRun && process.env.REQUIRE_RELEASE_SAFETY_REPORT === '1') {
+    const snap = snapshotFrontendShell(
+      validation.resolved,
+      path.join(validation.resolved, '.release-snapshots', releaseIdentifier)
+    );
+    console.log(`[deploy-frontend-safe] snapshot: ${snap.snapshotDir} (${snap.files.join(', ')})`);
   }
 
   const result = executeLocalPublish({

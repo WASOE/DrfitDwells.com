@@ -1,0 +1,84 @@
+name: Release safety
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  artifact-and-browser:
+    name: Apache, browser, and payment contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install Apache 2.4
+        run: sudo apt-get update && sudo apt-get install -y apache2 openssl
+      - run: npm ci
+      - run: npm ci
+        working-directory: client
+      - name: Install the prerender browser
+        run: npx playwright install --with-deps chromium
+      - name: Locate Chrome for prerender
+        run: |
+          CHROME=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -path '*chrome-linux*' | head -1)
+          test -n "$CHROME"
+          echo "PRERENDER_BROWSER_PATH=$CHROME" >> "$GITHUB_ENV"
+      - name: Build the production artifact
+        working-directory: client
+        env:
+          VITE_FRONTEND_RELEASE: ${{ github.sha }}
+          VITE_CHECKOUT_SESSION_V2: '1'
+          VITE_FINALIZE_INTENT_PERSIST: '1'
+          VITE_FINALIZE_INTENT_REQUIRED_FOR_PI: '1'
+          VITE_STRIPE_PUBLISHABLE_KEY: pk_test_release_gate_not_a_secret
+          PRERENDER_REQUIRE_BROWSER: '1'
+        run: npm run build
+      - name: Apache routing, regression, and compatibility
+        run: node scripts/release-safety/run-gate.mjs
+        env:
+          VITE_FRONTEND_RELEASE: ${{ github.sha }}
+      - name: Mocked booking browser gate
+        run: node scripts/release-safety/run-browser-gate.mjs
+      - name: Record mocked browser coverage
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const report = JSON.parse(fs.readFileSync("release-safety-report.json", "utf8"));
+            report.coverage.browser = "mocked-apache-artifact";
+            fs.writeFileSync("release-safety-report.json", JSON.stringify(report, null, 2) + "\n");
+            if (report.artifactOk !== true) process.exit(1);
+          '
+
+  staging-booking-integration:
+    name: Isolated staging booking
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Install the staging browser
+        run: npx playwright install --with-deps chromium
+      - name: Fail closed without isolated staging
+        run: node scripts/release-safety/require-staging-env.mjs
+        env:
+          RELEASE_STAGING_BASE_URL: ${{ secrets.RELEASE_STAGING_BASE_URL }}
+          RELEASE_STAGING_STRIPE_MODE: ${{ secrets.RELEASE_STAGING_STRIPE_MODE }}
+          RELEASE_STAGING_ALLOW_PAYMENT_INIT: ${{ secrets.RELEASE_STAGING_ALLOW_PAYMENT_INIT }}
+      - name: Staging booking and test-mode payment initialization
+        run: npx playwright test tests/e2e/release-safety/staging-booking.integration.spec.js --project=release-safety-staging
+        env:
+          RELEASE_STAGING_BASE_URL: ${{ secrets.RELEASE_STAGING_BASE_URL }}
+          RELEASE_STAGING_STRIPE_MODE: ${{ secrets.RELEASE_STAGING_STRIPE_MODE }}
+          RELEASE_STAGING_ALLOW_PAYMENT_INIT: ${{ secrets.RELEASE_STAGING_ALLOW_PAYMENT_INIT }}
