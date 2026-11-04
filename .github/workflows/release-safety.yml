@@ -42,7 +42,7 @@ jobs:
           VITE_CHECKOUT_SESSION_V2: '1'
           VITE_FINALIZE_INTENT_PERSIST: '1'
           VITE_FINALIZE_INTENT_REQUIRED_FOR_PI: '1'
-          VITE_STRIPE_PUBLISHABLE_KEY: pk_test_release_gate_not_a_secret
+          VITE_STRIPE_PUBLISHABLE_KEY: pk_test_releasegatenotasecret
           PRERENDER_REQUIRE_BROWSER: '1'
         run: npm run build
       - name: Apache routing, regression, and compatibility
