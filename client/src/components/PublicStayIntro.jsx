@@ -19,10 +19,33 @@ export default function PublicStayIntro({ slug, children }) {
   const copy = t(`paidStaysBulgaria.stays.${entry.stayId}`, { returnObjects: true });
   const image = PAID_TRAFFIC_STAY_META.find((stay) => stay.id === entry.stayId)?.fallbackImage;
   const staySlug = entry.path.split('/').pop();
+  const stayGeo =
+    staySlug === 'the-cabin'
+      ? {
+          location: language === 'bg'
+            ? 'Бачево, район Разлог, югозападна България'
+            : 'Near Bachevo, in the Razlog area of southwestern Bulgaria',
+          occupancy: 2
+        }
+      : staySlug === 'stone-house'
+        ? {
+            location: language === 'bg'
+              ? 'Черешово / Орцево, Родопите, България'
+              : 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria',
+            occupancy: 6
+          }
+        : {
+            location: language === 'bg'
+              ? 'Черешово / Орцево, Родопите, България'
+              : 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria',
+            occupancy: 2
+          };
   const jsonLd = [
     buildStayLodgingJsonLd({
       name: copy.title,
       description: copy.fitLine,
+      location: stayGeo.location,
+      occupancy: stayGeo.occupancy,
       imageUrl: image,
       slug: staySlug,
       language
@@ -33,7 +56,7 @@ export default function PublicStayIntro({ slug, children }) {
   return (
     <>
       <Seo
-        title={`${copy.title} | Drift & Dwells`}
+        title={copy.metaTitle || `${copy.title} | Drift & Dwells`}
         description={copy.fitLine}
         canonicalPath={entry.path}
         hreflangAlternates={buildHreflangAlternates(entry.path)}

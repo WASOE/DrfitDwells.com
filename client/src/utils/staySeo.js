@@ -18,6 +18,7 @@ export function buildStayLodgingJsonLd({
   name,
   description,
   location,
+  occupancy,
   images,
   imageUrl,
   slug,
@@ -53,7 +54,16 @@ export function buildStayLodgingJsonLd({
   if (location) {
     data.address = {
       '@type': 'PostalAddress',
+      addressCountry: 'BG',
       addressLocality: location
+    };
+  }
+
+  const maxOccupancy = Number(occupancy);
+  if (Number.isFinite(maxOccupancy) && maxOccupancy > 0) {
+    data.occupancy = {
+      '@type': 'QuantitativeValue',
+      maxValue: maxOccupancy
     };
   }
 

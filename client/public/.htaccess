@@ -1,5 +1,17 @@
 RewriteEngine On
 
+# Canonical host: HTTP → HTTPS, www → apex. Preserve path and query (QSA).
+# Cloudflare may terminate TLS; honour X-Forwarded-Proto as well as HTTPS.
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
+RewriteRule ^ https://driftdwells.com%{REQUEST_URI} [R=301,L,QSA]
+
+RewriteCond %{HTTP_HOST} ^www\.driftdwells\.com$ [NC]
+RewriteRule ^ https://driftdwells.com%{REQUEST_URI} [R=301,L,QSA]
+
+# Avoid duplicate homepage HTML at /index.html
+RewriteRule ^index\.html$ / [R=301,L,QSA]
+
 # Keep app shell + service worker revalidation strict to avoid stale bundles.
 <IfModule mod_headers.c>
   <FilesMatch "\.(js|css|woff2|png|jpg|jpeg|webp|avif|svg)$">

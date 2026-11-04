@@ -77,7 +77,7 @@
       "sheetAria": "Choose one of four stays",
       "close": "Close",
       "stays": {
-        "the-cabin": { "fit": "Couples · max remoteness", "price": "From €55/night" },
+        "the-cabin": { "fit": "Couples · max remoteness", "price": "From €100/night" },
         "valley-a-frame": { "fit": "Couples · comfort + views", "price": "From €60/night" },
         "valley-lux-cabin": { "fit": "Couples · top comfort", "price": "€110/night base rate; seasonal rates vary" },
         "valley-stone-house": { "fit": "Groups & families", "price": "From €75/night" }
@@ -125,8 +125,9 @@
     "stays": {
       "the-cabin": {
         "title": "The Cabin",
-        "price": "From €55/night",
-        "fitLine": "For couples who want the rawest and most remote version.",
+        "metaTitle": "The Cabin near Bachevo | Off-Grid for 2 | Drift & Dwells",
+        "price": "From €100/night",
+        "fitLine": "Private off-grid forest cabin for two near Bachevo, in the Razlog area of southwestern Bulgaria—no guest Wi-Fi, wood heat, and remote forest-road access.",
         "facts": [
           "Rugged mountain access — plan for the approach",
           "No mains electricity — solar and gas only",
@@ -142,8 +143,9 @@
       },
       "valley-a-frame": {
         "title": "The Valley A-Frame",
+        "metaTitle": "Valley A-Frame Cabin | Rhodope Mountains | Drift & Dwells",
         "price": "From €60/night",
-        "fitLine": "For couples who want off-grid with comfort and mountain views.",
+        "fitLine": "Minimal A-frame cabin for two in The Valley near Chereshovo and Ortsevo in the Rhodope Mountains, with shared outdoor spaces and Starlink in the Stone House.",
         "facts": [
           "Elevated Rhodope setting around 1,550m",
           "Focused, minimal interiors",
@@ -159,8 +161,9 @@
       },
       "valley-stone-house": {
         "title": "The Valley Stone House",
+        "metaTitle": "Valley Stone House | Sleeps 6 | Drift & Dwells",
         "price": "From €75/night",
-        "fitLine": "For groups or families who want character, history, and more space.",
+        "fitLine": "Historic Stone House for up to six guests in The Valley near Chereshovo and Ortsevo, with Starlink on site and shared outdoor gathering spaces.",
         "facts": [
           "Historic stone house, shared spaces",
           "Starlink in the stone house",
@@ -176,8 +179,9 @@
       },
       "valley-lux-cabin": {
         "title": "The Valley Lux Cabin",
+        "metaTitle": "Valley Luxury Cabin for 2 | Drift & Dwells",
         "price": "€110/night base rate; seasonal rates vary",
-        "fitLine": "For guests who want the most comfortable Valley stay.",
+        "fitLine": "Private Luxury Cabin for two in The Valley near Chereshovo and Ortsevo—elevated comfort and mountain views; Starlink available in the Stone House.",
         "facts": [
           "Private cabin, elevated comfort",
           "Panoramic mountain views",

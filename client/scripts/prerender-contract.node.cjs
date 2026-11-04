@@ -50,8 +50,12 @@ function fixture(route) {
   const faqCopy = route === '/cabin/faq'
     ? '<p>Is this a public FAQ? This answer is visible in the public FAQ.</p>'
     : '';
+  const robotsMeta = routeEntry.robots === 'noindex'
+    ? '<meta name="robots" content="noindex,nofollow">'
+    : '';
   return `<!doctype html><html lang="${locale}"><head><title>${title}</title>
     <meta name="description" content="${description}">
+    ${robotsMeta}
     <link rel="canonical" href="${canonical}">
     ${alternates}
     <meta property="og:title" content="${title.replace(/&amp;/g, '&')}">
@@ -68,13 +72,19 @@ function fixture(route) {
     ${faqCopy}<p>${'Useful public accommodation information. '.repeat(8)}</p></main></div></body></html>`;
 }
 
-test('finite registry includes eligible localized public routes, not private/transaction/noindex routes', () => {
-  assert.equal(ROUTES.length, 34);
+test('finite registry includes eligible localized public routes, not private/transaction routes', () => {
+  assert.equal(ROUTES.length, 38);
   assert.ok(!ROUTES.includes('/off-grid-stays-bulgaria'));
   assert.ok(!ROUTES.includes('/bg/off-grid-stays-bulgaria'));
   assert.equal(new Set(ROUTES).size, ROUTES.length);
-  for (const route of ['/build', '/bg/build', '/bg/about', '/bg/cabin/faq', '/search', '/terms', '/privacy',
-    '/career', '/press', '/cancellation-policy', '/guides/the-valley', '/guides/the-cabin',
+  // Utility legal/career routes are intentionally prerendered with robots:noindex.
+  for (const route of ['/privacy', '/terms', '/cancellation-policy', '/career']) {
+    assert.ok(ROUTES.includes(route), route);
+    const entry = registry.find((item) => item.path === route);
+    assert.equal(entry?.robots, 'noindex');
+  }
+  for (const route of ['/build', '/bg/build', '/bg/about', '/bg/cabin/faq', '/search',
+    '/press', '/guides/the-valley', '/guides/the-cabin',
     '/gift-vouchers/success', '/gift-vouchers/redeem', '/stays/the-cabin/confirm',
     '/booking-success/id', '/my-trip/id/valley-guide', '/ops', '/creator', '/login']) {
     assert.ok(!ROUTES.includes(route), route);
@@ -140,7 +150,7 @@ test('artifact contract rejects missing, wrong-route, generic, loading, noindex 
       fs.mkdirSync(path.dirname(output), { recursive: true });
       fs.writeFileSync(output, fixture(route));
     }
-    assert.equal(validateArtifacts(tmp).length, 34);
+    assert.equal(validateArtifacts(tmp).length, 38);
     fs.writeFileSync(artifactPath(tmp, '/'), '<html><div id="root"></div></html>');
     assert.throws(() => validateArtifacts(tmp));
   } finally {

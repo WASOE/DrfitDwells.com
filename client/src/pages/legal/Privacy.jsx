@@ -4,7 +4,7 @@ const Privacy = () => {
   return (
     <DocumentViewer
       title="Privacy Policy"
-      description="Learn how we collect, use, and protect your personal information when you book a stay or interact with our website."
+      description="Learn how Drift & Dwells collects, uses, and protects personal information when you browse the site, request availability, or complete a booking. The full Privacy Policy is provided in the document below."
       canonicalPath="/privacy"
       noindex
       pdfPath="/uploads/PDFs/drift-dwells-docs-v2/privacy.pdf"
