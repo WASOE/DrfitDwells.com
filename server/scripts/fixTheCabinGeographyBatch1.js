@@ -2,31 +2,96 @@
 /**
  * Idempotent content fix: remove outdated Pirin geography for The Cabin.
  *
- * Does NOT change slugs, IDs, pricing, inventory, or booking contracts.
- * Intended for operator-approved Mongo updates (not a schema migration).
+ * Changes only incorrect geographical references. Existing descriptions are
+ * edited in place. Amenities, prices, slugs, IDs and booking fields are never
+ * written.
  *
  * Usage (from server/):
  *   node scripts/fixTheCabinGeographyBatch1.js --dry-run
  *   CONFIRM_CABIN_GEOGRAPHY_FIX=1 node scripts/fixTheCabinGeographyBatch1.js
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
-const mongoose = require('mongoose');
-const Cabin = require('../models/Cabin');
-
 const EN_LOCATION = 'Near Bachevo, in the Razlog area of southwestern Bulgaria';
 const BG_LOCATION = 'Край Бачево, в района на Разлог, югозападна България';
 
-const EN_DESCRIPTION =
-  "Near Bachevo, in the Razlog area of southwestern Bulgaria, The Cabin is a testament to the beauty of subtraction. Formerly Bucephalus, this is a sanctuary for the over-connected. Off-grid, wood stove, composting toilet, and a wood-fired hot tub.";
-
-const BG_DESCRIPTION =
-  'Край Бачево, в района на Разлог в югозападна България, Къщата е доказателство за красотата на изваждането. Позната преди като „Буцефал“, тя е убежище за свръхсвързаните. Офгрид, с печка на дърва, компостна тоалетна и джакузи, подгрявано на дърва.';
+const DESCRIPTION_REPLACEMENTS = [
+  [/Nestled in the rugged folds of the Pirin Mountains/gi, EN_LOCATION],
+  [/in the rugged folds of the Pirin Mountains/gi, 'near Bachevo, in the Razlog area of southwestern Bulgaria'],
+  [/Near Bachevo, Pirin Mountains, Bulgaria/gi, EN_LOCATION],
+  [/Pirin mountains, near Bachevo/gi, EN_LOCATION],
+  [/Pirin Mountains/g, 'Razlog area of southwestern Bulgaria'],
+  [/Pirin mountains/g, 'Razlog area of southwestern Bulgaria'],
+  [/Скътана в суровите гънки на Пирин/g, 'Край Бачево, в района на Разлог в югозападна България'],
+  [/Край Бачево, Пирин планина, България/g, BG_LOCATION],
+  [/Пирин планина, край Бачево/g, BG_LOCATION],
+  [/Пирин планина/g, 'района на Разлог'],
+  [/\bPirin\b/g, 'Razlog area'],
+  [/Пирин/g, 'Разлог']
+];
 
 function hasPirin(value) {
   return /pirin|пирин/i.test(String(value || ''));
 }
 
+function scrubGeographyText(value) {
+  const original = String(value || '');
+  if (!hasPirin(original)) return original;
+  let next = original;
+  for (const [pattern, replacement] of DESCRIPTION_REPLACEMENTS) {
+    next = next.replace(pattern, replacement);
+  }
+  return next;
+}
+
+function canonicalLocation(language, value) {
+  if (!hasPirin(value)) return value || '';
+  return language === 'bg' ? BG_LOCATION : EN_LOCATION;
+}
+
+function buildGeographyUpdate(cabin) {
+  const $set = {};
+  const notes = [];
+
+  const nextLocation = canonicalLocation('en', cabin.location);
+  if (nextLocation !== (cabin.location || '')) {
+    $set.location = nextLocation;
+    notes.push('location');
+  }
+
+  const bgLocation = canonicalLocation('bg', cabin.i18n?.bg?.location);
+  if (bgLocation !== (cabin.i18n?.bg?.location || '')) {
+    $set['i18n.bg.location'] = bgLocation;
+    notes.push('i18n.bg.location');
+  }
+
+  const enLocation = canonicalLocation('en', cabin.i18n?.en?.location);
+  if (cabin.i18n?.en?.location && enLocation !== cabin.i18n.en.location) {
+    $set['i18n.en.location'] = enLocation;
+    notes.push('i18n.en.location');
+  }
+
+  for (const [path, current] of [
+    ['description', cabin.description],
+    ['i18n.bg.description', cabin.i18n?.bg?.description],
+    ['i18n.en.description', cabin.i18n?.en?.description]
+  ]) {
+    if (!current || !hasPirin(current)) continue;
+    const next = scrubGeographyText(current);
+    if (hasPirin(next)) {
+      throw new Error(`Refusing to write ${path}: a Pirin reference remained after surgical replacement`);
+    }
+    if (next !== current) {
+      $set[path] = next;
+      notes.push(path);
+    }
+  }
+
+  return { $set, notes, amenityCount: Array.isArray(cabin.amenities) ? cabin.amenities.length : 0 };
+}
+
 async function main() {
+  require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+  const mongoose = require('mongoose');
+  const Cabin = require('../models/Cabin');
   const dryRun = process.argv.includes('--dry-run');
   const confirmed = process.env.CONFIRM_CABIN_GEOGRAPHY_FIX === '1';
   if (!dryRun && !confirmed) {
@@ -50,50 +115,65 @@ async function main() {
     process.exit(1);
   }
 
-  const before = {
+  const beforeAmenities = JSON.stringify(cabin.amenities || []);
+  const { $set, notes, amenityCount } = buildGeographyUpdate(cabin);
+  console.log('before', {
     id: String(cabin._id),
     slug: cabin.slug,
     location: cabin.location,
     bgLocation: cabin.i18n?.bg?.location,
     descriptionHasPirin: hasPirin(cabin.description),
-    bgDescriptionHasPirin: hasPirin(cabin.i18n?.bg?.description)
-  };
-  console.log('before', before);
+    bgDescriptionHasPirin: hasPirin(cabin.i18n?.bg?.description),
+    amenityCount
+  });
+  console.log(dryRun ? 'dry-run would update' : 'updating', notes, $set);
 
-  const $set = {
-    location: EN_LOCATION,
-    'i18n.bg.location': BG_LOCATION
-  };
-  if (hasPirin(cabin.description) || !cabin.description) {
-    $set.description = EN_DESCRIPTION;
-  }
-  if (hasPirin(cabin.i18n?.bg?.description) || !cabin.i18n?.bg?.description) {
-    $set['i18n.bg.description'] = BG_DESCRIPTION;
+  if (Object.keys($set).length === 0) {
+    console.log('No geographical references to change. Amenities left untouched.');
+    await mongoose.disconnect();
+    return;
   }
 
   if (dryRun) {
-    console.log('dry-run would $set', $set);
     await mongoose.disconnect();
     return;
   }
 
   await Cabin.updateOne({ _id: cabin._id }, { $set });
   const after = await Cabin.findById(cabin._id).lean();
+  if (JSON.stringify(after.amenities || []) !== beforeAmenities) {
+    throw new Error('Amenities changed unexpectedly');
+  }
+  if (hasPirin(after.location) || hasPirin(after.description) || hasPirin(after.i18n?.bg?.location) || hasPirin(after.i18n?.bg?.description)) {
+    throw new Error('Pirin reference remained after update');
+  }
   console.log('after', {
     location: after.location,
     bgLocation: after.i18n?.bg?.location,
     descriptionHasPirin: hasPirin(after.description),
-    bgDescriptionHasPirin: hasPirin(after.i18n?.bg?.description)
+    bgDescriptionHasPirin: hasPirin(after.i18n?.bg?.description),
+    amenityCount: Array.isArray(after.amenities) ? after.amenities.length : 0
   });
   await mongoose.disconnect();
 }
 
-main().catch(async (error) => {
-  console.error(error);
-  try {
-    await mongoose.disconnect();
-  } catch {
-    /* ignore */
-  }
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(async (error) => {
+    console.error(error);
+    try {
+      await mongoose.disconnect();
+    } catch {
+      /* ignore */
+    }
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  EN_LOCATION,
+  BG_LOCATION,
+  hasPirin,
+  scrubGeographyText,
+  canonicalLocation,
+  buildGeographyUpdate
+};
