@@ -1,4 +1,6 @@
 require('dotenv').config();
+const { assertReleaseCiStagingEnv } = require('./config/assertReleaseCiStaging');
+assertReleaseCiStagingEnv();
 const { validateProductionEnvOrExit } = require('./config/validateProductionEnv');
 validateProductionEnvOrExit();
 const {
@@ -277,8 +279,8 @@ function publicStripeMode(secret = process.env.STRIPE_SECRET_KEY) {
   return 'unset';
 }
 
-app.get('/api/health', (req, res) => {
-  res.json({
+app.get('/api/health', async (req, res) => {
+  const body = {
     status: 'OK',
     message: 'Drift & Dwells Booking API is running',
     database: db.isConnected && db.isConnected() ? 'connected' : 'disconnected',
@@ -286,7 +288,29 @@ app.get('/api/health', (req, res) => {
     frontendRelease: frontendReleaseFromEnv(),
     paymentContractVersion: PRODUCTION_PAYMENT_CONTRACT_VERSION,
     stripeMode: publicStripeMode()
-  });
+  };
+  if (process.env.RELEASE_CI_STAGING === '1') {
+    const mongoose = require('mongoose');
+    let mongoHost = null;
+    let stripeApiHost = null;
+    try { mongoHost = new URL(process.env.MONGODB_URI || '').hostname; } catch { /* guarded at boot */ }
+    try { stripeApiHost = new URL(process.env.STRIPE_API_BASE || '').hostname; } catch { /* guarded at boot */ }
+    let runId = null;
+    try {
+      const marker = await mongoose.connection.db.collection('cistagingruns').findOne({ _id: 'current' });
+      runId = marker?.runId || null;
+    } catch { /* marker is required by the staging test */ }
+    body.ciStaging = {
+      isolated: true,
+      databaseName: mongoose.connection?.name || null,
+      mongoHost,
+      stripeApiHost,
+      runId,
+      emailsEnabled: false,
+      schedulersEnabled: false
+    };
+  }
+  res.json(body);
 });
 
 // --- Routes ---

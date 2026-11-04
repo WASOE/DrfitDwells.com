@@ -57,6 +57,12 @@ export function assertStagingEvidence(staging, releaseSha, runId) {
     errors.push('Staging evidence origin is missing or is production.');
   }
   if (staging.stripeMode !== 'test') errors.push('Staging evidence did not verify Stripe test mode from the server.');
+  if (staging.stripeApiHost !== '127.0.0.1' && staging.stripeApiHost !== 'localhost') {
+    errors.push('Staging Stripe API is not the isolated loopback mock.');
+  }
+  if (staging.databaseName !== 'drift-dwells-ci-staging') {
+    errors.push('Staging database is not the isolated CI database.');
+  }
   const order = stagingStepOrder(staging.responses);
   if (order.join(',') !== STAGING_ORDER.join(',')) {
     errors.push(`Staging call order ${order.join(',') || 'empty'} is not quote,finalize-intent,create-payment-intent.`);
@@ -70,10 +76,18 @@ export function assertStagingEvidence(staging, releaseSha, runId) {
   const finalize = (staging.responses || []).find((item) => item.step === 'finalize-intent');
   const payment = (staging.responses || []).find((item) => item.step === 'create-payment-intent');
   if (!finalize?.finalizeIntentHash) errors.push('Staging finalize-intent response has no finalizeIntentHash.');
-  if (typeof payment?.clientSecret !== 'string' || !payment.clientSecret.startsWith('pi_') || !payment.clientSecret.includes('_secret_')) {
-    errors.push('Staging create-payment-intent response has no test PaymentIntent client secret.');
-  }
+  errors.push(...assertRedactedPaymentSecret(payment?.clientSecret));
   return errors;
+}
+
+export function assertRedactedPaymentSecret(value) {
+  if (typeof value === 'string') {
+    return ['Staging evidence contains a raw Stripe client secret. Upload the redacted proof only.'];
+  }
+  if (!value || value.redacted !== true || value.prefix !== 'pi_' || value.hasTestSecret !== true || !(Number(value.length) >= 20)) {
+    return ['Staging create-payment-intent did not prove a redacted test PaymentIntent client secret.'];
+  }
+  return [];
 }
 
 export function buildPassingEvidence(releaseSha, workflowRunId = '9001') {
@@ -97,10 +111,12 @@ export function buildPassingEvidence(releaseSha, workflowRunId = '9001') {
       workflowRunId: String(workflowRunId),
       originHost: 'staging.example.test',
       stripeMode: 'test',
+      stripeApiHost: '127.0.0.1',
+      databaseName: 'drift-dwells-ci-staging',
       responses: [
         { step: 'quote', status: 200, success: true },
         { step: 'finalize-intent', status: 200, success: true, finalizeIntentHash: 'hash_test' },
-        { step: 'create-payment-intent', status: 200, success: true, clientSecret: 'pi_test_secret_test' }
+        { step: 'create-payment-intent', status: 200, success: true, clientSecret: { redacted: true, prefix: 'pi_', hasTestSecret: true, length: 32 } }
       ]
     }
   };

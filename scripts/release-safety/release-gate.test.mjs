@@ -16,9 +16,13 @@ import {
   assessStagingEnvironment,
   decideRelease
 } from './frontend-compat.mjs';
+import { createRequire } from 'node:module';
 import { faultyIndexRedirect } from './routing-contract.mjs';
 import { assertCheckedOutSha, assertReleaseSafetyReport, assertStagingEvidence, buildPassingEvidence } from './report.mjs';
 import { resolveSnapshotDir, restoreFrontendShell, snapshotFrontendShell } from './rollback.mjs';
+
+const require = createRequire(import.meta.url);
+const { assertReleaseCiStagingEnv } = require('../../server/config/assertReleaseCiStaging.js');
 import { idsThatFailed, runRoutingAgainstHtaccess } from './run-routing.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -223,4 +227,27 @@ test('publication refuses a report that did not pass staging coverage', () => {
   attempted.staging.responses[1].status = 500;
   attempted.staging.responses[1].success = false;
   assert.ok(assertStagingEvidence(attempted.staging, 'd'.repeat(40), '9001').some((error) => /finalize-intent/.test(error)));
+  const rawSecret = buildPassingEvidence('d'.repeat(40), '9001');
+  rawSecret.staging.responses[2].clientSecret = 'pi_test_secret_abcdefghijklmnopqrstuvwxyz';
+  assert.ok(assertStagingEvidence(rawSecret.staging, 'd'.repeat(40), '9001').some((error) => /raw Stripe client secret/.test(error)));
+});
+
+test('CI staging refuses production MongoDB and live Stripe', () => {
+  assert.throws(
+    () => assertReleaseCiStagingEnv({
+      RELEASE_CI_STAGING: '1',
+      MONGODB_URI: 'mongodb+srv://user:secret@cluster.mongodb.net/driftdwells',
+      STRIPE_SECRET_KEY: 'sk_live_not_for_ci',
+      STRIPE_API_BASE: 'https://api.stripe.com'
+    }),
+    /live Stripe|loopback|mongodb/
+  );
+  assert.doesNotThrow(() => assertReleaseCiStagingEnv({
+    RELEASE_CI_STAGING: '1',
+    MONGODB_URI: 'mongodb://127.0.0.1:27017/drift-dwells-ci-staging',
+    STRIPE_SECRET_KEY: 'sk_test_ci_staging_loopback_only',
+    STRIPE_API_BASE: 'http://127.0.0.1:12111',
+    EMAIL_DELIVERY_REQUIRED: '0'
+  }));
+  assert.deepEqual(assertReleaseCiStagingEnv({}), { ok: true, enforced: false });
 });

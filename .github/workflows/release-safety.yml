@@ -61,28 +61,47 @@ jobs:
   staging-booking-integration:
     name: Isolated staging booking
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
+    env:
+      VITE_FRONTEND_RELEASE: ${{ github.sha }}
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+      - name: Install Apache 2.4
+        run: sudo apt-get update && sudo apt-get install -y apache2 openssl
       - run: npm ci
-      - name: Install the staging browser
+      - run: npm ci
+        working-directory: server
+      - run: npm ci
+        working-directory: client
+      - name: Install the prerender and staging browser
         run: npx playwright install --with-deps chromium
-      - name: Fail closed without isolated staging
-        run: node scripts/release-safety/require-staging-env.mjs
+      - name: Locate Chrome for prerender
+        run: |
+          CHROME=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -path '*chrome-linux*' | head -1)
+          test -n "$CHROME"
+          echo "PRERENDER_BROWSER_PATH=$CHROME" >> "$GITHUB_ENV"
+      - name: Fetch public cabin originals required by the production build
+        run: node scripts/release-safety/fetch-public-media.mjs
+      - name: Build the production artifact
+        working-directory: client
         env:
-          RELEASE_STAGING_BASE_URL: ${{ secrets.RELEASE_STAGING_BASE_URL }}
-          RELEASE_STAGING_STRIPE_MODE: ${{ secrets.RELEASE_STAGING_STRIPE_MODE }}
-          RELEASE_STAGING_ALLOW_PAYMENT_INIT: ${{ secrets.RELEASE_STAGING_ALLOW_PAYMENT_INIT }}
-      - name: Staging booking and test-mode payment initialization
-        run: npx playwright test tests/e2e/release-safety/staging-booking.integration.spec.js --project=release-safety-staging
-        env:
-          RELEASE_STAGING_BASE_URL: ${{ secrets.RELEASE_STAGING_BASE_URL }}
-          RELEASE_STAGING_STRIPE_MODE: ${{ secrets.RELEASE_STAGING_STRIPE_MODE }}
-          RELEASE_STAGING_ALLOW_PAYMENT_INIT: ${{ secrets.RELEASE_STAGING_ALLOW_PAYMENT_INIT }}
+          VITE_CHECKOUT_SESSION_V2: '1'
+          VITE_FINALIZE_INTENT_PERSIST: '1'
+          VITE_FINALIZE_INTENT_REQUIRED_FOR_PI: '1'
+          VITE_STRIPE_PUBLISHABLE_KEY: pk_test_releasegatenotasecret
+          PRERENDER_REQUIRE_BROWSER: '1'
+        run: npm run build
+      - name: Isolated booking and test-mode payment initialization
+        run: node scripts/release-safety/ci-staging.mjs
       - name: Upload staging evidence
         uses: actions/upload-artifact@v4
         with:

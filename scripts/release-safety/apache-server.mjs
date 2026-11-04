@@ -36,7 +36,16 @@ function writeCertificate(dir) {
   return { key, cert };
 }
 
-function httpdConf({ runDir, docroot, httpPort, httpsPort, key, cert }) {
+function httpdConf({ runDir, docroot, httpPort, httpsPort, key, cert, apiPort = null }) {
+  const proxyModules = apiPort ? `
+LoadModule proxy_module /usr/lib/apache2/modules/mod_proxy.so
+LoadModule proxy_http_module /usr/lib/apache2/modules/mod_proxy_http.so
+` : '';
+  const proxyDirectives = apiPort ? `
+  ProxyPreserveHost On
+  ProxyPass /api/ http://127.0.0.1:${apiPort}/api/
+  ProxyPassReverse /api/ http://127.0.0.1:${apiPort}/api/
+` : '';
   return `ServerRoot /etc/apache2
 ServerName driftdwells.com
 PidFile ${runDir}/apache.pid
@@ -56,7 +65,7 @@ LoadModule alias_module /usr/lib/apache2/modules/mod_alias.so
 LoadModule headers_module /usr/lib/apache2/modules/mod_headers.so
 LoadModule ssl_module /usr/lib/apache2/modules/mod_ssl.so
 LoadModule socache_shmcb_module /usr/lib/apache2/modules/mod_socache_shmcb.so
-
+${proxyModules}
 TypesConfig /etc/mime.types
 DirectoryIndex index.html
 
@@ -64,6 +73,7 @@ DirectoryIndex index.html
   ServerName driftdwells.com
   ServerAlias www.driftdwells.com
   DocumentRoot ${docroot}
+  ${proxyDirectives}
   <Directory ${docroot}>
     Options FollowSymLinks
     AllowOverride All
@@ -78,6 +88,7 @@ DirectoryIndex index.html
   SSLCertificateFile ${cert}
   SSLCertificateKeyFile ${key}
   DocumentRoot ${docroot}
+  ${proxyDirectives}
   <Directory ${docroot}>
     Options FollowSymLinks
     AllowOverride All
@@ -114,13 +125,13 @@ export function linkReleaseDocroot(distDir, dest, htaccessText) {
   return dest;
 }
 
-export async function withApache(docroot, fn) {
+export async function withApache(docroot, fn, { apiPort = null } = {}) {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-apache-'));
   const httpPort = await freePort();
   const httpsPort = await freePort();
   const { key, cert } = writeCertificate(runDir);
   const conf = path.join(runDir, 'httpd.conf');
-  fs.writeFileSync(conf, httpdConf({ runDir, docroot, httpPort, httpsPort, key, cert }));
+  fs.writeFileSync(conf, httpdConf({ runDir, docroot, httpPort, httpsPort, key, cert, apiPort }));
   const started = spawnSync('apache2', ['-f', conf, '-k', 'start'], { encoding: 'utf8' });
   if (started.status !== 0) {
     const log = fs.existsSync(path.join(runDir, 'error.log'))

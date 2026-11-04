@@ -25,7 +25,7 @@ Both jobs upload evidence only after they pass. A coverage label or an environme
 `npm run deploy:frontend:safe` always refuses to publish unless `RELEASE_SAFETY_REPORT` matches the release SHA and a completed successful GitHub Actions run. The run must contain both artifacts:
 
 - `apache-browser-evidence` — `/search` and `/checkout` stayed on path, and the historical redirect failed
-- `staging-evidence` — quote, finalize-intent, then create-payment-intent each returned HTTP 200 `success: true`, with a finalize hash and a `pi_` client secret
+- `staging-evidence` — quote, finalize-intent, then create-payment-intent each returned HTTP 200 `success: true`, with a finalize hash and a redacted test PaymentIntent proof. A raw `clientSecret` is rejected.
 
 The report SHA is the commit GitHub built. On a pull request that is the merge commit, which must have the branch head as a parent. On `master` it is the pushed commit. Create the report from that green run; publication downloads the artifacts again and rejects any difference.
 
@@ -46,15 +46,15 @@ Remote rsync publication is refused because it cannot restore that snapshot.
 
 ## Isolated staging
 
-`Isolated staging booking` fails closed until a separate origin and database exist. Do not point it at production.
+`Isolated staging booking` builds this pull request and runs it on the GitHub runner:
 
-Repository secrets, after that host is serving this branch:
+- Apache 2.4 serves `client/dist` and proxies `/api/` to the real server on `127.0.0.1`
+- MongoDB 7 is a service container. The only allowed database is `drift-dwells-ci-staging` on loopback, seeded with a synthetic cabin and dropped when the job ends
+- Stripe is `stripe-mock` on `127.0.0.1:12111`. The server refuses `sk_live_`, Atlas, `mongodb+srv`, and any Stripe host other than loopback while `RELEASE_CI_STAGING=1`
+- SMTP, webhooks, schedulers, and booking notification workers are off
+- Playwright aborts browser requests to `driftdwells.com` and `stripe.com`
 
-- `RELEASE_STAGING_BASE_URL` — not `driftdwells.com` or `www.driftdwells.com`; the same origin must serve the site and `/api`
-- `RELEASE_STAGING_STRIPE_MODE` — `test`
-- `RELEASE_STAGING_ALLOW_PAYMENT_INIT` — `1`
-
-`/api/health` on that origin must return `stripeMode: "test"`, derived from an `sk_test_` secret. The staging database must not be the production database. The test records successful responses in order and does not confirm a Stripe charge. Setting the secrets without those responses does not pass the job.
+No repository secret is required for this job. Do not point it at production MongoDB, the production API, or live Stripe. The evidence records `stripeMode: "test"`, the loopback database name, and a redacted PaymentIntent proof. It does not confirm a charge.
 
 ## Branch protection
 
