@@ -44,7 +44,7 @@ async function waitForHttp(url, label) {
   let last = 'not started';
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
       if (response.status < 500) return;
       last = `HTTP ${response.status}`;
     } catch (error) {
@@ -55,7 +55,34 @@ async function waitForHttp(url, label) {
   throw new Error(`${label} did not become ready (${last}).`);
 }
 
-function startStripeMock() {
+async function stripeMockAnswers() {
+  try {
+    const response = await fetch(STRIPE_API_BASE, { signal: AbortSignal.timeout(2000) });
+    return response.status < 500;
+  } catch {
+    return false;
+  }
+}
+
+function startStripeMockBinary() {
+  phase('falling back to the stripe-mock binary');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-stripe-mock-'));
+  const download = spawnSync('gh', [
+    'release', 'download', '--repo', 'stripe/stripe-mock',
+    '--pattern', '*linux_amd64.tar.gz', '--dir', dir, '--clobber'
+  ], { stdio: 'ignore' });
+  if (download.status !== 0) {
+    throw new Error(`stripe-mock binary could not be downloaded (gh status ${download.status}).`);
+  }
+  const archive = fs.readdirSync(dir).find((entry) => entry.endsWith('.tar.gz'));
+  spawnSync('tar', ['-xzf', archive], { cwd: dir });
+  const binary = path.join(dir, 'stripe-mock');
+  const child = spawn(binary, ['-http-port', '12111'], { stdio: 'ignore' });
+  child.on('error', (error) => phase(`stripe-mock binary error ${error.code || error.message}`));
+  return () => child.kill('SIGTERM');
+}
+
+async function startStripeMock() {
   const name = `dd-stripe-mock-${process.pid}`;
   phase('docker run stripe-mock');
   let docker = { status: 1, signal: null };
@@ -79,24 +106,19 @@ function startStripeMock() {
     const state = (inspect.stdout || '').trim();
     phase(`stripe-mock state=${state || 'unknown'}`);
     if (state === 'running') {
-      return () => spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+      const stop = () => spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        if (await stripeMockAnswers()) {
+          phase('stripe-mock answered on 127.0.0.1:12111');
+          return stop;
+        }
+        phase(`stripe-mock not answering (${attempt})`);
+      }
+      phase('docker stripe-mock never answered; removing it');
+      stop();
     }
   }
-  phase('falling back to the stripe-mock binary');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-stripe-mock-'));
-  const download = spawnSync('gh', [
-    'release', 'download', '--repo', 'stripe/stripe-mock',
-    '--pattern', '*linux_amd64.tar.gz', '--dir', dir, '--clobber'
-  ], { stdio: 'inherit' });
-  if (download.status !== 0) {
-    throw new Error(`stripe-mock could not be started on 127.0.0.1:12111. Docker status ${docker.status}. gh status ${download.status}.`);
-  }
-  const archive = fs.readdirSync(dir).find((name) => name.endsWith('.tar.gz'));
-  spawnSync('tar', ['-xzf', archive], { cwd: dir });
-  const binary = path.join(dir, 'stripe-mock');
-  const child = spawn(binary, ['-http-port', '12111'], { stdio: 'ignore' });
-  child.on('error', (error) => phase(`stripe-mock binary error ${error.code || error.message}`));
-  return () => child.kill('SIGTERM');
+  return startStripeMockBinary();
 }
 
 function stagingEnv(apiPort) {
@@ -147,7 +169,7 @@ async function run() {
   }
   fs.rmSync(evidencePath, { force: true });
   phase('starting stripe-mock');
-  const stopMock = startStripeMock();
+  const stopMock = await startStripeMock();
   phase('stripe-mock launched');
   phase('opening a free port');
   let server = null;
