@@ -12,6 +12,13 @@ import { withApache } from './apache-server.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const evidencePath = path.join(repoRoot, 'staging-evidence.json');
+const phasePath = path.join(repoRoot, 'ci-staging-phase.txt');
+
+function phase(message) {
+  const line = `${new Date().toISOString()} ${message}\n`;
+  fs.appendFileSync(phasePath, line);
+  fs.writeSync(1, `[ci-staging] ${message}\n`);
+}
 const MONGO_URI = 'mongodb://127.0.0.1:27017/drift-dwells-ci-staging';
 const STRIPE_API_BASE = 'http://127.0.0.1:12111';
 const STRIPE_SECRET_KEY = 'sk_test_123';
@@ -50,26 +57,45 @@ async function waitForHttp(url, label) {
 
 function startStripeMock() {
   const name = `dd-stripe-mock-${process.pid}`;
-  const docker = spawnSync('docker', [
-    'run', '--rm', '-d', '--name', name,
-    '-p', '127.0.0.1:12111:12111',
-    'stripe/stripe-mock'
-  ], { encoding: 'utf8' });
-  if (docker.status === 0) {
-    return () => spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+  phase('docker run stripe-mock');
+  let docker = { status: 1, signal: null };
+  try {
+    // Inherit stdio. Capturing docker pull progress overflows spawnSync's
+    // buffer and aborts the process before the booking checks run.
+    docker = spawnSync('docker', [
+      'run', '--rm', '-d', '--name', name,
+      '-p', '127.0.0.1:12111:12111',
+      'stripe/stripe-mock'
+    ], { stdio: 'inherit' });
+  } catch (error) {
+    phase(`docker spawn failed ${error.code || error.message}`);
   }
+  phase(`docker status=${docker.status} signal=${docker.signal || 'none'}`);
+  if (docker.status === 0) {
+    const inspect = spawnSync('docker', ['inspect', '-f', '{{.State.Status}}', name], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024
+    });
+    const state = (inspect.stdout || '').trim();
+    phase(`stripe-mock state=${state || 'unknown'}`);
+    if (state === 'running') {
+      return () => spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+    }
+  }
+  phase('falling back to the stripe-mock binary');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-stripe-mock-'));
   const download = spawnSync('gh', [
     'release', 'download', '--repo', 'stripe/stripe-mock',
     '--pattern', '*linux_amd64.tar.gz', '--dir', dir, '--clobber'
-  ], { encoding: 'utf8' });
+  ], { stdio: 'inherit' });
   if (download.status !== 0) {
-    throw new Error(`stripe-mock could not be started on 127.0.0.1:12111. Docker: ${redact(docker.stderr)} gh: ${redact(download.stderr)}`);
+    throw new Error(`stripe-mock could not be started on 127.0.0.1:12111. Docker status ${docker.status}. gh status ${download.status}.`);
   }
   const archive = fs.readdirSync(dir).find((name) => name.endsWith('.tar.gz'));
   spawnSync('tar', ['-xzf', archive], { cwd: dir });
   const binary = path.join(dir, 'stripe-mock');
   const child = spawn(binary, ['-http-port', '12111'], { stdio: 'ignore' });
+  child.on('error', (error) => phase(`stripe-mock binary error ${error.code || error.message}`));
   return () => child.kill('SIGTERM');
 }
 
@@ -113,23 +139,30 @@ function runNode(script, env) {
 }
 
 async function run() {
+  fs.writeFileSync(phasePath, '');
+  phase(`starting node ${process.version}`);
   const dist = path.join(repoRoot, 'client', 'dist');
   if (!fs.existsSync(path.join(dist, 'index.html')) || !fs.existsSync(path.join(dist, '.htaccess'))) {
     throw new Error('client/dist is missing. Build the exact release before ci-staging.');
   }
   fs.rmSync(evidencePath, { force: true });
+  phase('starting stripe-mock');
   const stopMock = startStripeMock();
+  phase('stripe-mock launched');
   let server = null;
   let serverLog = '';
   const apiPort = await freePort();
   const env = stagingEnv(apiPort);
   try {
     await waitForHttp(STRIPE_API_BASE, 'stripe-mock');
+    phase('stripe-mock ready');
     runNode('server/scripts/ciStagingSeed.cjs', env);
+    phase('database seeded');
     server = spawn(process.execPath, ['server/server.js'], { cwd: repoRoot, env, stdio: ['ignore', 'pipe', 'pipe'] });
     server.stdout.on('data', (chunk) => { serverLog += chunk; });
     server.stderr.on('data', (chunk) => { serverLog += chunk; });
     await waitForHttp(`http://127.0.0.1:${apiPort}/api/health`, 'API');
+    phase('api ready');
     const code = await withApache(dist, async ({ httpsPort }) => {
       const result = spawnSync('npx', [
         'playwright', 'test',
@@ -151,6 +184,7 @@ async function run() {
       return 0;
     }, { apiPort });
     if (code !== 0) throw new Error(`Staging booking tests failed with exit ${code}.`);
+    phase(`playwright exited 0; evidence ${evidencePath}`);
     const written = fs.readFileSync(evidencePath, 'utf8');
     if (/_secret_|sk_(?:test|live)_|mongodb(?:\+srv)?:\/\//i.test(written)) {
       fs.rmSync(evidencePath, { force: true });
@@ -170,6 +204,13 @@ async function run() {
     if (drop.status !== 0) console.error(redact(`${drop.stdout || ''}\n${drop.stderr || ''}`));
     stopMock();
   }
+}
+
+for (const signal of ['SIGHUP', 'SIGTERM', 'SIGINT']) {
+  process.on(signal, () => {
+    try { fs.appendFileSync(phasePath, `${new Date().toISOString()} signal ${signal}\n`); } catch { /* best-effort */ }
+    process.exit(1);
+  });
 }
 
 run().catch((error) => {

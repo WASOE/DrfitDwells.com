@@ -101,10 +101,22 @@ jobs:
           PRERENDER_REQUIRE_BROWSER: '1'
         run: npm run build
       - name: Isolated booking and test-mode payment initialization
-        run: node scripts/release-safety/ci-staging.mjs
+        run: |
+          set +e
+          echo "shell-before-node"
+          node scripts/release-safety/ci-staging.mjs
+          status=$?
+          echo "shell-after-node status=$status"
+          echo "--- phase ---"
+          cat ci-staging-phase.txt || echo "phase file missing"
+          set -e
+          test "$status" -eq 0
+          test -s staging-evidence.json
+          wc -c staging-evidence.json
       - name: Upload staging evidence
         uses: actions/upload-artifact@v4
         with:
           name: staging-evidence
           path: staging-evidence.json
           if-no-files-found: error
+          include-hidden-files: true

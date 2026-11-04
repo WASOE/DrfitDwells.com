@@ -36,6 +36,7 @@ release-safety-report.json
 apache-evidence.json
 browser-evidence.json
 staging-evidence.json
+ci-staging-phase.txt
 tests/e2e/.auth/
 
 # Temporary files
