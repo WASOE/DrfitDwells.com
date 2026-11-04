@@ -36,7 +36,11 @@ RELEASE_SAFETY_REPORT=$PWD/release-safety-report.json npm run deploy:frontend:sa
 
 A missing `gh` login, a failed run, a different SHA, or a hand-written report fails closed. There is no opt-in flag.
 
-The deploy host needs `gh` authenticated with permission to read Actions runs and artifacts.
+The deploy host has the official `gh` 2.103.3 package. `illoc` still needs a credential that can only read this repository's Actions runs, artifacts, and commits. A token that can push code does not belong on the server. Create it in GitHub settings, limited to `WASOE/DrfitDwells.com`, with Actions read and Contents read:
+
+https://github.com/settings/personal-access-tokens/new?name=drift-dwells-release-reader&description=Read+Actions+evidence+for+frontend+publication&target_name=WASOE&expires_in=90&actions=read&contents=read
+
+Install that token only in `/home/illoc/.config/gh` as mode `600`. Do not paste it into chat, logs, or the repository. Until it exists, `gh run view` returns 401 and publication fails closed.
 
 ## Rollback
 
@@ -58,14 +62,13 @@ No repository secret is required for this job. Do not point it at production Mon
 
 ## Branch protection
 
-`master` requires both check names. `enforce_admins` is currently false, so a repository admin can bypass them. Turning that on is an owner action:
+`master` requires both check names, strict status checks, and administrator enforcement. An administrator cannot bypass:
 
-```bash
-gh api --method POST repos/WASOE/DrfitDwells.com/branches/master/protection/enforce_admins
-```
+- `Apache, browser, and payment contract`
+- `Isolated staging booking`
 
 Confirm with:
 
 ```bash
-gh api repos/WASOE/DrfitDwells.com/branches/master/protection --jq '{checks:.required_status_checks.contexts,admins:.enforce_admins.enabled}'
+gh api repos/WASOE/DrfitDwells.com/branches/master/protection --jq '{checks:.required_status_checks.contexts,strict:.required_status_checks.strict,admins:.enforce_admins.enabled}'
 ```
