@@ -9,7 +9,10 @@ RewriteRule ^ https://driftdwells.com%{REQUEST_URI} [R=301,L,QSA]
 RewriteCond %{HTTP_HOST} ^www\.driftdwells\.com$ [NC]
 RewriteRule ^ https://driftdwells.com%{REQUEST_URI} [R=301,L,QSA]
 
-# Avoid duplicate homepage HTML at /index.html
+# Avoid duplicate homepage HTML at /index.html.
+# Match the original request only. An internal SPA rewrite also targets
+# /index.html and must not be redirected back to /.
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,9}\ /index\.html[\s?]
 RewriteRule ^index\.html$ / [R=301,L,QSA]
 
 # Keep app shell + service worker revalidation strict to avoid stale bundles.
