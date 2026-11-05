@@ -1,5 +1,5 @@
 [
-  { "path": "/", "locales": ["en", "bg"], "ogImage": "/media/hero/cabin-winter-1200w.webp", "headings": { "en": "Dwell in the Silence.", "bg": "Обитавай тишината." } },
+  { "path": "/", "locales": ["en", "bg"], "ogImage": "/media/hero/cabin-winter-1200w.webp", "headings": { "en": "Off-grid cabins in the mountains of southwest Bulgaria", "bg": "Офгрид къщи в планините на Югозападна България" } },
   { "path": "/about", "locales": ["en"], "ogImage": "/media/hero/cabin-summer-1200w.webp", "headings": { "en": "The story of Drift & Dwells" } },
   { "path": "/cabin", "locales": ["en", "bg"], "ogImage": "/media/hero/cabin-winter-1200w.webp", "headings": { "en": "The Cabin", "bg": "Къщата" } },
   { "path": "/cabin/faq", "locales": ["en"], "ogImage": "/media/hero/cabin-winter-1200w.webp", "headings": { "en": "The Cabin · Full FAQ" } },
