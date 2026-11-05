@@ -2,6 +2,15 @@ import { Suspense, lazy } from 'react';
 import '../i18n/ns/home';
 import DualityHero from '../components/DualityHero';
 import Seo from '../components/Seo';
+import HomeIntro from '../components/home/HomeIntro';
+import HomeStayComparison from '../components/home/HomeStayComparison';
+import HomeGroupStay from '../components/home/HomeGroupStay';
+import HomeOccasions from '../components/home/HomeOccasions';
+import HomeTripPlanner from '../components/home/HomeTripPlanner';
+import HomeStory from '../components/home/HomeStory';
+import HomeFaq, { HOME_FAQ_KEYS } from '../components/home/HomeFaq';
+import HomeVoucher from '../components/home/HomeVoucher';
+import HomeFinalCta from '../components/home/HomeFinalCta';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useSeason } from '../context/SeasonContext';
@@ -11,11 +20,8 @@ import { buildHreflangAlternates } from '../utils/localizedRoutes';
 import { getSiteUrl } from '../utils/siteUrl';
 import { BRANDING } from '../config/brandingAssets';
 
-const MemoryStream = lazy(() => import('../components/MemoryStream'));
 const BookingDrawer = lazy(() => import('../components/BookingDrawer'));
 const AuthorityStrip = lazy(() => import('../components/AuthorityStrip'));
-const CraftExperienceSection = lazy(() => import('../components/CraftExperienceSection'));
-const DestinationsFooter = lazy(() => import('../components/DestinationsFooter'));
 const Footer = lazy(() => import('../components/Footer'));
 
 const origin = getSiteUrl();
@@ -25,17 +31,28 @@ const Home = () => {
   const { t: tc } = useTranslation('common');
   const { language } = useLanguage();
   const { season } = useSeason();
-  // Mobile hero first paint is always the poster JPGs (left cabin, right valley),
-  // so we only preload those on small viewports.
   const { cabin: mobileCabinPoster, valley: mobileValleyPoster } = getHomeHeroMobilePosterUrls(season);
   const seoTitle =
     language === 'bg'
-      ? 'Планински оф-грид ретрийт България – Drift & Dwells'
-      : 'Off-Grid Mountain Retreats in Bulgaria – Drift & Dwells';
+      ? 'Офгрид къща край Бачево и селище в Родопите – Drift & Dwells'
+      : 'Off-grid cabin and mountain village stays in Bulgaria – Drift & Dwells';
   const seoDescription =
     language === 'bg'
-      ? 'Тишина и природа в югозападна България: оф-грид къща близо до Бачево и планинско селце The Valley в Родопите за двойки и групи до 18 гости. Резервирайте престой сред планината.'
-      : 'Quiet mountain stays in southwestern Bulgaria: an off-grid cabin near Bachevo and The Valley in the Rhodopes—five A-frames, Luxury Cabin and Stone House for up to 18 guests.';
+      ? 'Резервирайте директно: самостоятелна офгрид къща за двама край Бачево и The Valley в Родопите — пет A-frame къщички, Luxury Cabin и каменна къща за до 18 гости.'
+      : 'Book direct: a private off-grid cabin for two near Bachevo, and The Valley in the Rhodopes — five A-frames, a Luxury Cabin and a Stone House for up to 18 guests.';
+
+  const faqJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: HOME_FAQ_KEYS.map((key) => ({
+      '@type': 'Question',
+      name: t(`faq.items.${key}.q`),
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: t(`faq.items.${key}.a`),
+      },
+    })),
+  };
 
   return (
     <>
@@ -83,13 +100,15 @@ const Home = () => {
             telephone: CONTACT_PHONE,
             logo: `${origin}${BRANDING.schemaLogoWebp}`,
             sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
-          }
+          },
+          faqJsonLd
         ]}
       />
-      <div className="min-h-screen bg-white">
-        <DualityHero />
+      <div className="min-h-screen bg-white overflow-x-hidden">
+        <div id="booking">
+          <DualityHero />
+        </div>
 
-        {/* Mobile Top 1% band – inline, non-sticky, under hero video */}
         <section className="md:hidden bg-[#1c1917] border-t border-white/10">
           <div className="text-center px-4 py-3">
             <p className="text-[#F1ECE2] text-[10px] font-bold uppercase tracking-[0.2em]">
@@ -104,57 +123,20 @@ const Home = () => {
           <AuthorityStrip />
         </Suspense>
 
-        {/* Craft Your Experience - Premium Conversion Section */}
-        <Suspense fallback={<div className="min-h-[320px] bg-white" aria-hidden />}>
-          <CraftExperienceSection variant="editorial" />
-        </Suspense>
+        <HomeIntro />
+        <HomeStayComparison />
+        <HomeGroupStay />
+        <HomeOccasions />
+        <HomeTripPlanner />
+        <HomeStory />
+        <HomeFaq />
+        <HomeVoucher />
+        <HomeFinalCta />
 
-        <Suspense fallback={<div className="py-16 text-center text-sm tracking-[0.3em] uppercase text-gray-500">{t('memory.loading')}</div>}>
-          <MemoryStream />
-        </Suspense>
-
-        {/* Philosophy + Mission Section - The Art of Aylyak (Editorial Poster Layout) */}
-        <section className="relative py-12 md:py-24 lg:py-32 bg-white">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 md:px-16">
-            {/* Main word + phonetic + type - mobile first typography */}
-            <div className="font-serif text-left">
-              <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl text-gray-900 mb-2 tracking-tight font-normal">
-                {t('philosophy.word')}
-              </h2>
-              <div className="flex flex-wrap items-baseline gap-2 sm:gap-3 text-sm sm:text-base md:text-lg text-gray-600 mb-6 md:mb-8">
-                <span className="italic font-normal">{t('philosophy.phonetic')}</span>
-                <span className="text-sm italic text-gray-500">{t('philosophy.type')}</span>
-              </div>
-
-              {/* Divider line */}
-              <div className="h-px w-full bg-gray-300 mb-6 md:mb-8" />
-
-              {/* Definitions */}
-              <div className="space-y-4 md:space-y-6 text-sm sm:text-base md:text-lg text-gray-800 leading-relaxed">
-                <p className="font-serif font-normal">
-                  <span className="font-semibold">1.</span>{' '}
-                  {t('philosophy.definition1')}
-                </p>
-                <p className="font-serif font-normal">
-                  <span className="font-semibold">2.</span>{' '}
-                  {t('philosophy.definition2')}
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Destinations Footer - Atmospheric Retreats */}
-        <Suspense fallback={<div className="min-h-[240px] bg-white" aria-hidden />}>
-          <DestinationsFooter />
-        </Suspense>
-
-        {/* Footer */}
         <Suspense fallback={<div className="min-h-[120px] bg-[#F9F8F6]" aria-hidden />}>
           <Footer />
         </Suspense>
 
-        {/* Booking Drawer - Mobile Only */}
         <Suspense fallback={null}>
           <BookingDrawer />
         </Suspense>

@@ -1,6 +1,6 @@
-import { useLocation, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useTranslation, Trans } from 'react-i18next';
-import { localizePath, stripLocaleFromPath } from '../utils/localizedRoutes';
+import { localizePath } from '../utils/localizedRoutes';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { CONTACT_EMAIL, CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
 import { BRANDING, BRANDING_DIMENSIONS } from '../config/brandingAssets';
@@ -16,16 +16,13 @@ const Footer = () => {
   const { t: tn } = useTranslation('nav');
   const { t: tc } = useTranslation('common');
   const { language } = useSiteLanguage();
-  const location = useLocation();
-  const basePath = stripLocaleFromPath(location.pathname);
-  const isHome = basePath === '/';
 
   return (
     <footer className="relative bg-[#F9F8F6] text-[#111] z-10 mt-0">
       <div
-        className={`max-w-7xl mx-auto ${isHome ? 'pt-[200px] md:pt-[350px]' : ''}`}
+        className="max-w-7xl mx-auto"
         style={{
-          paddingTop: isHome ? undefined : 'clamp(28px, 4vw, 48px)',
+          paddingTop: 'clamp(28px, 4vw, 48px)',
           paddingBottom: 'clamp(28px, 4vw, 48px)',
           paddingLeft: 'clamp(30px, 4vw, 40px)',
           paddingRight: 'clamp(30px, 4vw, 40px)'
@@ -34,7 +31,7 @@ const Footer = () => {
         <style>{`
           @media (min-width: 1024px) {
             footer > div:first-child {
-              padding-top: ${isHome ? '350px' : 'clamp(28px, 4vw, 48px)'} !important;
+              padding-top: clamp(28px, 4vw, 48px) !important;
             }
           }
         `}</style>
