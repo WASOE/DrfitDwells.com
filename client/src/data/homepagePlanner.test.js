@@ -13,6 +13,7 @@ import {
   recommendStay,
   resolvePartyFromWho,
 } from './homepagePlanner';
+import { setupsForParty } from './homepageSetups';
 
 function keyTree(value) {
   if (Array.isArray(value)) return value.map(keyTree);
@@ -23,6 +24,17 @@ function keyTree(value) {
 }
 
 describe('homepage planner', () => {
+  it('returns bed combinations instead of one property', () => {
+    expect(setupsForParty(2).map((item) => item.id)).toEqual(['cabin', 'aframe', 'lux']);
+    expect(setupsForParty(4).map((item) => [item.id, item.nightly])).toEqual([
+      ['twoAframes', 120],
+      ['stone', 75],
+    ]);
+    expect(setupsForParty(8).map((item) => item.sleeps)).toEqual([8, 10]);
+    expect(setupsForParty(10)[0]).toMatchObject({ id: 'buyout', quote: true, nightly: null });
+    expect(setupsForParty(17)[0].id).toBe('buyout');
+  });
+
   it('keeps English and Bulgarian homepage copy in the same shape', () => {
     expect(keyTree(bg)).toEqual(keyTree(en));
   });

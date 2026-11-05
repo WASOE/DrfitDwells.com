@@ -9,7 +9,7 @@ import {
 } from '../../data/homepagePlanner';
 
 function scrollToBooking() {
-  const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  const behavior = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ? 'auto' : 'smooth';
   document.getElementById('booking')?.scrollIntoView({ behavior, block: 'start' });
 }
 

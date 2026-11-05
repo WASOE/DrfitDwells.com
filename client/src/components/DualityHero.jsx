@@ -199,9 +199,9 @@ function MobileDualityHeroStack() {
           <div className="absolute inset-0 bg-black/40" />
 
           <div className="relative z-20 pointer-events-none text-center px-2">
-            <h1 className="font-['Playfair_Display'] text-lg sm:text-xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl whitespace-nowrap">
+            <p className="font-['Playfair_Display'] text-lg sm:text-xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl">
               {t('hero.leftHeadline')}
-            </h1>
+            </p>
             <a
               href={localizePath('/cabin', language)}
               className="inline-flex items-center gap-2 mt-2 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors pointer-events-auto"
@@ -253,7 +253,7 @@ const DualityHero = () => {
 
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768 || 'ontouchstart' in window);
+      setIsMobile(window.innerWidth < 768);
     };
     checkMobile();
     window.addEventListener('resize', checkMobile);

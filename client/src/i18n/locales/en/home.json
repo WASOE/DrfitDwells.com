@@ -128,8 +128,8 @@
   },
   "planner": {
     "eyebrow": "Your stay, your way",
-    "title": "Not sure which stay is right for you?",
-    "body": "Tell us who's coming and what you'd like to do. We'll recommend a place to stay, suggest how to spend your days and help you find available dates.",
+    "title": "Which setup fits this group?",
+    "body": "Say who is coming and how many. You get the combinations that actually have enough beds, with the standard nightly total.",
     "promiseStayTitle": "A place that fits",
     "promiseStayBody": "Matched to how many of you are coming, and whether you want to be offline.",
     "promisePlanTitle": "A simple plan for the days",
@@ -250,7 +250,52 @@
       "oneNight": "These stays are set up with a two-night minimum. Confirm that on the calendar before you travel."
     },
     "partySummary": "Exact party size for booking: {{count}} guests.",
-    "capacityExceeded": "This stay sleeps up to {{max}}. Your party of {{count}} is larger — Check dates keeps that exact count so you can see what fits, or choose the whole Valley."
+    "capacityExceeded": "This stay sleeps up to {{max}}. Your party of {{count}} is larger — Check dates keeps that exact count so you can see what fits, or choose the whole Valley.",
+    "setupsTitle": "Ways to sleep {{count}}",
+    "setupsNote": "Standard nightly rates added together. The calendar confirms the price for your dates. A whole-Valley hire is quoted — there is no published flat rate.",
+    "sleeps": "Sleeps {{count}}",
+    "nightly": "From €{{price}} / night",
+    "quotePrice": "Price on request",
+    "checkThese": "Check these dates",
+    "requestQuote": "Request a quote",
+    "setups": {
+      "cabin": {
+        "title": "The Cabin",
+        "line": "One private cabin near Bachevo. No guest Wi-Fi."
+      },
+      "aframe": {
+        "title": "1 A-frame",
+        "line": "One A-frame at The Valley. Starlink is in the Stone House, not in the cabin."
+      },
+      "lux": {
+        "title": "Luxury Cabin",
+        "line": "One private cabin at The Valley. Higher base rate than an A-frame."
+      },
+      "twoAframes": {
+        "title": "2 A-frames",
+        "line": "Two A-frames next to each other. Four beds, two cabins."
+      },
+      "threeAframes": {
+        "title": "3 A-frames",
+        "line": "Three A-frames. Six beds, three cabins."
+      },
+      "stone": {
+        "title": "Stone House",
+        "line": "One house for up to 6, with Starlink inside."
+      },
+      "stoneOne": {
+        "title": "Stone House + 1 A-frame",
+        "line": "The house plus one A-frame. Eight beds."
+      },
+      "stoneTwo": {
+        "title": "Stone House + 2 A-frames",
+        "line": "The house plus two A-frames. Ten beds."
+      },
+      "buyout": {
+        "title": "The whole Valley",
+        "line": "All 7 stays: 5 A-frames, the Luxury Cabin and the Stone House. Up to 18 guests."
+      }
+    }
   },
   "philosophy": {
     "eyebrow": "One Bulgarian word we keep coming back to",
@@ -324,6 +369,126 @@
       "cabinInterior": "The Cabin · warm wood interior, Bachevo",
       "forestPath": "Forest path · approach through the pines",
       "rainEaves": "Rain on cedar eaves · The Cabin shelter"
+    }
+  },
+  "orient": {
+    "title": "Off-grid cabins in the Bulgarian mountains",
+    "body": "The Cabin is near Bachevo, in the Bansko area. The Valley is at 1,550 m in the Rhodopes, about 30 km from Bansko. A-frames from €60 a night. The Cabin from €100. The Luxury Cabin is €110 as a base rate. The Stone House is from €75. The calendar shows the price for your dates."
+  },
+  "facts": {
+    "eyebrow": "The two places",
+    "title": "What each place actually is.",
+    "topic": "Fact",
+    "cabin": "The Cabin",
+    "valley": "The Valley",
+    "note": "Rates above are the published standard nightly rates. Seasonal prices can differ. The booking calendar is the price for your dates.",
+    "cabinImageAlt": "Exterior of The Cabin in the forest near Bachevo",
+    "valleyImageAlt": "Aerial view of The Valley showing the Stone House, A-frames and Luxury Cabin",
+    "rows": {
+      "sleeps": {
+        "label": "Sleeps",
+        "cabin": "2",
+        "valley": "Up to 18 across 7 stays"
+      },
+      "units": {
+        "label": "Units",
+        "cabin": "1 cabin",
+        "valley": "5 A-frames, 1 Luxury Cabin, 1 Stone House"
+      },
+      "heating": {
+        "label": "Heating",
+        "cabin": "Wood stove",
+        "valley": "Stated on each stay. The Luxury Cabin is heated."
+      },
+      "power": {
+        "label": "Power",
+        "cabin": "Solar and gas. No mains electricity.",
+        "valley": "Stated on each stay."
+      },
+      "connection": {
+        "label": "Wi-Fi and signal",
+        "cabin": "No guest Wi-Fi. Mobile signal may be weak or absent.",
+        "valley": "Starlink in the Stone House only. Not in the A-frames or the Luxury Cabin."
+      },
+      "hotTub": {
+        "label": "Hot tub",
+        "cabin": "Private wood-fired hot tub",
+        "valley": "Shared outdoor wood-fired hot tub"
+      },
+      "access": {
+        "label": "Access",
+        "cabin": "Rough forest road. High clearance recommended.",
+        "valley": "About 30 km from Bansko, between Chereshovo and Ortsevo."
+      },
+      "parking": {
+        "label": "Parking",
+        "cabin": "Park at the point we send after booking. Do not navigate to the building.",
+        "valley": "A normal car can reach the Chereshovo parking. Do not drive past it. Do not take the Kraishte route."
+      },
+      "transfer": {
+        "label": "Last stretch",
+        "cabin": "You drive to the park-and-walk point.",
+        "valley": "About 2.5 km after parking: around a 45-minute walk, or an arranged transfer."
+      },
+      "minimum": {
+        "label": "Minimum stay",
+        "cabin": "The calendar confirms it. Most stays are set up for 2 nights.",
+        "valley": "The calendar confirms it. Most stays are set up for 2 nights."
+      }
+    }
+  },
+  "reviews": {
+    "eyebrow": "Guest words",
+    "title": "What guests wrote after staying."
+  },
+  "access": {
+    "eyebrow": "Getting there",
+    "title": "The road is part of the stay.",
+    "body": "Both places are remote. These are the published approach facts, not a door-to-door promise.",
+    "guide": "Valley arrival guide",
+    "items": {
+      "bansko": {
+        "title": "From Bansko",
+        "body": "The Valley is about 30 km from Bansko, between Chereshovo and Ortsevo. Drive times from Sofia and Plovdiv depend on the route and the season, so we do not print a single number."
+      },
+      "route": {
+        "title": "The Valley road",
+        "body": "Eleshnitsa, then Palatik, then Chereshovo. Google Maps sometimes suggests Kraishte. Do not take that route."
+      },
+      "valleyLast": {
+        "title": "After you park",
+        "body": "Parking in Chereshovo is the last stop for a normal car. The Valley is about 2.5 km further, around 45 minutes on foot, or an arranged transfer."
+      },
+      "cabinLast": {
+        "title": "The Cabin road",
+        "body": "The Cabin is near Bachevo, in the Razlog area. The last stretch is a rough forest road and high clearance is recommended. We send the park-and-walk point after booking."
+      }
+    }
+  },
+  "guides": {
+    "eyebrow": "Read the detail",
+    "title": "Pages with the longer facts.",
+    "items": {
+      "cabins": {
+        "title": "Off-grid cabins in Bulgaria",
+        "body": "The Cabin near Bachevo and The Valley in the Rhodopes, with capacity and what off-grid means here."
+      },
+      "detox": {
+        "title": "Digital detox",
+        "body": "The Cabin has no guest Wi-Fi. At The Valley, Starlink is only in the Stone House."
+      },
+      "rhodopes": {
+        "title": "Rhodope cabin retreat",
+        "body": "The Valley sits at about 1,550 m, around 30 km from Bansko."
+      },
+      "bansko": {
+        "title": "Bansko remote work",
+        "body": "Starlink is in the Stone House, for up to 6 guests. The A-frames and Luxury Cabin do not have it."
+      },
+      "venue": {
+        "title": "Retreat venue",
+        "body": "The whole Valley sleeps up to 18. Meals, facilitation and meeting equipment are not included."
+      }
     }
   }
 }

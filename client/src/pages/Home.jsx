@@ -2,12 +2,13 @@ import { Suspense, lazy } from 'react';
 import '../i18n/ns/home';
 import DualityHero from '../components/DualityHero';
 import Seo from '../components/Seo';
-import HomeIntro from '../components/home/HomeIntro';
-import HomeStayComparison from '../components/home/HomeStayComparison';
+import HomeOrient from '../components/home/HomeOrient';
 import HomeTripPlanner from '../components/home/HomeTripPlanner';
-import HomeOccasions from '../components/home/HomeOccasions';
+import HomeFacts from '../components/home/HomeFacts';
+import HomeReviews from '../components/home/HomeReviews';
+import HomeAccess from '../components/home/HomeAccess';
 import HomeGroupStay from '../components/home/HomeGroupStay';
-import HomeAylyak from '../components/home/HomeAylyak';
+import HomeGuides from '../components/home/HomeGuides';
 import HomeFaq, { HOME_FAQ_KEYS } from '../components/home/HomeFaq';
 import HomeVoucher from '../components/home/HomeVoucher';
 import HomeFinalCta from '../components/home/HomeFinalCta';
@@ -15,14 +16,12 @@ import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useSeason } from '../context/SeasonContext';
 import { getCabinHeroPreloadUrl, getHomeHeroMobilePosterUrls } from '../config/heroResponsive';
-import { CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
+import { CONTACT_PHONE, CONTACT_EMAIL, INSTAGRAM_URL, FACEBOOK_URL, GMB_LOCATIONS } from '../data/gmbLocations';
 import { buildHreflangAlternates } from '../utils/localizedRoutes';
 import { getSiteUrl } from '../utils/siteUrl';
 import { BRANDING } from '../config/brandingAssets';
 
 const BookingDrawer = lazy(() => import('../components/BookingDrawer'));
-const AuthorityStrip = lazy(() => import('../components/AuthorityStrip'));
-const MemoryStream = lazy(() => import('../components/MemoryStream'));
 const Footer = lazy(() => import('../components/Footer'));
 
 const origin = getSiteUrl();
@@ -41,6 +40,31 @@ const Home = () => {
     language === 'bg'
       ? 'Резервирайте директно: самостоятелна офгрид къща за двама край Бачево и The Valley в Родопите — пет A-frame къщички, Luxury Cabin и каменна къща за до 18 гости.'
       : 'Book direct: a private off-grid cabin for two near Bachevo, and The Valley in the Rhodopes — five A-frames, a Luxury Cabin and a Stone House for up to 18 guests.';
+
+  const lodgingJsonLd = ['cabin', 'valley'].map((key) => {
+    const place = GMB_LOCATIONS[key];
+    return {
+      '@context': 'https://schema.org',
+      '@type': 'LodgingBusiness',
+      name: place.businessName,
+      description: place.description,
+      url: place.url,
+      telephone: CONTACT_PHONE,
+      email: CONTACT_EMAIL,
+      address: {
+        '@type': 'PostalAddress',
+        addressLocality: place.address.locality,
+        postalCode: place.address.postalCode,
+        addressRegion: place.address.region,
+        addressCountry: place.address.country,
+      },
+      geo: {
+        '@type': 'GeoCoordinates',
+        latitude: place.geo.latitude,
+        longitude: place.geo.longitude,
+      },
+    };
+  });
 
   const faqJsonLd = {
     '@context': 'https://schema.org',
@@ -102,7 +126,8 @@ const Home = () => {
             logo: `${origin}${BRANDING.schemaLogoWebp}`,
             sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
           },
-          faqJsonLd
+          faqJsonLd,
+          ...lodgingJsonLd
         ]}
       />
       <div className="min-h-screen bg-white overflow-x-hidden">
@@ -118,21 +143,13 @@ const Home = () => {
           </div>
         </section>
 
-        <Suspense
-          fallback={<div className="min-h-[200px] bg-[#F9F9F7] border-y border-[#E5E5E0]" aria-hidden />}
-        >
-          <AuthorityStrip />
-        </Suspense>
-
-        <HomeIntro />
-        <HomeStayComparison />
+        <HomeOrient />
         <HomeTripPlanner />
-        <HomeOccasions />
-        <Suspense fallback={<div className="min-h-[280px] bg-[#f4f2ed]" aria-hidden />}>
-          <MemoryStream />
-        </Suspense>
+        <HomeFacts />
+        <HomeReviews />
+        <HomeAccess />
         <HomeGroupStay />
-        <HomeAylyak />
+        <HomeGuides />
         <HomeFaq />
         <HomeVoucher />
         <HomeFinalCta />
