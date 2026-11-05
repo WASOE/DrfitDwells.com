@@ -7,7 +7,7 @@
 export const PRODUCTION_HOST = 'driftdwells.com';
 
 export const ROUTING_CASES = [
-  { id: 'home', scheme: 'https', path: '/', titleIncludes: 'Off-Grid Mountain Retreats' },
+  { id: 'home', scheme: 'https', path: '/', titleIncludes: 'Off-grid cabin and mountain village stays' },
   { id: 'search', scheme: 'https', path: '/search?checkIn=2026-11-16&checkOut=2026-11-18&adults=2', stayOnPath: '/search' },
   { id: 'search-bg', scheme: 'https', path: '/bg/search?checkIn=2026-11-16&checkOut=2026-11-18', stayOnPath: '/bg/search' },
   { id: 'checkout', scheme: 'https', path: '/checkout?checkIn=2026-11-16&checkOut=2026-11-18', stayOnPath: '/checkout' },
@@ -122,7 +122,11 @@ export function evaluateRoutingCase(testCase, response) {
     if (!title.includes(testCase.titleIncludes)) {
       errors.push(`${testCase.id} title "${title}" does not include "${testCase.titleIncludes}".`);
     }
-    if (testCase.id !== 'home' && title.includes('Off-Grid Mountain Retreats in Bulgaria')) {
+    if (
+      testCase.id !== 'home' &&
+      (title.includes('Off-Grid Mountain Retreats in Bulgaria') ||
+        title.includes('Off-grid cabin and mountain village stays'))
+    ) {
       errors.push(`${testCase.id} rendered the homepage title.`);
     }
   }
