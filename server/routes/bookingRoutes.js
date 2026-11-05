@@ -42,8 +42,7 @@ const {
   LEGAL_ACCEPTANCE_TERMS_URL,
   LEGAL_ACCEPTANCE_CANCELLATION_URL
 } = require('../config/legalAcceptance');
-const Stripe = require('stripe');
-const { STRIPE_API_VERSION } = require('../config/stripeApiVersion');
+const { createStripeClient } = require('../config/stripeClient');
 
 const { validateId } = require('../middleware/validateId');
 const { sanitizeMetaClientContext } = require('../utils/sanitizeMetaClientContext');
@@ -523,7 +522,7 @@ function mapV2FinalizeErrorToStage(err) {
 
 const ACCEPTANCE_EMAIL_RETRY_DELAY_MS = 5000;
 
-let stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION }) : null;
+let stripe = createStripeClient();
 
 const validateTransportMethod = (value, transportOptions) => {
   if (!value || value === 'Not selected') return null;
@@ -542,7 +541,7 @@ const bookingCreateLimiter = rateLimit({
 
 const paymentIntentLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
+  max: process.env.RELEASE_CI_STAGING === '1' ? 30 : 5,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many payment attempts. Please try again in a minute.' }
@@ -3370,7 +3369,7 @@ module.exports.__setStripeClientForTesting = (client) => {
   stripe = client;
 };
 module.exports.__resetStripeClientForTesting = () => {
-  stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION }) : null;
+  stripe = createStripeClient();
 };
 module.exports.__setClaimBookingConfirmationSideEffectsForTesting = (fn) => {
   claimBookingConfirmationSideEffectsOnceImpl =

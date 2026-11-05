@@ -6,6 +6,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import prerenderContract from '../client/scripts/prerender-contract.cjs';
+import { buildPassingEvidence, writeEvidenceFixture } from './release-safety/report.mjs';
+import { faultyIndexRedirect } from './release-safety/routing-contract.mjs';
 import {
   assertNoProtectedPathsDeleted,
   buildRemoteRsyncPhases,
@@ -53,8 +55,12 @@ function createValidRouteHtml(route) {
   const faqCopy = context.requiredSchemaTypes.includes('FAQPage')
     ? '<h2>What is included in a stay?</h2><p>A comfortable place to stay in the mountains.</p>'
     : '';
+  const robots = entry.robots === 'noindex'
+    ? '<meta name="robots" content="noindex, nofollow">'
+    : '';
   return `<!doctype html><html lang="${context.locale}"><head>
     <title>${title}</title><meta name="description" content="${description}">
+    ${robots}
     <link rel="canonical" href="https://driftdwells.com${context.canonicalPath}">${alternates}
     <meta property="og:title" content="${title}"><meta property="og:description" content="${description}">
     <meta property="og:type" content="website"><meta property="og:url" content="https://driftdwells.com${context.canonicalPath}">
@@ -65,7 +71,71 @@ function createValidRouteHtml(route) {
     ${faqCopy}<p>${'Public accommodation information. '.repeat(10)}</p></main></div></body></html>`;
 }
 
-function runCLI(args = [], env = {}, { invalidRoute, missingRoute, verificationOnly = false, verificationRoute } = {}) {
+function linkDeployModules(sandbox) {
+  fs.symlinkSync(path.join(__dirname, 'lib'), path.join(sandbox, 'scripts/lib'), 'dir');
+  fs.symlinkSync(path.join(__dirname, 'release-safety'), path.join(sandbox, 'scripts/release-safety'), 'dir');
+  fs.symlinkSync(path.join(__dirname, '../shared'), path.join(sandbox, 'shared'), 'dir');
+  fs.symlinkSync(path.join(__dirname, '../client/node_modules'), path.join(sandbox, 'client/node_modules'), 'dir');
+}
+
+function installReleaseGate(sandbox, releaseSha, { conclusion = 'success', tamperStaging = false, reportSha = releaseSha } = {}) {
+  const evidence = buildPassingEvidence(reportSha, '9001');
+  const fixture = path.join(sandbox, 'gh-evidence');
+  writeEvidenceFixture(fixture, evidence);
+  if (tamperStaging) {
+    fs.writeFileSync(
+      path.join(fixture, 'staging-evidence', 'staging-evidence.json'),
+      `${JSON.stringify({ ...evidence.staging, responses: [] })}\n`
+    );
+  }
+  const reportPath = path.join(sandbox, 'release-safety-report.json');
+  fs.writeFileSync(reportPath, `${JSON.stringify({
+    frontendRelease: reportSha,
+    workflowRunId: '9001',
+    evidence
+  })}\n`);
+  const bin = path.join(sandbox, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'gh'), `#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+const args = process.argv.slice(2);
+if (args[0] === 'run' && args[1] === 'view') {
+  process.stdout.write(process.env.GH_RUN_VIEW_JSON + '\\n');
+  process.exit(0);
+}
+if (args[0] === 'run' && args[1] === 'download') {
+  const name = args[args.indexOf('-n') + 1];
+  const dest = args[args.indexOf('-D') + 1];
+  fs.cpSync(path.join(process.env.GH_EVIDENCE_FIXTURE, name), dest, { recursive: true });
+  process.exit(0);
+}
+process.stderr.write('unexpected gh ' + args.join(' ') + '\\n');
+process.exit(1);
+`, { mode: 0o755 });
+  return {
+    RELEASE_SAFETY_REPORT: reportPath,
+    GH_EVIDENCE_FIXTURE: fixture,
+    GH_RUN_VIEW_JSON: JSON.stringify({
+      status: 'completed',
+      conclusion,
+      headSha: reportSha,
+      url: 'https://github.com/WASOE/DrfitDwells.com/actions/runs/9001'
+    }),
+    PATH: `${bin}:${process.env.PATH}`
+  };
+}
+
+function runCLI(args = [], env = {}, {
+  invalidRoute,
+  missingRoute,
+  verificationOnly = false,
+  verificationRoute,
+  faultyHtaccess = false,
+  conclusion = 'success',
+  tamperStaging = false,
+  reportSha
+} = {}) {
   const sandbox = fs.mkdtempSync(path.join(__dirname, '.deploy-cli-test-'));
   try {
     for (const relative of [
@@ -76,10 +146,13 @@ function runCLI(args = [], env = {}, { invalidRoute, missingRoute, verificationO
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(path.join(__dirname, '..', relative), target);
     }
-    fs.symlinkSync(path.join(__dirname, 'lib'), path.join(sandbox, 'scripts/lib'), 'dir');
-    fs.symlinkSync(path.join(__dirname, '../shared'), path.join(sandbox, 'shared'), 'dir');
-    fs.symlinkSync(path.join(__dirname, '../client/node_modules'), path.join(sandbox, 'client/node_modules'), 'dir');
+    linkDeployModules(sandbox);
     const releaseSha = String(env.VITE_FRONTEND_RELEASE || TEST_RELEASE_SHA);
+    const gate = installReleaseGate(sandbox, releaseSha, {
+      conclusion,
+      tamperStaging,
+      reportSha: reportSha || releaseSha
+    });
     const dist = makeMockDist(sandbox, { frontendRelease: releaseSha });
     for (const route of prerenderContract.ROUTES) {
       const output = prerenderContract.artifactPath(dist, route);
@@ -94,6 +167,10 @@ function runCLI(args = [], env = {}, { invalidRoute, missingRoute, verificationO
       const html = fs.readFileSync(file, 'utf8').replace('</head>', `<meta name="${prerenderContract.VERIFICATION_MARKER}" content="not-for-publication"></head>`);
       fs.writeFileSync(file, html);
     }
+    if (faultyHtaccess) {
+      const source = fs.readFileSync(path.join(__dirname, '../client/public/.htaccess'), 'utf8');
+      fs.writeFileSync(path.join(dist, '.htaccess'), faultyIndexRedirect(source));
+    }
     // Prerender route "/" overwrites dist/index.html — keep SEO HTML and add the Vite entry.
     ensureShellEntryOnRootIndex(dist);
     return spawnSync(
@@ -104,6 +181,7 @@ function runCLI(args = [], env = {}, { invalidRoute, missingRoute, verificationO
         env: {
           ...process.env,
           VITE_FRONTEND_RELEASE: TEST_RELEASE_SHA,
+          ...gate,
           ...env
         }
       }
@@ -177,6 +255,7 @@ function makeMockDist(tmpRoot, { frontendRelease = TEST_RELEASE_SHA, paymentFlag
   fs.writeFileSync(path.join(dist, 'sw.js'), '// service worker');
   fs.writeFileSync(path.join(dist, 'manifest.webmanifest'), '{}');
   fs.writeFileSync(path.join(dist, 'robots.txt'), 'User-agent: *');
+  fs.copyFileSync(path.join(__dirname, '../client/public/.htaccess'), path.join(dist, '.htaccess'));
   return dist;
 }
 
@@ -501,6 +580,7 @@ test('publisher refuses a dist whose compiled payment flags are false', () => {
       fs.copyFileSync(path.join(__dirname, '..', relative), target);
     }
     fs.symlinkSync(path.join(__dirname, 'lib'), path.join(sandbox, 'scripts/lib'), 'dir');
+    fs.symlinkSync(path.join(__dirname, 'release-safety'), path.join(sandbox, 'scripts/release-safety'), 'dir');
     fs.symlinkSync(path.join(__dirname, '../shared'), path.join(sandbox, 'shared'), 'dir');
     fs.symlinkSync(path.join(__dirname, '../client/node_modules'), path.join(sandbox, 'client/node_modules'), 'dir');
     const dist = makeMockDist(sandbox, {
@@ -539,27 +619,6 @@ test('publisher refuses a dist whose compiled payment flags are false', () => {
 test('publisher refuses to inherit previous payment flags when building the next manifest', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-cli-no-inherit-'));
   try {
-    const dist = makeMockDist(tmp, { frontendRelease: NEXT_RELEASE_SHA });
-    for (const route of prerenderContract.ROUTES) {
-      const output = prerenderContract.artifactPath(dist, route);
-      fs.mkdirSync(path.dirname(output), { recursive: true });
-      fs.writeFileSync(output, createValidRouteHtml(route));
-    }
-    ensureShellEntryOnRootIndex(dist);
-    // Copy CLI into tmp so we can run against this dist tree
-    for (const relative of [
-      'scripts/deploy-frontend-safe.mjs',
-      'scripts/deploy-frontend-safe.lib.mjs',
-      'client/scripts/prerender-contract.cjs',
-      'client/src/data/publicSeoRoutes.json'
-    ]) {
-      const target = path.join(tmp, relative);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.copyFileSync(path.join(__dirname, '..', relative), target);
-    }
-    fs.symlinkSync(path.join(__dirname, 'lib'), path.join(tmp, 'scripts/lib'), 'dir');
-    fs.symlinkSync(path.join(__dirname, '../shared'), path.join(tmp, 'shared'), 'dir');
-    fs.symlinkSync(path.join(__dirname, '../client/node_modules'), path.join(tmp, 'client/node_modules'), 'dir');
     const webroot = makeMockWebroot(tmp);
     fs.writeFileSync(
       path.join(webroot, 'release-manifest.json'),
@@ -575,20 +634,12 @@ test('publisher refuses to inherit previous payment flags when building the next
         retainedAssetFiles: ['assets/old.js']
       })
     );
-    const result = spawnSync(
-      process.execPath,
-      [path.join(tmp, 'scripts/deploy-frontend-safe.mjs')],
-      {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          WEBROOT: webroot,
-          REMOTE: '',
-          DRY_RUN: '',
-          VITE_FRONTEND_RELEASE: NEXT_RELEASE_SHA
-        }
-      }
-    );
+    const result = runCLI([], {
+      WEBROOT: webroot,
+      REMOTE: '',
+      DRY_RUN: '',
+      VITE_FRONTEND_RELEASE: NEXT_RELEASE_SHA
+    });
     assert.equal(result.status, 0, `stderr: ${result.stderr}`);
     const manifest = JSON.parse(fs.readFileSync(path.join(webroot, 'release-manifest.json'), 'utf8'));
     assert.equal(manifest.frontendRelease, NEXT_RELEASE_SHA);
@@ -837,4 +888,48 @@ test('without --dry-run flag an actual local publish writes files', () => {
     ? fs.readdirSync(path.join(webroot, 'assets')).filter((f) => f.endsWith('.js'))
     : [];
   assert.ok(publishedAssets.length > 0, 'expected at least one JS asset in webroot/assets');
+  const snapshotParent = path.resolve(webroot, '..', 'private-release-snapshots');
+  assert.equal(snapshotParent.startsWith(`${webroot}${path.sep}`), false);
+  assert.ok(fs.existsSync(snapshotParent));
+});
+
+test('publisher refuses a missing, stale, or fabricated release report', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-cli-gate-'));
+  const webroot = makeMockWebroot(tmp);
+  const before = fs.readdirSync(webroot).sort();
+  const missing = runCLI([], { WEBROOT: webroot, REMOTE: '', DRY_RUN: '', RELEASE_SAFETY_REPORT: '' });
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /RELEASE_SAFETY_REPORT/);
+  const stale = runCLI([], { WEBROOT: webroot, REMOTE: '', DRY_RUN: '' }, { reportSha: 'c'.repeat(40) });
+  assert.equal(stale.status, 1);
+  assert.match(stale.stderr, /does not match/);
+  const failedRun = runCLI([], { WEBROOT: webroot, REMOTE: '', DRY_RUN: '' }, { conclusion: 'failure' });
+  assert.equal(failedRun.status, 1);
+  assert.match(failedRun.stderr, /Refusing to publish/);
+  const fabricated = runCLI([], { WEBROOT: webroot, REMOTE: '', DRY_RUN: '' }, { tamperStaging: true });
+  assert.equal(fabricated.status, 1);
+  assert.match(fabricated.stderr, /does not match the Actions artifact/);
+  assert.deepEqual(fs.readdirSync(webroot).sort(), before);
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('publisher rolls back the shell when the published routes bounce home', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-cli-rollback-'));
+  const webroot = makeMockWebroot(tmp);
+  fs.writeFileSync(path.join(webroot, 'index.html'), 'old-shell');
+  fs.writeFileSync(path.join(webroot, '.htaccess'), 'old-htaccess');
+  const result = runCLI([], {
+    WEBROOT: webroot,
+    REMOTE: '',
+    DRY_RUN: ''
+  }, { faultyHtaccess: true });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /shell restored|Critical route verification failed/);
+  assert.equal(fs.readFileSync(path.join(webroot, 'index.html'), 'utf8'), 'old-shell');
+  assert.equal(fs.readFileSync(path.join(webroot, '.htaccess'), 'utf8'), 'old-htaccess');
+  assert.equal(fs.readFileSync(path.join(webroot, 'uploads', 'cabins', 'photo.jpg'), 'utf8'), 'jpg');
+  assert.ok(fs.existsSync(path.join(webroot, 'assets', 'index-OLD.js')));
+  const snapshot = path.resolve(webroot, '..', 'private-release-snapshots');
+  assert.equal(snapshot.startsWith(`${path.resolve(webroot)}${path.sep}`), false);
+  fs.rmSync(tmp, { recursive: true, force: true });
 });

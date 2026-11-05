@@ -1,6 +1,5 @@
 const crypto = require('crypto');
-const Stripe = require('stripe');
-const { STRIPE_API_VERSION } = require('../../config/stripeApiVersion');
+const { createStripeClient } = require('../../config/stripeClient');
 const GiftVoucher = require('../../models/GiftVoucher');
 const GiftVoucherEvent = require('../../models/GiftVoucherEvent');
 const { appendVoucherEvent } = require('./giftVoucherEventService');
@@ -50,9 +49,7 @@ async function assertPurchaseRequestIndexReady() {
   await purchaseRequestIndexReady;
 }
 
-let stripeClient = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION })
-  : null;
+let stripeClient = createStripeClient();
 
 function setStripeClientForTesting(client) {
   stripeClient = client;

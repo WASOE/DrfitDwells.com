@@ -1,0 +1,122 @@
+name: Release safety
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  artifact-and-browser:
+    name: Apache, browser, and payment contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      VITE_FRONTEND_RELEASE: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install Apache 2.4
+        run: sudo apt-get update && sudo apt-get install -y apache2 openssl
+      - run: npm ci
+      - run: npm ci
+        working-directory: client
+      - name: Install the prerender browser
+        run: npx playwright install --with-deps chromium
+      - name: Locate Chrome for prerender
+        run: |
+          CHROME=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -path '*chrome-linux*' | head -1)
+          test -n "$CHROME"
+          echo "PRERENDER_BROWSER_PATH=$CHROME" >> "$GITHUB_ENV"
+      - name: Fetch public cabin originals required by the production build
+        run: node scripts/release-safety/fetch-public-media.mjs
+      - name: Build the production artifact
+        working-directory: client
+        env:
+          VITE_CHECKOUT_SESSION_V2: '1'
+          VITE_FINALIZE_INTENT_PERSIST: '1'
+          VITE_FINALIZE_INTENT_REQUIRED_FOR_PI: '1'
+          VITE_STRIPE_PUBLISHABLE_KEY: pk_test_releasegatenotasecret
+          PRERENDER_REQUIRE_BROWSER: '1'
+        run: npm run build
+      - name: Apache routing, regression, and compatibility
+        run: node scripts/release-safety/run-gate.mjs
+      - name: Mocked booking browser gate
+        run: node scripts/release-safety/run-browser-gate.mjs
+      - name: Upload Apache and browser evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: apache-browser-evidence
+          path: |
+            apache-evidence.json
+            browser-evidence.json
+          if-no-files-found: error
+
+  staging-booking-integration:
+    name: Isolated staging booking
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      VITE_FRONTEND_RELEASE: ${{ github.sha }}
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install Apache 2.4
+        run: sudo apt-get update && sudo apt-get install -y apache2 openssl
+      - run: npm ci
+      - run: npm ci
+        working-directory: server
+      - run: npm ci
+        working-directory: client
+      - name: Install the prerender and staging browser
+        run: npx playwright install --with-deps chromium
+      - name: Locate Chrome for prerender
+        run: |
+          CHROME=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -path '*chrome-linux*' | head -1)
+          test -n "$CHROME"
+          echo "PRERENDER_BROWSER_PATH=$CHROME" >> "$GITHUB_ENV"
+      - name: Fetch public cabin originals required by the production build
+        run: node scripts/release-safety/fetch-public-media.mjs
+      - name: Build the production artifact
+        working-directory: client
+        env:
+          VITE_CHECKOUT_SESSION_V2: '1'
+          VITE_FINALIZE_INTENT_PERSIST: '1'
+          VITE_FINALIZE_INTENT_REQUIRED_FOR_PI: '1'
+          VITE_STRIPE_PUBLISHABLE_KEY: pk_test_releasegatenotasecret
+          PRERENDER_REQUIRE_BROWSER: '1'
+        run: npm run build
+      - name: Isolated booking and test-mode payment initialization
+        run: |
+          set +e
+          echo "shell-before-node"
+          node scripts/release-safety/ci-staging.mjs
+          status=$?
+          echo "shell-after-node status=$status"
+          echo "--- phase ---"
+          cat ci-staging-phase.txt || echo "phase file missing"
+          set -e
+          test "$status" -eq 0
+          test -s staging-evidence.json
+          wc -c staging-evidence.json
+      - name: Upload staging evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-evidence
+          path: staging-evidence.json
+          if-no-files-found: error
+          include-hidden-files: true
