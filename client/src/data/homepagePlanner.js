@@ -14,39 +14,12 @@ export const STAY_MATCHES = Object.freeze({
   }),
 });
 
-/** Friendly first choice — exact count is resolved next when needed. */
-export const PLANNER_WHO_OPTIONS = Object.freeze(['solo', 'couple', 'family', 'group']);
-
-/** Exact overnight guest counts 1–18 (no gaps). */
+/** Exact overnight guest counts offered in the planner (not bucket labels). */
 export const PLANNER_PARTY_OPTIONS = Object.freeze(
   Array.from({ length: 18 }, (_, index) => String(index + 1))
 );
 
-export const PLANNER_FAMILY_COUNTS = Object.freeze(['3', '4', '5', '6', '7']);
-export const PLANNER_GROUP_COUNTS = Object.freeze([
-  '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18',
-]);
-
-export function partyCountsForWho(who) {
-  if (who === 'solo') return Object.freeze(['1']);
-  if (who === 'couple') return Object.freeze(['2']);
-  if (who === 'family') return PLANNER_FAMILY_COUNTS;
-  if (who === 'group') return PLANNER_GROUP_COUNTS;
-  return PLANNER_PARTY_OPTIONS;
-}
-
-/** Instant exact party for solo/couple; otherwise null until the guest picks a number. */
-export function resolvePartyFromWho(who) {
-  if (who === 'solo') return '1';
-  if (who === 'couple') return '2';
-  return null;
-}
-
 export const PLANNER_STEPS = Object.freeze([
-  Object.freeze({
-    id: 'who',
-    options: PLANNER_WHO_OPTIONS,
-  }),
   Object.freeze({
     id: 'party',
     options: PLANNER_PARTY_OPTIONS,

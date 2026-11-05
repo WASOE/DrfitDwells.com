@@ -1,39 +1,28 @@
 import { useTranslation } from 'react-i18next';
-import { wrapClass } from './homeStyles';
+import { eyebrowClass, wrapClass } from './homeStyles';
 
 export default function HomeAylyak() {
   const { t } = useTranslation('home');
 
   return (
     <section
-      className="relative overflow-hidden bg-[#1c1917] text-[#F1ECE2] py-20 md:py-28 lg:py-32"
+      className="bg-[#FFFDF8] border-t border-[#EBE7DF] py-16 md:py-20 lg:py-24"
       aria-labelledby="home-aylyak-title"
     >
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.07]"
-        style={{
-          backgroundImage:
-            'radial-gradient(circle at 20% 20%, #F1ECE2 0.8px, transparent 1px), radial-gradient(circle at 80% 60%, #F1ECE2 0.8px, transparent 1px)',
-          backgroundSize: '28px 28px',
-        }}
-        aria-hidden="true"
-      />
-      <div className={`relative ${wrapClass} max-w-4xl text-center`}>
-        <p className="text-[11px] uppercase tracking-[0.22em] text-stone-400 mb-6">
-          {t('philosophy.eyebrow')}
-        </p>
+      <div className={`${wrapClass} text-center max-w-3xl`}>
+        <p className={`${eyebrowClass} mb-4`}>{t('philosophy.eyebrow')}</p>
         <h2
           id="home-aylyak-title"
-          className="font-serif text-6xl sm:text-7xl md:text-[5.5rem] lg:text-[6.5rem] tracking-tight leading-none"
+          className="font-serif text-5xl sm:text-6xl md:text-[4.4rem] text-[#1c1917] tracking-tight"
         >
           {t('philosophy.word')}
         </h2>
-        <p className="mt-5 text-stone-400 text-sm md:text-base">
+        <p className="mt-3 text-stone-500 text-sm italic">
           {t('philosophy.phonetic')}
-          <span className="mx-3 text-stone-600">·</span>
+          <span className="mx-2 not-italic">·</span>
           {t('philosophy.type')}
         </p>
-        <p className="mt-10 md:mt-12 font-serif text-xl sm:text-2xl md:text-[1.75rem] text-[#F1ECE2] leading-relaxed max-w-2xl mx-auto">
+        <p className="mt-7 font-serif text-lg md:text-xl text-stone-700 leading-relaxed max-w-2xl mx-auto">
           {t('philosophy.line')}
         </p>
       </div>

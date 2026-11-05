@@ -23,16 +23,12 @@ export const HOME_IMAGES = {
     width: 1600,
     height: 900,
   },
-  /**
-   * Valley lead — authentic aerial of the complete village.
-   * Verified: Stone House (centre), A-frame clusters, Luxury Cabin (lower right).
-   * Served from shared uploads (same asset as LayOfLandSection).
-   */
+  /** Valley lead — clear A-frame row + Stone House, not landscape filler. */
   valleyAframes: {
     avifSrcSet: '',
     webpSrcSet: '',
-    src: '/uploads/Content%20website/SKy-view-Aframe.jpg',
-    width: 2752,
+    src: '/media/seo/aframe-row-sunset.png',
+    width: 1152,
     height: 1536,
   },
   /** Summer A-frames on the meadow (secondary / moments). */

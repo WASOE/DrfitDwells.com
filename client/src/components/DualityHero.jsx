@@ -181,6 +181,9 @@ function MobileDualityHeroStack() {
 
   return (
     <section ref={containerRef} className="relative w-full overflow-hidden flex flex-col h-[100svh]">
+      <h1 className="absolute top-16 left-1/2 z-30 -translate-x-1/2 max-w-xs px-4 text-center text-[10px] uppercase tracking-[0.18em] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">
+        {t('hero.kicker')}
+      </h1>
       <HeroSeasonToggle position="bottom-center" />
 
       <div className="relative w-full flex-1 bg-black overflow-hidden border-b border-white/20">
@@ -199,14 +202,14 @@ function MobileDualityHeroStack() {
           <div className="absolute inset-0 bg-black/40" />
 
           <div className="relative z-20 pointer-events-none text-center px-2">
-            <p className="font-['Playfair_Display'] text-lg sm:text-xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl">
+            <h2 className="font-['Playfair_Display'] text-lg sm:text-xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl">
               {t('hero.leftHeadline')}
-            </p>
+            </h2>
             <a
               href={localizePath('/cabin', language)}
-              className="inline-flex items-center gap-2 mt-2 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors pointer-events-auto"
+              className="mt-2 max-w-[16rem] text-sm text-white leading-snug pointer-events-auto hover:underline underline-offset-4"
             >
-              {t('hero.exploreCabin')}
+              {t('hero.cabinLine')}
             </a>
           </div>
         </div>
@@ -237,9 +240,9 @@ function MobileDualityHeroStack() {
             </h2>
             <a
               href={localizePath('/valley', language)}
-              className="inline-flex items-center gap-2 mt-2 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors pointer-events-auto"
+              className="mt-2 max-w-[16rem] text-sm text-white leading-snug pointer-events-auto hover:underline underline-offset-4"
             >
-              {t('hero.exploreValley')}
+              {t('hero.valleyLine')}
             </a>
           </div>
         </div>

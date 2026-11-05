@@ -2,13 +2,13 @@ import { Suspense, lazy } from 'react';
 import '../i18n/ns/home';
 import DualityHero from '../components/DualityHero';
 import Seo from '../components/Seo';
-import HomeOrient from '../components/home/HomeOrient';
-import HomeTripPlanner from '../components/home/HomeTripPlanner';
-import HomeFacts from '../components/home/HomeFacts';
-import HomeReviews from '../components/home/HomeReviews';
-import HomeAccess from '../components/home/HomeAccess';
+import HomeIntro from '../components/home/HomeIntro';
+import HomeStayComparison from '../components/home/HomeStayComparison';
 import HomeGroupStay from '../components/home/HomeGroupStay';
-import HomeGuides from '../components/home/HomeGuides';
+import HomeOccasions from '../components/home/HomeOccasions';
+import MemoryStream from '../components/MemoryStream';
+import HomeTripPlanner from '../components/home/HomeTripPlanner';
+import HomeAylyak from '../components/home/HomeAylyak';
 import HomeFaq, { HOME_FAQ_KEYS } from '../components/home/HomeFaq';
 import HomeVoucher from '../components/home/HomeVoucher';
 import HomeFinalCta from '../components/home/HomeFinalCta';
@@ -16,12 +16,13 @@ import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useSeason } from '../context/SeasonContext';
 import { getCabinHeroPreloadUrl, getHomeHeroMobilePosterUrls } from '../config/heroResponsive';
-import { CONTACT_PHONE, CONTACT_EMAIL, INSTAGRAM_URL, FACEBOOK_URL, GMB_LOCATIONS } from '../data/gmbLocations';
+import { CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
 import { buildHreflangAlternates } from '../utils/localizedRoutes';
 import { getSiteUrl } from '../utils/siteUrl';
 import { BRANDING } from '../config/brandingAssets';
 
 const BookingDrawer = lazy(() => import('../components/BookingDrawer'));
+const AuthorityStrip = lazy(() => import('../components/AuthorityStrip'));
 const Footer = lazy(() => import('../components/Footer'));
 
 const origin = getSiteUrl();
@@ -34,37 +35,12 @@ const Home = () => {
   const { cabin: mobileCabinPoster, valley: mobileValleyPoster } = getHomeHeroMobilePosterUrls(season);
   const seoTitle =
     language === 'bg'
-      ? 'Офгрид къща край Бачево и селище в Родопите – Drift & Dwells'
-      : 'Off-grid cabin and mountain village stays in Bulgaria – Drift & Dwells';
+      ? 'Офгрид къщи в планините на България | Drift & Dwells'
+      : "Off-Grid Cabins in Bulgaria's Mountains | Drift & Dwells";
   const seoDescription =
     language === 'bg'
-      ? 'Резервирайте директно: самостоятелна офгрид къща за двама край Бачево и The Valley в Родопите — пет A-frame къщички, Luxury Cabin и каменна къща за до 18 гости.'
-      : 'Book direct: a private off-grid cabin for two near Bachevo, and The Valley in the Rhodopes — five A-frames, a Luxury Cabin and a Stone House for up to 18 guests.';
-
-  const lodgingJsonLd = ['cabin', 'valley'].map((key) => {
-    const place = GMB_LOCATIONS[key];
-    return {
-      '@context': 'https://schema.org',
-      '@type': 'LodgingBusiness',
-      name: place.businessName,
-      description: place.description,
-      url: place.url,
-      telephone: CONTACT_PHONE,
-      email: CONTACT_EMAIL,
-      address: {
-        '@type': 'PostalAddress',
-        addressLocality: place.address.locality,
-        postalCode: place.address.postalCode,
-        addressRegion: place.address.region,
-        addressCountry: place.address.country,
-      },
-      geo: {
-        '@type': 'GeoCoordinates',
-        latitude: place.geo.latitude,
-        longitude: place.geo.longitude,
-      },
-    };
-  });
+      ? 'Частна горска къща край Банско и скрито селище от A-frame на 1550 м в Родопите. Горещи вани на дърва, без тълпи. Директна резервация, без такси.'
+      : 'A private forest cabin near Bansko and a hidden A-frame village at 1,550 m in the Rhodopes. Wood-fired hot tubs, no crowds. Book direct, no fees.';
 
   const faqJsonLd = {
     '@context': 'https://schema.org',
@@ -126,8 +102,7 @@ const Home = () => {
             logo: `${origin}${BRANDING.schemaLogoWebp}`,
             sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
           },
-          faqJsonLd,
-          ...lodgingJsonLd
+          faqJsonLd
         ]}
       />
       <div className="min-h-screen bg-white overflow-x-hidden">
@@ -143,13 +118,19 @@ const Home = () => {
           </div>
         </section>
 
-        <HomeOrient />
-        <HomeTripPlanner />
-        <HomeFacts />
-        <HomeReviews />
-        <HomeAccess />
+        <Suspense
+          fallback={<div className="min-h-[200px] bg-[#F9F9F7] border-y border-[#E5E5E0]" aria-hidden />}
+        >
+          <AuthorityStrip />
+        </Suspense>
+
+        <HomeIntro />
+        <HomeStayComparison />
         <HomeGroupStay />
-        <HomeGuides />
+        <HomeOccasions />
+        <MemoryStream />
+        <HomeTripPlanner />
+        <HomeAylyak />
         <HomeFaq />
         <HomeVoucher />
         <HomeFinalCta />

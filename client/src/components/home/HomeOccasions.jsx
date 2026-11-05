@@ -7,9 +7,9 @@ import HomePicture from './HomePicture';
 import { eyebrowClass, titleClass, wrapClass } from './homeStyles';
 
 const OCCASIONS = [
-  { id: 'two', image: HOME_IMAGES.couple, path: '/cabin', object: 'object-[center_28%]' },
-  { id: 'together', image: HOME_IMAGES.together, path: '/retreats/the-valley', object: 'object-[center_42%]' },
-  { id: 'quiet', image: HOME_IMAGES.quiet, path: '/cabin', object: 'object-[center_45%]' },
+  { id: 'two', image: HOME_IMAGES.couple, path: '/cabin', object: 'object-center' },
+  { id: 'together', image: HOME_IMAGES.together, path: '/retreat-venue-bulgaria', object: 'object-center' },
+  { id: 'quiet', image: HOME_IMAGES.quiet, path: '/digital-detox-bulgaria', object: 'object-[18%_center]' },
 ];
 
 export default function HomeOccasions() {
@@ -31,7 +31,7 @@ export default function HomeOccasions() {
           {OCCASIONS.map((item) => (
             <article
               key={item.id}
-              className="relative h-[340px] sm:h-[380px] lg:h-[420px] overflow-hidden bg-[#1c1917] group min-w-0"
+              className="relative aspect-[4/5] overflow-hidden bg-[#1c1917] group min-w-0 lg:aspect-auto lg:h-[520px]"
             >
               <HomePicture
                 image={item.image}
@@ -40,7 +40,7 @@ export default function HomeOccasions() {
                 className={`absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04] ${item.object}`}
               />
               <div
-                className="absolute inset-0 bg-gradient-to-t from-[#0c0a09]/95 via-[#0c0a09]/40 to-transparent"
+                className="absolute inset-x-0 bottom-0 h-[48%] bg-gradient-to-t from-[#0c0a09]/92 via-[#0c0a09]/55 to-transparent"
                 aria-hidden="true"
               />
               <div className="absolute inset-x-0 bottom-0 z-10 p-6 sm:p-8 text-[#F1ECE2]">

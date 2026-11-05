@@ -56,18 +56,18 @@ export default function HomeGroupStay() {
             </div>
           </div>
 
-          <dl className="border border-white/25 grid grid-cols-2 self-center bg-[#1c1917]/55 backdrop-blur-[2px]">
+          <dl className="border border-white/25 grid grid-cols-2 auto-rows-fr self-center bg-[#1c1917]/55 backdrop-blur-[2px]">
             {STATS.map((stat, index) => (
               <div
                 key={stat}
-                className={`px-5 py-8 sm:px-6 sm:py-9 ${index % 2 === 0 ? 'border-r border-white/25' : ''} ${
+                className={`flex min-h-[9.25rem] flex-col px-4 py-7 sm:px-6 sm:py-8 ${index % 2 === 0 ? 'border-r border-white/25' : ''} ${
                   index < 2 ? 'border-b border-white/25' : ''
                 }`}
               >
-                <dt className="font-serif text-4xl sm:text-5xl text-[#F1ECE2] leading-none">
+                <dt className="whitespace-nowrap font-serif text-4xl sm:text-5xl text-[#F1ECE2] leading-none">
                   {t(`group.stats.${stat}.value`)}
                 </dt>
-                <dd className="mt-3 text-[10px] uppercase tracking-[0.13em] text-stone-300 leading-snug">
+                <dd className="mt-3 min-h-[2.5em] text-[10px] uppercase tracking-[0.12em] text-stone-300 leading-snug">
                   {t(`group.stats.${stat}.label`)}
                 </dd>
               </div>

@@ -192,7 +192,7 @@ const Header = () => {
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 aria-expanded={isMobileMenuOpen}
                 aria-controls="site-mobile-nav"
-                aria-label="Toggle menu"
+                aria-label={t(isMobileMenuOpen ? 'closeMenu' : 'openMenu')}
               >
                 <span
                   className={`block transition-transform duration-300 ease-out ${isMobileMenuOpen ? 'rotate-90' : 'rotate-0'}`}
@@ -218,13 +218,13 @@ const Header = () => {
           id="site-mobile-nav"
           role="dialog"
           aria-modal="true"
-          aria-label="Site navigation"
+          aria-label={t('siteNavigation')}
           className="fixed inset-0 z-[60] bg-stone-900/90 backdrop-blur-xl md:hidden animate-header-veil"
           onClick={() => setIsMobileMenuOpen(false)}
         >
           <button
             type="button"
-            aria-label="Close menu"
+            aria-label={t('closeMenu')}
             onClick={(e) => {
               e.stopPropagation();
               setIsMobileMenuOpen(false);

@@ -29,7 +29,7 @@ const STAYS = [
     id: 'valley',
     stayId: 'aframe',
     image: HOME_IMAGES.valleyAframes,
-    imageClass: 'object-center',
+    imageClass: 'object-[center_62%]',
     path: '/valley',
     facts: ['sleeps', 'location', 'connection', 'access'],
   },
@@ -56,7 +56,7 @@ function StayCard({ stay, t, language, partyTotal, handoff }) {
         <h3 className="font-serif text-[2rem] sm:text-[2.25rem] lg:text-[2.45rem] text-[#1c1917] mb-3 tracking-tight leading-none">
           {t(`stays.${stay.id}.name`)}
         </h3>
-        <p className="text-[15px] md:text-base text-stone-600 leading-relaxed mb-7 max-w-md">
+        <p className="text-[15px] md:text-base text-[#1c1917] leading-relaxed mb-7 max-w-md">
           {t(`stays.${stay.id}.body`)}
         </p>
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5 mb-7">
@@ -72,7 +72,7 @@ function StayCard({ stay, t, language, partyTotal, handoff }) {
           ))}
         </dl>
         {overCapacity ? (
-          <p className="mb-5 text-sm text-stone-600 leading-relaxed" role="status">
+          <p className="mb-5 text-sm text-[#1c1917] leading-relaxed" role="status">
             {t(`stays.${stay.id}.capacityNote`, { count: partyTotal })}
           </p>
         ) : null}
@@ -129,7 +129,6 @@ export default function HomeStayComparison() {
           <StayCard stay={valley} t={t} language={language} partyTotal={partyTotal} handoff={handoff} />
         </div>
 
-        <p className="mt-7 text-sm text-stone-500 max-w-2xl">{t('stays.priceNote')}</p>
       </div>
     </section>
   );

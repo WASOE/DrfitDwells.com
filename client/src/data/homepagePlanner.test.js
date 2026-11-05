@@ -2,18 +2,13 @@ import { describe, expect, it } from 'vitest';
 import en from '../i18n/locales/en/home.json';
 import bg from '../i18n/locales/bg/home.json';
 import {
-  PLANNER_GROUP_COUNTS,
   PLANNER_PARTY_OPTIONS,
-  PLANNER_WHO_OPTIONS,
   buildAvailabilitySearch,
   buildBuyoutHandoff,
   buildItinerary,
   capacityExceeded,
-  partyCountsForWho,
   recommendStay,
-  resolvePartyFromWho,
 } from './homepagePlanner';
-import { setupsForParty } from './homepageSetups';
 
 function keyTree(value) {
   if (Array.isArray(value)) return value.map(keyTree);
@@ -24,38 +19,17 @@ function keyTree(value) {
 }
 
 describe('homepage planner', () => {
-  it('returns bed combinations instead of one property', () => {
-    expect(setupsForParty(2).map((item) => item.id)).toEqual(['cabin', 'aframe', 'lux']);
-    expect(setupsForParty(4).map((item) => [item.id, item.nightly])).toEqual([
-      ['twoAframes', 120],
-      ['stone', 75],
-    ]);
-    expect(setupsForParty(8).map((item) => item.sleeps)).toEqual([8, 10]);
-    expect(setupsForParty(10)[0]).toMatchObject({ id: 'buyout', quote: true, nightly: null });
-    expect(setupsForParty(17)[0].id).toBe('buyout');
-  });
-
   it('keeps English and Bulgarian homepage copy in the same shape', () => {
     expect(keyTree(bg)).toEqual(keyTree(en));
   });
 
-  it('offers a friendly who-choice then exact party sizes 1–18 with no gaps', () => {
-    expect(PLANNER_WHO_OPTIONS).toEqual(['solo', 'couple', 'family', 'group']);
-    expect(resolvePartyFromWho('solo')).toBe('1');
-    expect(resolvePartyFromWho('couple')).toBe('2');
-    expect(resolvePartyFromWho('family')).toBeNull();
-    expect(PLANNER_PARTY_OPTIONS).toEqual(Array.from({ length: 18 }, (_, i) => String(i + 1)));
-    expect(partyCountsForWho('group')).toEqual(PLANNER_GROUP_COUNTS);
-    expect(PLANNER_GROUP_COUNTS).toEqual([
-      '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18',
-    ]);
+  it('offers exact party sizes instead of falsified buckets', () => {
+    expect(PLANNER_PARTY_OPTIONS).toEqual(
+      Array.from({ length: 18 }, (_, index) => String(index + 1))
+    );
     for (const size of PLANNER_PARTY_OPTIONS) {
       expect(en.planner.steps.party.options[size]).toBeTruthy();
       expect(bg.planner.steps.party.options[size]).toBeTruthy();
-    }
-    for (const who of PLANNER_WHO_OPTIONS) {
-      expect(en.planner.steps.who.options[who]).toBeTruthy();
-      expect(bg.planner.steps.who.options[who]).toBeTruthy();
     }
   });
 

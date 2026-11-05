@@ -5,7 +5,7 @@ import { localizePath } from '../../utils/localizedRoutes';
 import { useSiteLanguage } from '../../hooks/useSiteLanguage';
 import { bodyClass, eyebrowClass, textLinkClass, titleClass, wrapClass } from './homeStyles';
 
-export const HOME_FAQ_KEYS = ['where', 'drive', 'wifi', 'group', 'times', 'gift'];
+export const HOME_FAQ_KEYS = ['valley', 'winter', 'sofia', 'wifi', 'group', 'gift'];
 
 export default function HomeFaq() {
   const { t } = useTranslation('home');
@@ -54,7 +54,7 @@ export default function HomeFaq() {
                 <div
                   id={panelId}
                   hidden={!open}
-                  className="pb-5 pr-8 text-sm md:text-[15px] text-stone-700 leading-relaxed max-w-2xl"
+                  className="pb-5 pr-8 text-base text-[#1c1917] leading-relaxed max-w-2xl"
                 >
                   {t(`faq.items.${key}.a`)}
                 </div>
