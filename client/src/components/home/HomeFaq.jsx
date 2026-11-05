@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { localizePath } from '../../utils/localizedRoutes';
 import { useSiteLanguage } from '../../hooks/useSiteLanguage';
-import { bodyClass, eyebrowClass, sectionClass, textLinkClass, titleClass, wrapClass } from './homeStyles';
+import { bodyClass, eyebrowClass, textLinkClass, titleClass, wrapClass } from './homeStyles';
 
 export const HOME_FAQ_KEYS = ['where', 'drive', 'wifi', 'group', 'times', 'gift'];
 
@@ -13,9 +13,9 @@ export default function HomeFaq() {
   const [openKey, setOpenKey] = useState(HOME_FAQ_KEYS[0]);
 
   return (
-    <section id="faq" className={`bg-[#F3EFE6] ${sectionClass}`} aria-labelledby="home-faq-title">
-      <div className={`${wrapClass} grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16`}>
-        <div className="lg:col-span-5 max-w-xl">
+    <section id="faq" className="bg-[#F3EFE6] py-14 md:py-20 lg:py-[6rem]" aria-labelledby="home-faq-title">
+      <div className={`${wrapClass} grid grid-cols-1 lg:grid-cols-[0.8fr_1.2fr] gap-10 lg:gap-16 xl:gap-24`}>
+        <div className="max-w-xl">
           <p className={`${eyebrowClass} mb-4`}>{t('faq.eyebrow')}</p>
           <h2 id="home-faq-title" className={titleClass}>{t('faq.title')}</h2>
           <p className={`${bodyClass} mt-5`}>{t('faq.body')}</p>
@@ -28,7 +28,7 @@ export default function HomeFaq() {
             </Link>
           </div>
         </div>
-        <div className="lg:col-span-7 border-t border-[#D3D3CB]">
+        <div className="border-t border-[#D3D3CB]">
           {HOME_FAQ_KEYS.map((key) => {
             const open = openKey === key;
             const panelId = `home-faq-${key}`;

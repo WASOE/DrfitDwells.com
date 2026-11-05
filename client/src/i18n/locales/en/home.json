@@ -40,7 +40,7 @@
       "place": "Bachevo · a forest cabin for two",
       "price": "From €100 / night",
       "body": "A private off-grid cabin for two: wood stove, wood-fired hot tub, and no guest Wi-Fi. A few days left alone together.",
-      "imageAlt": "Wood stove and timber interior of The Cabin near Bachevo",
+      "imageAlt": "Exterior of The Cabin in the forest near Bachevo",
       "explore": "Explore The Cabin",
       "facts": {
         "sleeps": "2 guests",
@@ -69,8 +69,8 @@
   },
   "group": {
     "eyebrow": "Private Valley hire",
-    "title": "An entire mountain retreat, just for your group.",
-    "body": "Take over The Valley and spend a few days the way you want them: mornings outdoors, evenings by the fire, and everyone with their own place to sleep.",
+    "title": "An exclusive private mountain retreat.",
+    "body": "Book the whole Valley for a birthday, a friends’ weekend, a family gathering or a company retreat. Everyone sleeps in their own place. Evenings gather at the shared fire pit and outdoor wood-fired hot tub — and nobody else is staying.",
     "points": {
       "private": "The whole retreat for your birthday, family gathering, friends’ weekend or company trip.",
       "capacity": "Private accommodation for up to 18 overnight guests.",
@@ -79,31 +79,37 @@
       "occasions": "Space to gather — and quiet corners when you need them."
     },
     "capacityLine": "Up to 18 overnight guests across seven stays.",
-    "imageAlt": "Fire pit at The Valley at sunset",
+    "imageAlt": "A-frame cabins on the meadow at The Valley",
     "hire": "Book a private stay",
-    "retreat": "Plan a company retreat"
+    "retreat": "Plan a company retreat",
+    "stats": {
+      "guests": { "value": "18", "label": "Overnight guests" },
+      "stays": { "value": "7", "label": "Separate stays" },
+      "shared": { "value": "Shared", "label": "Fire pit & hot tub" },
+      "valley": { "value": "1", "label": "Private valley" }
+    }
   },
   "occasions": {
     "eyebrow": "The reasons people come",
-    "title": "A different kind of weekend.",
-    "body": "Some people come for two. Others bring everyone. You decide how the days go.",
+    "title": "Three clear reasons to book.",
+    "body": "A romantic weekend, everyone together, or a real no-Wi-Fi cabin escape — each maps to a stay you can reserve.",
     "items": {
       "two": {
-        "title": "A weekend for two.",
-        "body": "A private cabin, a wood-fired hot tub and a few days together.",
-        "cta": "See The Cabin",
+        "title": "Romantic weekend.",
+        "body": "A private cabin, wood-fired hot tub and a few days with no audience.",
+        "cta": "Book The Cabin",
         "imageAlt": "Two guests on the swing at The Valley"
       },
       "together": {
-        "title": "Bring your favourite people.",
-        "body": "Book multiple cabins or the whole Valley. Spend the evenings around the fire.",
+        "title": "Get everyone together.",
+        "body": "Several homes or the whole Valley. Shared evenings at the fire pit.",
         "cta": "See private Valley stays",
-        "imageAlt": "Fire pit at The Valley at sunset"
+        "imageAlt": "Guests together near the A-frames at The Valley"
       },
       "quiet": {
-        "title": "A proper weekend offline.",
-        "body": "No guest Wi-Fi at The Cabin. Spend your time in the forest instead.",
-        "cta": "See The Cabin",
+        "title": "Real no-Wi-Fi escape.",
+        "body": "No guest Wi-Fi at The Cabin. Forest time instead of screen time.",
+        "cta": "Book The Cabin",
         "imageAlt": "Wood stove and quiet interior at The Cabin"
       }
     }
@@ -273,6 +279,7 @@
     "title": "Come and see it for yourself.",
     "body": "Two places, and more than one way to stay. Pick your dates, or tell us what would suit you.",
     "dates": "Find available dates",
+    "choose": "Help me choose",
     "gift": "Gift a stay"
   },
   "memory": {

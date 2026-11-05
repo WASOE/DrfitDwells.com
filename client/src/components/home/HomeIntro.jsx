@@ -5,16 +5,16 @@ export default function HomeIntro() {
   const { t } = useTranslation('home');
 
   return (
-    <section className={`bg-[#EFEADE] py-10 md:py-14 lg:py-16`} aria-labelledby="home-intro-title">
+    <section className="bg-[#F6F1E8] py-14 md:py-20 lg:py-24" aria-labelledby="home-intro-title">
       <div className={wrapClass}>
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-16 items-end max-w-5xl">
-          <div className="lg:col-span-7">
-            <p className={`${eyebrowClass} mb-3`}>{t('intro.eyebrow')}</p>
-            <h2 id="home-intro-title" className={`${titleClass} text-3xl sm:text-4xl md:text-[2.75rem]`}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-8 lg:gap-16 xl:gap-20 items-end">
+          <div className="max-w-3xl">
+            <p className={`${eyebrowClass} mb-4`}>{t('intro.eyebrow')}</p>
+            <h2 id="home-intro-title" className={titleClass}>
               {t('intro.title')}
             </h2>
           </div>
-          <p className={`${bodyClass} lg:col-span-5 text-base md:text-[1.05rem]`}>{t('intro.body')}</p>
+          <p className={`${bodyClass} max-w-md lg:pb-1`}>{t('intro.body')}</p>
         </div>
       </div>
     </section>

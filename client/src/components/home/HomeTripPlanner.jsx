@@ -15,7 +15,6 @@ import {
   eyebrowClass,
   primaryCtaClass,
   secondaryCtaClass,
-  sectionClass,
   titleClass,
   wrapClass,
 } from './homeStyles';
@@ -60,26 +59,26 @@ export default function HomeTripPlanner() {
   const partyGrid = current?.id === 'party';
 
   return (
-    <section id="planner" className={`bg-[#F3EFE6] ${sectionClass}`} aria-labelledby="home-planner-title">
-      <div className={`${wrapClass} grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 xl:gap-20 items-start`}>
-        <div className="max-w-xl lg:sticky lg:top-28">
+    <section id="planner" className="bg-[#F3EFE6] py-14 md:py-20 lg:py-[6.5rem]" aria-labelledby="home-planner-title">
+      <div className={`${wrapClass} grid grid-cols-1 lg:grid-cols-[1fr_1.1fr] gap-10 lg:gap-[4.5rem] items-start`}>
+        <div className="max-w-md lg:sticky lg:top-28">
           <p className={`${eyebrowClass} mb-4`}>{t('planner.eyebrow')}</p>
           <h2 id="home-planner-title" className={titleClass}>{t('planner.title')}</h2>
           <p className={`${bodyClass} mt-5`}>{t('planner.body')}</p>
-          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-6 border-t border-[#D7D2C7] pt-6">
+          <div className="mt-9 grid grid-cols-1 sm:grid-cols-2 gap-5 border-t border-[#D7D2C7] pt-7">
             <div>
-              <h3 className="font-serif text-lg text-[#1c1917] mb-2">{t('planner.promiseStayTitle')}</h3>
-              <p className="text-sm text-stone-600 leading-relaxed">{t('planner.promiseStayBody')}</p>
+              <h3 className="text-[13px] font-semibold text-[#1c1917] mb-2">{t('planner.promiseStayTitle')}</h3>
+              <p className="text-xs text-stone-600 leading-relaxed">{t('planner.promiseStayBody')}</p>
             </div>
             <div>
-              <h3 className="font-serif text-lg text-[#1c1917] mb-2">{t('planner.promisePlanTitle')}</h3>
-              <p className="text-sm text-stone-600 leading-relaxed">{t('planner.promisePlanBody')}</p>
+              <h3 className="text-[13px] font-semibold text-[#1c1917] mb-2">{t('planner.promisePlanTitle')}</h3>
+              <p className="text-xs text-stone-600 leading-relaxed">{t('planner.promisePlanBody')}</p>
             </div>
           </div>
         </div>
 
         <div
-          className="bg-white border border-[#DED9D0] shadow-[0_16px_36px_rgba(28,25,23,0.07)] p-5 sm:p-8 min-w-0 min-h-[340px]"
+          className="bg-white border border-[#DED9D0] shadow-[0_12px_30px_rgba(28,25,23,0.07)] p-6 sm:p-8 min-w-0 min-h-[390px]"
           data-testid="home-planner"
         >
           {result ? (
