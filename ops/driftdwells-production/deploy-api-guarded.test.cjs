@@ -12,6 +12,7 @@ const {
   DISABLED_API_FLAGS,
   REQUIRED_WORKER_ROLES,
   assertWorkerTopology,
+  attachArrivalRuntimeEvidence,
   validateTopology,
   verifyFiles,
   verifyOwnershipRelease,
@@ -52,6 +53,20 @@ const REQUIRED_WORKER_FIXTURES = [
   }
 ];
 
+function freshArrivalHealth(overrides = {}) {
+  const observedAt = Date.now();
+  return {
+    running: true,
+    dueCount: 0,
+    overdueCount: 0,
+    failedCount: 0,
+    lastTickAt: new Date(observedAt - 30_000).toISOString(),
+    lastTickError: null,
+    now: observedAt,
+    ...overrides
+  };
+}
+
 function fixture(extraWorkers = []) {
   const apps = [31, 40, 41].map((id, index) => ({
     name: `driftdwells-${index ? 'probe' : 'production'}-abcdef`,
@@ -68,7 +83,10 @@ function fixture(extraWorkers = []) {
         status: 'online',
         restart_time: 0,
         ...(worker.env || {})
-      }
+      },
+      ...(worker.name === 'driftdwells-arrival-automation-worker'
+        ? { arrivalHealth: freshArrivalHealth() }
+        : {})
     });
   });
   extraWorkers.forEach((worker, index) => {
@@ -139,13 +157,67 @@ test('an online arrival worker that is parked, staff-scoped, or idle while jobs 
   assert.throws(() => validateTopology(staff), /staff-scoped/);
 
   const due = fixture();
-  due.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth = {
+  const observedAt = Date.parse('2026-11-05T06:00:00.000Z');
+  due.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth = freshArrivalHealth({
     dueCount: 2,
-    overdueCount: 0,
     lastTickAt: '2026-11-05T05:00:00.000Z',
-    now: Date.parse('2026-11-05T06:00:00.000Z')
-  };
+    now: observedAt
+  });
   assert.throws(() => validateTopology(due), /not ticking/);
+});
+
+test('a parked or stalled arrival worker blocks deployment even when PM2 is online', () => {
+  const missing = fixture();
+  delete missing.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth;
+  assert.throws(() => validateTopology(missing), /missing data is not zero/);
+
+  const partial = fixture();
+  partial.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth = {
+    dueCount: 0,
+    status: 'online'
+  };
+  assert.throws(() => validateTopology(partial), /missing overdueCount/);
+
+  const now = Date.parse('2026-11-05T06:00:00.000Z');
+  const healthLine = JSON.stringify({
+    source: 'arrival-automation-worker',
+    phase: 'health',
+    running: true,
+    lastTickAt: '2026-11-05T05:59:30.000Z',
+    lastTickError: null
+  });
+  const collected = fixture();
+  delete collected.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth;
+  attachArrivalRuntimeEvidence(collected.apps, {
+    logText: healthLine,
+    counts: { dueCount: 0, overdueCount: 0, failedCount: 0 },
+    now
+  });
+  assert.equal(validateTopology(collected).length, 6);
+
+  const stalled = fixture();
+  delete stalled.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth;
+  attachArrivalRuntimeEvidence(stalled.apps, {
+    logText: JSON.stringify({
+      source: 'arrival-automation-worker',
+      phase: 'health',
+      running: true,
+      lastTickAt: '2026-11-05T04:00:00.000Z',
+      lastTickError: null
+    }),
+    counts: { dueCount: 0, overdueCount: 0, failedCount: 0 },
+    now
+  });
+  assert.throws(() => validateTopology(stalled), /not ticking/);
+
+  const parkedLog = fixture();
+  delete parkedLog.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth;
+  attachArrivalRuntimeEvidence(parkedLog.apps, {
+    logText: '[arrival-automation-worker] parked: activation OFF\n',
+    counts: { dueCount: 0, overdueCount: 0, failedCount: 0 },
+    now
+  });
+  assert.throws(() => validateTopology(parkedLog), /no tick evidence/);
 });
 
 test('production API without guest arrival scheduling is refused', () => {

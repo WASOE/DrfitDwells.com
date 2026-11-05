@@ -44,6 +44,11 @@ const CRITICAL_RELEASE_FILES = Object.freeze([
 
 const TICK_STALE_MS = 5 * 60 * 1000;
 const ARRIVAL_APP_NAME = 'driftdwells-arrival-automation-worker';
+const ARRIVAL_RULE_KEYS = Object.freeze([
+  'arrival_instructions_pre_arrival_cabin',
+  'arrival_instructions_pre_arrival_valley'
+]);
+const HEALTH_COUNT_FIELDS = Object.freeze(['dueCount', 'overdueCount', 'failedCount']);
 
 function flag(env, key) {
   return String(env?.[key] ?? '').trim();
@@ -64,9 +69,9 @@ function apiArrivalErrors(env = {}) {
   return errors;
 }
 
-function workerArrivalErrors(env = {}, health = {}) {
+function workerArrivalErrors(env = {}) {
   const errors = [];
-  const status = String(health.status || env.status || '').trim();
+  const status = String(env.status || '').trim();
   if (status && status !== 'online') errors.push('Arrival worker is not online');
 
   for (const [key, expected] of Object.entries(WORKER_PRODUCTION_FLAGS)) {
@@ -89,31 +94,109 @@ function workerArrivalErrors(env = {}, health = {}) {
   if (flag(env, 'MESSAGE_ORCHESTRATOR_ENABLED') === '1') {
     errors.push('Legacy MESSAGE_ORCHESTRATOR_ENABLED must stay off');
   }
+  return errors;
+}
 
-  const dueCount = Number(health.dueCount || 0);
-  const overdueCount = Number(health.overdueCount || 0);
-  const now = Number(health.now || Date.now());
-  if (overdueCount > 0) {
-    errors.push('Overdue arrival jobs are past the grace period');
-  }
-  if (dueCount > 0 || overdueCount > 0) {
-    const tick = Date.parse(health.lastTickAt || '');
-    if (!Number.isFinite(tick) || now - tick > TICK_STALE_MS) {
-      errors.push('Arrival scheduler is not ticking while guest jobs are due');
+function arrivalQueueFilters(nowMs = Date.now()) {
+  const now = new Date(nowMs);
+  const overdueBefore = new Date(nowMs - TICK_STALE_MS);
+  const scope = {
+    ruleKey: { $in: [...ARRIVAL_RULE_KEYS] },
+    'payloadSnapshot.arrivalAutomationV2': true
+  };
+  return {
+    due: { ...scope, status: 'scheduled', scheduledFor: { $lte: now } },
+    overdue: { ...scope, status: 'scheduled', scheduledFor: { $lte: overdueBefore } },
+    failed: { ...scope, status: 'failed' }
+  };
+}
+
+function parseLatestArrivalHealthLog(text) {
+  if (typeof text !== 'string' || !text.trim()) return null;
+  let found = null;
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{') || !trimmed.includes('"phase"')) continue;
+    try {
+      const row = JSON.parse(trimmed);
+      if (row && row.source === 'arrival-automation-worker' && row.phase === 'health') found = row;
+    } catch {
+      // Ignore ordinary log lines. Absence of a health record stays a failure.
     }
   }
+  return found;
+}
+
+function observeArrivalRuntimeHealth({ logText, counts, now = Date.now() } = {}) {
+  const log = parseLatestArrivalHealthLog(logText);
+  if (!log) {
+    return {
+      evidenceError: 'Arrival scheduler health log has no tick evidence; missing data is not zero',
+      now
+    };
+  }
+  return {
+    running: log.running,
+    lastTickAt: log.lastTickAt,
+    lastTickError: Object.hasOwn(log, 'lastTickError') ? log.lastTickError : undefined,
+    dueCount: counts?.dueCount,
+    overdueCount: counts?.overdueCount,
+    failedCount: counts?.failedCount,
+    now
+  };
+}
+
+async function readArrivalQueueCounts(connection, now = Date.now()) {
+  if (!connection || typeof connection.collection !== 'function') {
+    throw new Error('Arrival queue counts were not observed');
+  }
+  const filters = arrivalQueueFilters(now);
+  const names = ['due', 'overdue', 'failed'];
+  const values = await Promise.all(names.map(async (name) => {
+    const count = await connection.collection('scheduledmessagejobs').countDocuments(filters[name]);
+    if (typeof count !== 'number' || !Number.isFinite(count)) {
+      throw new Error(`Arrival ${name} count was not observed`);
+    }
+    return count;
+  }));
+  return { dueCount: values[0], overdueCount: values[1], failedCount: values[2] };
+}
+
+function workerRuntimeHealthErrors(health, now = Date.now()) {
+  if (!health || typeof health !== 'object') {
+    return ['Arrival runtime health was not collected; missing data is not zero'];
+  }
+  if (health.evidenceError) return [String(health.evidenceError)];
+  const errors = [];
+  const observedAt = Number(health.now || now);
+  for (const key of [...HEALTH_COUNT_FIELDS, 'lastTickAt', 'lastTickError']) {
+    if (!Object.hasOwn(health, key) || health[key] === undefined) {
+      errors.push(`Arrival health is missing ${key}; missing data is not zero`);
+    }
+  }
+  if (errors.length) return errors;
+  for (const key of HEALTH_COUNT_FIELDS) {
+    if (typeof health[key] !== 'number' || !Number.isFinite(health[key]) || health[key] < 0) {
+      errors.push(`Arrival health ${key} must be an observed count`);
+    }
+  }
+  if (health.running !== true) {
+    errors.push('Arrival scheduler is not running; PM2 online is not a tick');
+  }
+  const tick = Date.parse(health.lastTickAt || '');
+  if (!Number.isFinite(tick) || observedAt - tick > TICK_STALE_MS || tick > observedAt + 60_000) {
+    errors.push('Arrival scheduler is not ticking');
+  }
+  if (health.lastTickError) errors.push('Arrival scheduler tick failed');
+  if (health.overdueCount > 0) errors.push('Overdue arrival jobs are past the grace period');
+  if (health.failedCount > 0) errors.push('Arrival jobs have failed');
   return errors;
 }
 
 function committedProductionErrors(ecosystem) {
   const app = (ecosystem?.apps || []).find((item) => item.name === ARRIVAL_APP_NAME);
   if (!app) return ['PM2 production config has no dedicated arrival worker'];
-  const production = app.env_production || {};
-  return workerArrivalErrors({ ...production, status: 'online' }, {
-    status: 'online',
-    dueCount: 0,
-    overdueCount: 0
-  });
+  return workerArrivalErrors({ ...(app.env_production || {}), status: 'online' });
 }
 
 module.exports = {
@@ -125,5 +208,10 @@ module.exports = {
   missingCriticalFiles,
   apiArrivalErrors,
   workerArrivalErrors,
+  arrivalQueueFilters,
+  parseLatestArrivalHealthLog,
+  observeArrivalRuntimeHealth,
+  readArrivalQueueCounts,
+  workerRuntimeHealthErrors,
   committedProductionErrors
 };

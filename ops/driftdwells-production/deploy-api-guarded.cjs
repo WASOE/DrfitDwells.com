@@ -53,6 +53,9 @@ const { ensureReleaseUploadsLink } = require(path.join(__dirname, 'ensure-shared
 const {
   apiArrivalErrors,
   workerArrivalErrors,
+  workerRuntimeHealthErrors,
+  observeArrivalRuntimeHealth,
+  readArrivalQueueCounts,
   missingCriticalFiles,
   committedProductionErrors
 } = require(path.join(__dirname, 'arrivalEmailGuard.cjs'));
@@ -79,7 +82,10 @@ function assertWorkerTopology(apps) {
     const matches = workers.filter(app => role.match.test(workerIdentity(app)));
     if (matches.length !== 1) fail(`Required worker role missing or duplicated: ${role.id}`);
     if (role.id === 'arrival') {
-      const errors = workerArrivalErrors(matches[0].pm2_env || {}, matches[0].arrivalHealth || {});
+      const errors = [
+        ...workerArrivalErrors(matches[0].pm2_env || {}),
+        ...workerRuntimeHealthErrors(matches[0].arrivalHealth, matches[0].arrivalHealth?.now)
+      ];
       if (errors.length) fail(errors.join(' '));
     }
   }
@@ -202,6 +208,60 @@ async function countRebookOwnershipState(root, env) {
   } finally {
     await mongoose.disconnect();
   }
+}
+
+function readUtf8Tail(filePath, maxBytes = 262144) {
+  const stat = fs.statSync(filePath);
+  const start = Math.max(0, stat.size - maxBytes);
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    return buf.toString('utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function attachArrivalRuntimeEvidence(apps, evidence = {}) {
+  const arrival = apps.filter(isWorker).find(app =>
+    /arrival-automation-worker|runArrivalAutomationWorker/i.test(workerIdentity(app)));
+  if (!arrival) return null;
+  arrival.arrivalHealth = observeArrivalRuntimeHealth(evidence);
+  return arrival.arrivalHealth;
+}
+
+async function countArrivalQueueState(root, env) {
+  const uri = effectiveMongoUri(root, env);
+  const mongoose = require(path.join(root, 'server/node_modules/mongoose'));
+  await mongoose.connect(uri, { serverSelectionTimeoutMS: 10_000 });
+  try {
+    return await readArrivalQueueCounts(mongoose.connection);
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
+async function loadArrivalRuntimeEvidence(apps, root, env) {
+  const arrival = apps.filter(isWorker).find(app =>
+    /arrival-automation-worker|runArrivalAutomationWorker/i.test(workerIdentity(app)));
+  if (!arrival) return null;
+  const logPath = arrival.pm2_env?.pm_out_log_path;
+  let logText = '';
+  if (logPath && fs.existsSync(logPath)) {
+    try {
+      logText = readUtf8Tail(logPath);
+    } catch {
+      logText = '';
+    }
+  }
+  let counts;
+  try {
+    counts = await countArrivalQueueState(root, env);
+  } catch {
+    counts = undefined;
+  }
+  return attachArrivalRuntimeEvidence(apps, { logText, counts, now: Date.now() });
 }
 
 async function readRebookOwnershipCounts(connection) {
@@ -480,8 +540,10 @@ async function main() {
       assertRebookEnablementReady(plan, prepared, counts);
     }
     const environments = Object.fromEntries(Object.values(prepared).map(item => [item.app.pm2_env.pm_id, item.env]));
+    const apps = getApps();
+    await loadArrivalRuntimeEvidence(apps, prepared.current.root, prepared.current.env);
     baseline = validateTopology({
-      ...context, apps: getApps(), environments,
+      ...context, apps, environments,
       listeners: Object.fromEntries([5000, 5001, 5002].map(port => [port, listeners(port)]))
     });
     for (const port of [5000, 5001, 5002]) await checkHttp(port, process.env.OPS_VERIFY_TOKEN);
@@ -601,6 +663,8 @@ module.exports = {
   DISABLED_API_FLAGS,
   REQUIRED_WORKER_ROLES,
   assertWorkerTopology,
+  attachArrivalRuntimeEvidence,
+  loadArrivalRuntimeEvidence,
   verifyFiles,
   verifyOwnershipRelease,
   countRebookOwnershipState,

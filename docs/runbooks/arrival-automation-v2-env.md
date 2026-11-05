@@ -175,12 +175,13 @@ The guarded deploy fails before cutover when:
 
 - the arrival worker is missing, offline, or duplicated
 - PM2 reports online while the worker flags are parked or staff-scoped
-- guest jobs are due and the scheduler has not ticked within 5 minutes
-- overdue jobs are past the grace period
+- the scheduler health log has no tick in the last 5 minutes, including when the queue is idle
+- due, overdue, or failed counts were not actually read; a missing count is not zero
+- overdue jobs are past the 5-minute grace period, or any arrival job is `failed`
 - the API release `.env` does not keep guest scheduling on and legacy workers off
 - the candidate or rollback tree omits an arrival, booking, or payment file, or its `env_production` block would park the worker
 
-An idle queue with no due jobs does not by itself fail the tick check.
+An idle queue passes only after a health-log tick and a read-only count of due, overdue, and failed jobs. PM2 `online` and enabled flags are not that evidence. The deploy reads the worker stdout tail and counts `scheduledmessagejobs`; it does not claim or send.
 
 Rollback of a bad API release restores the previous API release. It does not rewrite the committed production arrival block back to zeros. Stopping the dedicated worker is an incident pause; the next production start must come back guest-wide. Cancel due V2 jobs only under a separate audited instruction.
 
