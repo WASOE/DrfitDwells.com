@@ -42,10 +42,23 @@ const REQUIRED_WORKER_ROLES = [
   {
     id: 'paid-checkout-reconciler',
     match: /paid-checkout-reconciler|runPaidCheckoutReconciler/i
+  },
+  {
+    id: 'arrival',
+    match: /arrival-automation-worker|runArrivalAutomationWorker/i
   }
 ];
 const fail = message => { throw new Error(message); };
 const { ensureReleaseUploadsLink } = require(path.join(__dirname, 'ensure-shared-uploads.cjs'));
+const {
+  apiArrivalErrors,
+  workerArrivalErrors,
+  workerRuntimeHealthErrors,
+  observeArrivalRuntimeHealth,
+  readArrivalQueueCounts,
+  missingCriticalFiles,
+  committedProductionErrors
+} = require(path.join(__dirname, 'arrivalEmailGuard.cjs'));
 const SHARED_UPLOADS = '/home/illoc/shared/driftdwells-uploads';
 const pm2 = args => execFileSync('pm2', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 const getApps = () => JSON.parse(pm2(['jlist']));
@@ -68,6 +81,13 @@ function assertWorkerTopology(apps) {
   for (const role of REQUIRED_WORKER_ROLES) {
     const matches = workers.filter(app => role.match.test(workerIdentity(app)));
     if (matches.length !== 1) fail(`Required worker role missing or duplicated: ${role.id}`);
+    if (role.id === 'arrival') {
+      const errors = [
+        ...workerArrivalErrors(matches[0].pm2_env || {}),
+        ...workerRuntimeHealthErrors(matches[0].arrivalHealth, matches[0].arrivalHealth?.now)
+      ];
+      if (errors.length) fail(errors.join(' '));
+    }
   }
   return workers.map(app => ({
     id: app.pm2_env.pm_id,
@@ -138,6 +158,21 @@ function verifyFiles(root, manifest, expectedSha) {
   return true;
 }
 
+function assertReleaseArrivalSources(root) {
+  const present = [];
+  const missingOnDisk = [];
+  for (const file of require('./arrivalEmailGuard.cjs').CRITICAL_RELEASE_FILES) {
+    if (fs.existsSync(path.join(root, file))) present.push(file);
+    else missingOnDisk.push(file);
+  }
+  const missing = [...new Set([...missingOnDisk, ...missingCriticalFiles(present)])];
+  if (missing.length) fail(`Critical release files missing: ${missing.join(', ')}`);
+  const ecosystemPath = path.join(root, 'ecosystem.config.cjs');
+  delete require.cache[require.resolve(ecosystemPath)];
+  const errors = committedProductionErrors(require(ecosystemPath));
+  if (errors.length) fail(`Arrival production defaults refused: ${errors.join(' ')}`);
+}
+
 function verifyOwnershipRelease(root) {
   const booking = fs.readFileSync(path.join(root, 'server/models/Booking.js'), 'utf8');
   const service = fs.readFileSync(path.join(root, 'server/services/stayChange/rebookStayChangeService.js'), 'utf8');
@@ -173,6 +208,60 @@ async function countRebookOwnershipState(root, env) {
   } finally {
     await mongoose.disconnect();
   }
+}
+
+function readUtf8Tail(filePath, maxBytes = 262144) {
+  const stat = fs.statSync(filePath);
+  const start = Math.max(0, stat.size - maxBytes);
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    return buf.toString('utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function attachArrivalRuntimeEvidence(apps, evidence = {}) {
+  const arrival = apps.filter(isWorker).find(app =>
+    /arrival-automation-worker|runArrivalAutomationWorker/i.test(workerIdentity(app)));
+  if (!arrival) return null;
+  arrival.arrivalHealth = observeArrivalRuntimeHealth(evidence);
+  return arrival.arrivalHealth;
+}
+
+async function countArrivalQueueState(root, env) {
+  const uri = effectiveMongoUri(root, env);
+  const mongoose = require(path.join(root, 'server/node_modules/mongoose'));
+  await mongoose.connect(uri, { serverSelectionTimeoutMS: 10_000 });
+  try {
+    return await readArrivalQueueCounts(mongoose.connection);
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
+async function loadArrivalRuntimeEvidence(apps, root, env) {
+  const arrival = apps.filter(isWorker).find(app =>
+    /arrival-automation-worker|runArrivalAutomationWorker/i.test(workerIdentity(app)));
+  if (!arrival) return null;
+  const logPath = arrival.pm2_env?.pm_out_log_path;
+  let logText = '';
+  if (logPath && fs.existsSync(logPath)) {
+    try {
+      logText = readUtf8Tail(logPath);
+    } catch {
+      logText = '';
+    }
+  }
+  let counts;
+  try {
+    counts = await countArrivalQueueState(root, env);
+  } catch {
+    counts = undefined;
+  }
+  return attachArrivalRuntimeEvidence(apps, { logText, counts, now: Date.now() });
 }
 
 async function readRebookOwnershipCounts(connection) {
@@ -230,6 +319,10 @@ function validateTopology({ apps, currentId, candidateId, rollbackId, listeners,
     // dedicated-worker flags from the shared .env; verifyFiles proves its entrypoint never starts them.
     for (const flag of port === 5000 ? API_RUNTIME_FLAGS : DISABLED_API_FLAGS) {
       if (!['0', 'false'].includes(String(env[flag] ?? '0').toLowerCase())) fail(`API worker enabled: ${flag}`);
+    }
+    if (port === 5000) {
+      const arrivalErrors = apiArrivalErrors(env);
+      if (arrivalErrors.length) fail(arrivalErrors.join(' '));
     }
     if (port === 5000 && !/^driftdwells-production-[a-f0-9]+$/.test(app.name)) fail('Production API name is not unique');
   }
@@ -324,6 +417,7 @@ async function startProbe(plan, role) {
   if (!root.startsWith('/home/illoc/releases/')) fail('Probe must use an isolated release');
   linkSharedUploads([root]);
   verifyFiles(root, JSON.parse(fs.readFileSync(item.manifest, 'utf8')), item.sha);
+  assertReleaseArrivalSources(root);
   const apps = getApps();
   const allowed = [plan.current.id, plan.candidate.id, plan.rollback.id].filter(Number.isInteger);
   if (apps.filter(isApi).some(app => !allowed.includes(app.pm2_env.pm_id))) fail('Unexpected API before probe launch');
@@ -344,11 +438,17 @@ async function startProbe(plan, role) {
   });
   const dotenv = require(path.join(root, 'server/node_modules/dotenv'));
   const env = dotenv.parse(fs.readFileSync(path.join(root, 'server/.env')));
+  const arrivalErrors = apiArrivalErrors(env);
+  if (arrivalErrors.length) fail(`Arrival API configuration refused for ${role}: ${arrivalErrors.join(' ')}`);
   env.PORT = String(port);
   env.API_HOST = '127.0.0.1';
   env.NODE_ENV = 'production';
   env.APP_RELEASE = item.sha;
   for (const flag of DISABLED_API_FLAGS) env[flag] = '0';
+  // The probe is a read-only HTTP check. Keep it from scheduling or sending
+  // even when the release .env correctly enables guest arrival on the API.
+  env.ARRIVAL_EMAIL_V2 = '0';
+  env.ARRIVAL_AUTOMATION_V2 = '0';
   env.REBOOK_ENABLED = 'false';
   const name = `driftdwells-${role}-${item.sha.slice(0, 12)}${Date.now().toString(16)}`;
   const dir = `/home/illoc/.pm2/probe-${role}-${Date.now()}`;
@@ -418,16 +518,20 @@ async function main() {
     if (!root.startsWith('/home/illoc/releases/')) fail('Release is outside isolated releases');
     const manifest = JSON.parse(fs.readFileSync(item.manifest, 'utf8'));
     verifyFiles(root, manifest, item.sha);
+    assertReleaseArrivalSources(root);
     const app = initialApps.find(value => value.pm2_env.pm_id === item.id);
     if (!app || app.pm2_env.pm_cwd !== path.join(root, 'server') ||
         app.pm2_env.pm_exec_path !== path.join(root, 'server/server.js') ||
         fs.realpathSync(`/proc/${app.pid}/cwd`) !== path.join(root, 'server')) fail('Release cwd/script mismatch');
     const dotenv = require(path.join(root, 'server/node_modules/dotenv'));
-    const env = dotenv.parse(fs.readFileSync(path.join(root, 'server/.env')));
+    const fileEnv = dotenv.parse(fs.readFileSync(path.join(root, 'server/.env')));
+    const env = { ...fileEnv };
     for (const [key, value] of Object.entries(app.pm2_env)) {
       if (/^[A-Z][A-Z0-9_]*$/.test(key) && typeof value === 'string' && value.trim()) env[key] = value;
     }
-    prepared[role] = { root, app, env, sha: item.sha };
+    const arrivalErrors = apiArrivalErrors(fileEnv);
+    if (arrivalErrors.length) fail(`Arrival API configuration refused for ${role}: ${arrivalErrors.join(' ')}`);
+    prepared[role] = { root, app, env, fileEnv, sha: item.sha };
   }
   let baseline;
   const preflight = async () => {
@@ -436,8 +540,10 @@ async function main() {
       assertRebookEnablementReady(plan, prepared, counts);
     }
     const environments = Object.fromEntries(Object.values(prepared).map(item => [item.app.pm2_env.pm_id, item.env]));
+    const apps = getApps();
+    await loadArrivalRuntimeEvidence(apps, prepared.current.root, prepared.current.env);
     baseline = validateTopology({
-      ...context, apps: getApps(), environments,
+      ...context, apps, environments,
       listeners: Object.fromEntries([5000, 5001, 5002].map(port => [port, listeners(port)]))
     });
     for (const port of [5000, 5001, 5002]) await checkHttp(port, process.env.OPS_VERIFY_TOKEN);
@@ -475,6 +581,11 @@ async function main() {
       const name = `driftdwells-production-${item.sha.slice(0, 12)}${Date.now().toString(16)}`;
       if (getApps().some(app => app.name === name)) fail('Production name already exists');
       const env = { ...item.env, PORT: '5000', API_HOST: '0.0.0.0', APP_RELEASE: item.sha };
+      for (const [key, value] of Object.entries(item.fileEnv)) {
+        if (Object.hasOwn(require('./arrivalEmailGuard.cjs').API_PRODUCTION_FLAGS, key)) env[key] = value;
+      }
+      const arrivalErrors = apiArrivalErrors(env);
+      if (arrivalErrors.length) fail(`Arrival API configuration refused for ${role}: ${arrivalErrors.join(' ')}`);
       for (const flag of DISABLED_API_FLAGS) env[flag] = '0';
       env.REBOOK_ENABLED = rebookGateForStart(role, plan);
       const config = path.join(checkpoint, `${role}.config.json`);
@@ -552,6 +663,8 @@ module.exports = {
   DISABLED_API_FLAGS,
   REQUIRED_WORKER_ROLES,
   assertWorkerTopology,
+  attachArrivalRuntimeEvidence,
+  loadArrivalRuntimeEvidence,
   verifyFiles,
   verifyOwnershipRelease,
   countRebookOwnershipState,

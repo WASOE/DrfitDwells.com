@@ -5,12 +5,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const { API_PRODUCTION_FLAGS, WORKER_PRODUCTION_FLAGS } = require('./arrivalEmailGuard.cjs');
 const {
   API_RUNTIME_FLAGS,
   DEDICATED_WORKER_FLAGS,
   DISABLED_API_FLAGS,
   REQUIRED_WORKER_ROLES,
   assertWorkerTopology,
+  attachArrivalRuntimeEvidence,
   validateTopology,
   verifyFiles,
   verifyOwnershipRelease,
@@ -43,8 +45,27 @@ const REQUIRED_WORKER_FIXTURES = [
   {
     name: 'driftdwells-paid-checkout-reconciler-9731d3e',
     exec: '/release/server/scripts/runPaidCheckoutReconciler.js'
+  },
+  {
+    name: 'driftdwells-arrival-automation-worker',
+    exec: '/release/server/scripts/runArrivalAutomationWorker.js',
+    env: { ...WORKER_PRODUCTION_FLAGS }
   }
 ];
+
+function freshArrivalHealth(overrides = {}) {
+  const observedAt = Date.now();
+  return {
+    running: true,
+    dueCount: 0,
+    overdueCount: 0,
+    failedCount: 0,
+    lastTickAt: new Date(observedAt - 30_000).toISOString(),
+    lastTickError: null,
+    now: observedAt,
+    ...overrides
+  };
+}
 
 function fixture(extraWorkers = []) {
   const apps = [31, 40, 41].map((id, index) => ({
@@ -60,8 +81,12 @@ function fixture(extraWorkers = []) {
         pm_id: index + 1,
         pm_exec_path: worker.exec,
         status: 'online',
-        restart_time: 0
-      }
+        restart_time: 0,
+        ...(worker.env || {})
+      },
+      ...(worker.name === 'driftdwells-arrival-automation-worker'
+        ? { arrivalHealth: freshArrivalHealth() }
+        : {})
     });
   });
   extraWorkers.forEach((worker, index) => {
@@ -81,12 +106,17 @@ function fixture(extraWorkers = []) {
     listeners: Object.fromEntries([5000, 5001, 5002].map((port, i) =>
       [port, [{ pid: apps[i].pid, host: i ? '127.0.0.1' : '0.0.0.0' }]])),
     environments: Object.fromEntries([31, 40, 41].map((id, i) =>
-      [id, { PORT: String(5000 + i), NODE_ENV: 'production', API_HOST: i ? '127.0.0.1' : '0.0.0.0' }]))
+      [id, {
+        PORT: String(5000 + i),
+        NODE_ENV: 'production',
+        API_HOST: i ? '127.0.0.1' : '0.0.0.0',
+        ...(i === 0 ? API_PRODUCTION_FLAGS : {})
+      }]))
   };
 }
 test('valid isolated probes preserve required dedicated workers', () => {
-  assert.equal(REQUIRED_WORKER_ROLES.length, 5);
-  assert.equal(validateTopology(fixture()).length, 5);
+  assert.equal(REQUIRED_WORKER_ROLES.length, 6);
+  assert.equal(validateTopology(fixture()).length, 6);
 });
 
 test('additional healthy workers are allowed when required roles remain unique', () => {
@@ -94,8 +124,8 @@ test('additional healthy workers are allowed when required roles remain unique',
     name: 'driftdwells-build-enquiry-email-worker',
     exec: '/release/server/scripts/runBuildEnquiryEmailWorker.js'
   }]);
-  assert.equal(validateTopology(f).length, 6);
-  assert.equal(assertWorkerTopology(f.apps).length, 6);
+  assert.equal(validateTopology(f).length, 7);
+  assert.equal(assertWorkerTopology(f.apps).length, 7);
 });
 
 test('missing or duplicated required worker roles are refused', () => {
@@ -111,6 +141,92 @@ test('missing or duplicated required worker roles are refused', () => {
   duplicated.apps[duplicated.apps.length - 1].pm2_env.pm_exec_path =
     '/other/runCheckoutFinalizationWorker.js';
   assert.throws(() => validateTopology(duplicated), /finalize/);
+});
+
+test('an online arrival worker that is parked, staff-scoped, or idle while jobs are due is refused', () => {
+  const parked = fixture();
+  const worker = parked.apps.find(app => app.name === 'driftdwells-arrival-automation-worker');
+  worker.pm2_env.ARRIVAL_EMAIL_V2 = '0';
+  worker.pm2_env.ARRIVAL_AUTOMATION_V2 = '0';
+  worker.pm2_env.MESSAGE_SCHEDULER_WORKER_ENABLED = '0';
+  assert.throws(() => validateTopology(parked), /parked while PM2 can still report online/);
+
+  const staff = fixture();
+  staff.apps.find(app => app.name === 'driftdwells-arrival-automation-worker')
+    .pm2_env.ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST = 'jose@driftdwells.com';
+  assert.throws(() => validateTopology(staff), /staff-scoped/);
+
+  const due = fixture();
+  const observedAt = Date.parse('2026-11-05T06:00:00.000Z');
+  due.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth = freshArrivalHealth({
+    dueCount: 2,
+    lastTickAt: '2026-11-05T05:00:00.000Z',
+    now: observedAt
+  });
+  assert.throws(() => validateTopology(due), /not ticking/);
+});
+
+test('a parked or stalled arrival worker blocks deployment even when PM2 is online', () => {
+  const missing = fixture();
+  delete missing.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth;
+  assert.throws(() => validateTopology(missing), /missing data is not zero/);
+
+  const partial = fixture();
+  partial.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth = {
+    dueCount: 0,
+    status: 'online'
+  };
+  assert.throws(() => validateTopology(partial), /missing overdueCount/);
+
+  const now = Date.parse('2026-11-05T06:00:00.000Z');
+  const healthLine = JSON.stringify({
+    source: 'arrival-automation-worker',
+    phase: 'health',
+    running: true,
+    lastTickAt: '2026-11-05T05:59:30.000Z',
+    lastTickError: null
+  });
+  const collected = fixture();
+  delete collected.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth;
+  attachArrivalRuntimeEvidence(collected.apps, {
+    logText: healthLine,
+    counts: { dueCount: 0, overdueCount: 0, failedCount: 0 },
+    now
+  });
+  assert.equal(validateTopology(collected).length, 6);
+
+  const stalled = fixture();
+  delete stalled.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth;
+  attachArrivalRuntimeEvidence(stalled.apps, {
+    logText: JSON.stringify({
+      source: 'arrival-automation-worker',
+      phase: 'health',
+      running: true,
+      lastTickAt: '2026-11-05T04:00:00.000Z',
+      lastTickError: null
+    }),
+    counts: { dueCount: 0, overdueCount: 0, failedCount: 0 },
+    now
+  });
+  assert.throws(() => validateTopology(stalled), /not ticking/);
+
+  const parkedLog = fixture();
+  delete parkedLog.apps.find(app => app.name === 'driftdwells-arrival-automation-worker').arrivalHealth;
+  attachArrivalRuntimeEvidence(parkedLog.apps, {
+    logText: '[arrival-automation-worker] parked: activation OFF\n',
+    counts: { dueCount: 0, overdueCount: 0, failedCount: 0 },
+    now
+  });
+  assert.throws(() => validateTopology(parkedLog), /no tick evidence/);
+});
+
+test('production API without guest arrival scheduling is refused', () => {
+  const disabled = fixture();
+  disabled.environments[31].ARRIVAL_AUTOMATION_V2 = '0';
+  assert.throws(() => validateTopology(disabled), /ARRIVAL_AUTOMATION_V2/);
+  const legacy = fixture();
+  legacy.environments[31].MESSAGE_DISPATCHER_ENABLED = '1';
+  assert.throws(() => validateTopology(legacy), /MESSAGE_DISPATCHER_ENABLED/);
 });
 
 test('REBOOK enablement is explicit and only applies to the verified candidate start', () => {
@@ -214,7 +330,7 @@ test('live API may inherit dedicated-worker flags from the shared .env; probes m
   for (const flag of DEDICATED_WORKER_FLAGS) {
     const live = fixture();
     live.environments[31][flag] = 'true';
-    assert.equal(validateTopology(live).length, 5);
+    assert.equal(validateTopology(live).length, 6);
     for (const probeId of [40, 41]) {
       const probe = fixture();
       probe.environments[probeId][flag] = 'true';

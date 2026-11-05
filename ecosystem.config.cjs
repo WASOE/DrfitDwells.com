@@ -127,12 +127,10 @@ module.exports = {
       }
     },
     {
-      // Dedicated Arrival Automation V2 worker (PR2).
-      // Keep MESSAGE_SCHEDULER_WORKER_ENABLED=0 until owner-approved staff test
-      // or guest enablement. API process must keep scheduler + dispatcher off.
-      // Staff test: set EMAIL_ALLOWLIST to jose@driftdwells.com and start with
-      // MESSAGE_SCHEDULER_WORKER_ENABLED=1 via pm2 env override — never flip
-      // shared server/.env scheduler flag for the API.
+      // Dedicated Arrival Automation V2 worker.
+      // Development stays parked. Production is guest-wide: a restart or
+      // deploy must not return these flags to 0 or to a staff allowlist.
+      // The API process keeps the scheduler, dispatcher, and orchestrator off.
       name: 'driftdwells-arrival-automation-worker',
       cwd: __dirname,
       script: 'server/scripts/runArrivalAutomationWorker.js',
@@ -161,14 +159,13 @@ module.exports = {
       },
       env_production: {
         NODE_ENV: 'production',
-        // Parked until owner-approved staff test / guest enablement.
-        ARRIVAL_EMAIL_V2: '0',
-        ARRIVAL_AUTOMATION_V2: '0',
+        ARRIVAL_EMAIL_V2: '1',
+        ARRIVAL_AUTOMATION_V2: '1',
         ARRIVAL_AUTOMATION_WORKER_MODE: '1',
-        MESSAGE_SCHEDULER_WORKER_ENABLED: '0',
+        MESSAGE_SCHEDULER_WORKER_ENABLED: '1',
         MESSAGE_DISPATCHER_ENABLED: '0',
         MESSAGE_ORCHESTRATOR_ENABLED: '0',
-        ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST: 'jose@driftdwells.com'
+        ARRIVAL_AUTOMATION_WORKER_ALLOW_ALL_GUESTS: '1'
       }
     }
   ]
