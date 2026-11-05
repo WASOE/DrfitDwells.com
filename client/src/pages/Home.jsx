@@ -7,7 +7,7 @@ import HomeStayComparison from '../components/home/HomeStayComparison';
 import HomeGroupStay from '../components/home/HomeGroupStay';
 import HomeOccasions from '../components/home/HomeOccasions';
 import HomeTripPlanner from '../components/home/HomeTripPlanner';
-import HomeStory from '../components/home/HomeStory';
+import HomeAylyak from '../components/home/HomeAylyak';
 import HomeFaq, { HOME_FAQ_KEYS } from '../components/home/HomeFaq';
 import HomeVoucher from '../components/home/HomeVoucher';
 import HomeFinalCta from '../components/home/HomeFinalCta';
@@ -128,7 +128,7 @@ const Home = () => {
         <HomeGroupStay />
         <HomeOccasions />
         <HomeTripPlanner />
-        <HomeStory />
+        <HomeAylyak />
         <HomeFaq />
         <HomeVoucher />
         <HomeFinalCta />

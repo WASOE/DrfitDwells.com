@@ -21,25 +21,7 @@
   "intro": {
     "eyebrow": "Welcome to Drift & Dwells",
     "title": "A forest cabin near Bachevo. A small village in the Rhodopes.",
-    "body": "We build and host places for people who want to be out in nature. Choose a private cabin for two, or stay among the A-frames and stone buildings of The Valley. No hotel corridors. Just the mountains, and room to spend the days your way.",
-    "benefits": {
-      "direct": {
-        "title": "Book directly",
-        "body": "See the dates and the price for your stay on our own booking site."
-      },
-      "hosts": {
-        "title": "Talk to your hosts",
-        "body": "Questions come to the people who built the place."
-      },
-      "arrival": {
-        "title": "Know how to arrive",
-        "body": "After you book, we send the route and the access details you need."
-      },
-      "gift": {
-        "title": "Give it as a gift",
-        "body": "Personal gift vouchers, from €15."
-      }
-    }
+    "body": "Two places to stay in southwestern Bulgaria. A private cabin for two in the forest, or a mountain village of A-frames and stone buildings for couples, friends and groups."
   },
   "stays": {
     "eyebrow": "Find your place",
@@ -57,8 +39,8 @@
       "name": "The Cabin",
       "place": "Bachevo · a forest cabin for two",
       "price": "From €100 / night",
-      "body": "A private, genuinely off-grid cabin with a wood stove and its own wood-fired hot tub. No guest Wi-Fi. A few days of being left alone, together.",
-      "imageAlt": "The Cabin exterior in the forest near Bachevo",
+      "body": "A private off-grid cabin for two: wood stove, wood-fired hot tub, and no guest Wi-Fi. A few days left alone together.",
+      "imageAlt": "Wood stove and timber interior of The Cabin near Bachevo",
       "explore": "Explore The Cabin",
       "facts": {
         "sleeps": "2 guests",
@@ -72,8 +54,8 @@
       "name": "The Valley",
       "place": "Chereshovo · a mountain village",
       "price": "A-frames from €60 / night",
-      "body": "Five A-frames, a Luxury Cabin and the Stone House, with room for up to 18 guests when the whole place is free. Fire pit, outdoor hot tub and space to spread out.",
-      "imageAlt": "A-frame cabins and the Stone House at The Valley",
+      "body": "A mountain village of five A-frames, a Luxury Cabin and the Stone House. Stay as a couple or bring your people — up to 18 when the whole place is free.",
+      "imageAlt": "A-frame cabins on the meadow at The Valley",
       "explore": "Explore The Valley",
       "facts": {
         "sleeps": "Up to 18 across 7 stays",
@@ -82,75 +64,66 @@
         "access": "Park in Chereshovo, then walk or transfer"
       },
       "capacityNote": "Your search is for {{count}} guests. An A-frame sleeps 2; use Check dates to see what is free, or explore the whole Valley for larger groups."
-    }
+    },
+    "or": "OR"
   },
   "group": {
-    "eyebrow": "The whole place, just for you",
-    "title": "Bring everyone. Keep the whole Valley.",
-    "body": "A birthday in the mountains. A few days with the family. A company retreat without a conference room. Book the entire Valley and give everyone their own place to sleep, with the meadow, fire pit and outdoor hot tub to share.",
-    "imageAlt": "A-frame cabins at The Valley with the Stone House in view",
-    "hire": "Explore private hire",
-    "retreat": "Plan a team retreat",
-    "stats": {
-      "guests": {
-        "value": "18",
-        "label": "Overnight guests"
-      },
-      "stays": {
-        "value": "7",
-        "label": "Separate stays"
-      },
-      "aframes": {
-        "value": "5",
-        "label": "A-frame cabins"
-      },
-      "valley": {
-        "value": "1",
-        "label": "Valley to share"
-      }
-    }
+    "eyebrow": "Private Valley hire",
+    "title": "An entire mountain retreat, just for your group.",
+    "body": "Take over The Valley and spend a few days the way you want them: mornings outdoors, evenings by the fire, and everyone with their own place to sleep.",
+    "points": {
+      "private": "The whole retreat for your birthday, family gathering, friends’ weekend or company trip.",
+      "capacity": "Private accommodation for up to 18 overnight guests.",
+      "fire": "Long evenings around the shared fire pit.",
+      "tub": "The outdoor wood-fired hot tub for the group.",
+      "occasions": "Space to gather — and quiet corners when you need them."
+    },
+    "capacityLine": "Up to 18 overnight guests across seven stays.",
+    "imageAlt": "Fire pit at The Valley at sunset",
+    "hire": "Book a private stay",
+    "retreat": "Plan a company retreat"
   },
   "occasions": {
     "eyebrow": "The reasons people come",
     "title": "A different kind of weekend.",
-    "body": "Some people come to be alone. Others bring their favourite people. You decide how the days go.",
+    "body": "Some people come for two. Others bring everyone. You decide how the days go.",
     "items": {
       "two": {
-        "title": "Just the two of you.",
-        "body": "A cabin, the forest and a wood-fired hot tub.",
-        "cta": "Discover the stay",
+        "title": "A weekend for two.",
+        "body": "A private cabin, a wood-fired hot tub and a few days together.",
+        "cta": "See The Cabin",
         "imageAlt": "Two guests on the swing at The Valley"
       },
       "together": {
-        "title": "All together, somewhere else.",
-        "body": "Family weekends and private group stays for up to 18.",
-        "cta": "See the whole Valley",
-        "imageAlt": "Guests outside the A-frame cabins at The Valley"
+        "title": "Bring your favourite people.",
+        "body": "Book multiple cabins or the whole Valley. Spend the evenings around the fire.",
+        "cta": "See private Valley stays",
+        "imageAlt": "Fire pit at The Valley at sunset"
       },
       "quiet": {
-        "title": "A few days without the noise.",
-        "body": "No guest Wi-Fi at The Cabin. More time outside.",
-        "cta": "Discover the stay",
-        "imageAlt": "Quiet cabin interior with a wood stove and a forest view"
+        "title": "A proper weekend offline.",
+        "body": "No guest Wi-Fi at The Cabin. Spend your time in the forest instead.",
+        "cta": "See The Cabin",
+        "imageAlt": "Wood stove and quiet interior at The Cabin"
       }
     }
   },
   "planner": {
     "eyebrow": "Your stay, your way",
-    "title": "Not sure where to stay? We'll figure it out with you.",
-    "body": "Tell us who is coming and what kind of trip you want. We'll match you with a real Drift & Dwells stay, suggest how to spend the days, and take you to the dates.",
-    "promiseStayTitle": "A real recommendation",
-    "promiseStayBody": "Based on our actual cabins, how many people they sleep, and where the connection is.",
-    "promisePlanTitle": "A useful plan",
-    "promisePlanBody": "Suggested days from what is actually here. No invented activities or extra fees.",
+    "title": "Not sure which stay is right for you?",
+    "body": "Tell us who's coming and what you'd like to do. We'll recommend a place to stay, suggest how to spend your days and help you find available dates.",
+    "promiseStayTitle": "A place that fits",
+    "promiseStayBody": "Matched to how many of you are coming, and whether you want to be offline.",
+    "promisePlanTitle": "A simple plan for the days",
+    "promisePlanBody": "Practical ideas for arrival, evenings and check-out — then straight to live dates.",
     "questionProgress": "Question {{current}} / {{total}}",
     "back": "Back",
     "continue": "Continue",
     "seeMatch": "See my match",
-    "noAccount": "No account needed. Availability is checked on the booking site.",
+    "noAccount": "No account needed. You check availability on the booking calendar.",
     "resultEyebrow": "Your stay match",
     "itineraryTitle": "A suggested way to spend the stay",
-    "disclaimer": "An idea for the visit, not a booked package. Check availability, the minimum stay and the conditions before you book.",
+    "disclaimer": "A suggestion for your visit. Confirm available dates and the minimum stay on the calendar before you book.",
     "explore": "Explore your stay",
     "checkDates": "Check dates",
     "restart": "Start again",
@@ -245,21 +218,12 @@
     "partySummary": "Exact party size for booking: {{count}} guests.",
     "capacityExceeded": "This stay sleeps up to {{max}}. Your party of {{count}} is larger — Check dates keeps that exact count so you can see what fits, or choose the whole Valley."
   },
-  "story": {
-    "eyebrow": "From the people who built it",
-    "title": "We didn't find these places. We made them.",
-    "body": "Drift & Dwells started with The Cabin in the forest. Then came The Valley, built one cabin and one shared space at a time. We know the roads, the weather and the small details because we are here doing the work.",
-    "cta": "Meet Drift & Dwells",
-    "imageAlt": "Jose at The Valley, Drift & Dwells",
-    "buildAlt": "Early construction of The Cabin"
-  },
   "philosophy": {
     "eyebrow": "One Bulgarian word we keep coming back to",
     "word": "Aylyak",
     "phonetic": "[ahy-lyak]",
     "type": "noun",
-    "definition1": "The art of not being in a hurry. A Bulgarian word for taking the day as it comes.",
-    "definition2": "The reason these places exist: enough quiet, and enough time, to stop rushing."
+    "line": "The art of not being in a hurry — enough quiet, and enough time, to take the day as it comes."
   },
   "faq": {
     "eyebrow": "Before you book",
