@@ -2,7 +2,7 @@
 
 /**
  * Arrival Communications V2 feature gates.
- * Default OFF — production activation is a separate owner decision.
+ * Unset stays OFF. The committed PM2 production block turns both flags on.
  *
  * ARRIVAL_EMAIL_V2 — manual Send/Resend + confirmation prep (PR1).
  * ARRIVAL_AUTOMATION_V2 — automatic T-3 scheduling/dispatch (PR2); requires

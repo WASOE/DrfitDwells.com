@@ -18,6 +18,7 @@ import { assessPaymentContractBundle } from './lib/verifyPaymentContractBundle.m
 export const DEFAULT_PROTECTED_RELATIVE_PATHS = [
   'uploads',
   'release-manifest.json',
+  '.release-snapshots',
 ];
 
 export const DEFAULT_PROTECTED_GLOBS = [

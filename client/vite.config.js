@@ -10,7 +10,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // https://vitejs.dev/config/
 export default defineConfig(({ command, mode }) => {
   if (command === 'build') {
-    const key = loadEnv(mode, __dirname, 'VITE_STRIPE_PUBLISHABLE_KEY').VITE_STRIPE_PUBLISHABLE_KEY;
+    const key = process.env.VITE_STRIPE_PUBLISHABLE_KEY
+      || loadEnv(mode, __dirname, 'VITE_STRIPE_PUBLISHABLE_KEY').VITE_STRIPE_PUBLISHABLE_KEY;
     if (!/^pk_(live|test)_[A-Za-z0-9]+$/.test(key || '')) {
       throw new Error('Client build requires a valid VITE_STRIPE_PUBLISHABLE_KEY (pk_live_... or pk_test_...).');
     }

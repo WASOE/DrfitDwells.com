@@ -2,16 +2,18 @@
 
 ## Flags
 
-| Flag | Default | Purpose |
+| Flag | Production source of truth | Purpose |
 |------|---------|---------|
-| `ARRIVAL_EMAIL_V2` | unset/OFF | PR1 manual Send/Resend + confirmation prep |
-| `ARRIVAL_AUTOMATION_V2` | unset/OFF | PR2 automatic T-3 schedule + allowlisted dispatch |
-| `MESSAGE_ORCHESTRATOR_ENABLED` | `0` | Full GMA rule scheduling (keep off) |
-| `MESSAGE_SCHEDULER_WORKER_ENABLED` | `0` | Claims due `ScheduledMessageJob` rows |
-| `MESSAGE_DISPATCHER_ENABLED` | `0` in shared `.env` | Legacy GMA dispatcher (WhatsApp/templates) |
-| `ARRIVAL_AUTOMATION_WORKER_MODE` | unset | `1` only on dedicated arrival worker |
-| `ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST` | unset | Staff emails for scoped claim/sweep |
-| `ARRIVAL_AUTOMATION_WORKER_ALLOW_ALL_GUESTS` | unset | Guest cutover on dedicated worker only |
+| `ARRIVAL_EMAIL_V2` | API `1`, dedicated worker `1` | Manual Send/Resend and automatic dispatch |
+| `ARRIVAL_AUTOMATION_V2` | API `1`, dedicated worker `1` | Automatic T-3 scheduling for every guest |
+| `MESSAGE_ORCHESTRATOR_ENABLED` | `0` everywhere | Legacy GMA scheduling stays off |
+| `MESSAGE_SCHEDULER_WORKER_ENABLED` | API `0`, dedicated worker `1` | Only the dedicated worker claims due jobs |
+| `MESSAGE_DISPATCHER_ENABLED` | `0` everywhere | Legacy GMA dispatcher stays off |
+| `ARRIVAL_AUTOMATION_WORKER_MODE` | `1` on the dedicated worker only | Isolates claim/sweep to arrival jobs |
+| `ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST` | unset in production | A staff allowlist blocks guest delivery |
+| `ARRIVAL_AUTOMATION_WORKER_ALLOW_ALL_GUESTS` | `1` on the dedicated worker | Guest-wide scope |
+
+Unset flags still fail closed. The committed `env_production` block in `ecosystem.config.cjs` is what a production restart applies. Do not put the pre-cutover zeros back into that block. The guarded deploy refuses a candidate whose production block is parked, staff-scoped, or missing the arrival worker, and it refuses a live worker that is parked even when PM2 says online.
 
 ## Proven flag topology
 
@@ -26,9 +28,9 @@
 
 | Process | Effective flags |
 |---------|-----------------|
-| Shared API (activation OFF) | `ARRIVAL_EMAIL_V2=0`, `ARRIVAL_AUTOMATION_V2=0`, scheduler `0`, dispatcher `0`, orchestrator `0` |
-| Dedicated worker parked | `WORKER_MODE=1`, Email `0`, Automation `0`, scheduler `0` — process parks; no claim / no SMTP |
-| Dedicated worker active (owner cutover only) | Email `1`, Automation `1`, scheduler `1`, allowlist or `ALLOW_ALL_GUESTS=1`, dispatcher `0`, orchestrator `0` |
+| Shared API | Email `1`, automation `1`, scheduler `0`, dispatcher `0`, orchestrator `0` |
+| Dedicated worker | Email `1`, automation `1`, scheduler `1`, `ALLOW_ALL_GUESTS=1`, no staff allowlist, dispatcher `0`, orchestrator `0` |
+| Development PM2 env | Remains parked so a non-production start does not email guests |
 
 Entrypoint: `server/scripts/runArrivalAutomationWorker.js`
 PM2 app: `driftdwells-arrival-automation-worker` in `ecosystem.config.cjs`
@@ -167,16 +169,21 @@ Only after catch-up review:
 
 ### 10. Monitoring and rollback
 
-Monitor: dedicated worker health logs, `arrival-auto-dispatch` / `arrival-automation-v2` lines, `MessageDispatch` accepted keys, job terminal statuses.
+Read-only health is the deploy gate, not a catch-up send. Count overdue, due, claimed, and failed arrival jobs. Do not run `reconcileArrivalAutomationV2.cjs --apply` as part of a deploy. A deploy must not emit a second copy of a message Postmark already accepted.
 
-Rollback:
+The guarded deploy fails before cutover when:
 
-```bash
-pm2 stop driftdwells-arrival-automation-worker
-# Shared API: ARRIVAL_AUTOMATION_V2=0 (PR1 email may remain 1)
-```
+- the arrival worker is missing, offline, or duplicated
+- PM2 reports online while the worker flags are parked or staff-scoped
+- the scheduler health log has no tick in the last 5 minutes, including when the queue is idle
+- due, overdue, or failed counts were not actually read; a missing count is not zero
+- overdue jobs are past the 5-minute grace period, or any arrival job is `failed`
+- the API release `.env` does not keep guest scheduling on and legacy workers off
+- the candidate or rollback tree omits an arrival, booking, or payment file, or its `env_production` block would park the worker
 
-Cancel due V2 `scheduled`/`claimed` jobs if required (audited). PR1 manual Send/Resend remains available while `ARRIVAL_EMAIL_V2=1`.
+An idle queue passes only after a health-log tick and a read-only count of due, overdue, and failed jobs. PM2 `online` and enabled flags are not that evidence. The deploy reads the worker stdout tail and counts `scheduledmessagejobs`; it does not claim or send.
+
+Rollback of a bad API release restores the previous API release. It does not rewrite the committed production arrival block back to zeros. Stopping the dedicated worker is an incident pause; the next production start must come back guest-wide. Cancel due V2 jobs only under a separate audited instruction.
 
 ## Shared `.env` note
 

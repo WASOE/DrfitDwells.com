@@ -1,4 +1,6 @@
 require('dotenv').config();
+const { assertReleaseCiStagingEnv } = require('./config/assertReleaseCiStaging');
+assertReleaseCiStagingEnv();
 const { validateProductionEnvOrExit } = require('./config/validateProductionEnv');
 validateProductionEnvOrExit();
 const {
@@ -270,15 +272,45 @@ app.get('/uploads/PDFs/drift-dwells-docs-v2/terms.pdf', (req, res) => {
 });
 
 // Health check (no DB required)
-app.get('/api/health', (req, res) => {
-  res.json({
+function publicStripeMode(secret = process.env.STRIPE_SECRET_KEY) {
+  const key = String(secret || '');
+  if (key.startsWith('sk_test_')) return 'test';
+  if (key.startsWith('sk_live_')) return 'live';
+  return 'unset';
+}
+
+app.get('/api/health', async (req, res) => {
+  const body = {
     status: 'OK',
     message: 'Drift & Dwells Booking API is running',
     database: db.isConnected && db.isConnected() ? 'connected' : 'disconnected',
     applicationRelease: applicationReleaseFromEnv(),
     frontendRelease: frontendReleaseFromEnv(),
-    paymentContractVersion: PRODUCTION_PAYMENT_CONTRACT_VERSION
-  });
+    paymentContractVersion: PRODUCTION_PAYMENT_CONTRACT_VERSION,
+    stripeMode: publicStripeMode()
+  };
+  if (process.env.RELEASE_CI_STAGING === '1') {
+    const mongoose = require('mongoose');
+    let mongoHost = null;
+    let stripeApiHost = null;
+    try { mongoHost = new URL(process.env.MONGODB_URI || '').hostname; } catch { /* guarded at boot */ }
+    try { stripeApiHost = new URL(process.env.STRIPE_API_BASE || '').hostname; } catch { /* guarded at boot */ }
+    let runId = null;
+    try {
+      const marker = await mongoose.connection.db.collection('cistagingruns').findOne({ _id: 'current' });
+      runId = marker?.runId || null;
+    } catch { /* marker is required by the staging test */ }
+    body.ciStaging = {
+      isolated: true,
+      databaseName: mongoose.connection?.name || null,
+      mongoHost,
+      stripeApiHost,
+      runId,
+      emailsEnabled: false,
+      schedulersEnabled: false
+    };
+  }
+  res.json(body);
 });
 
 // --- Routes ---
