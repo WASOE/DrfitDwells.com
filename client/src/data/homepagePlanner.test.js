@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import en from '../i18n/locales/en/home.json';
 import bg from '../i18n/locales/bg/home.json';
 import {
+  PLANNER_PARTY_OPTIONS,
   buildAvailabilitySearch,
+  buildBuyoutHandoff,
   buildItinerary,
+  capacityExceeded,
   recommendStay,
 } from './homepagePlanner';
 
@@ -20,10 +23,40 @@ describe('homepage planner', () => {
     expect(keyTree(bg)).toEqual(keyTree(en));
   });
 
-  it('sends two offline guests to The Cabin', () => {
+  it('offers exact party sizes instead of falsified buckets', () => {
+    expect(PLANNER_PARTY_OPTIONS).toEqual([
+      '1', '2', '3', '4', '5', '6', '7', '8', '10', '12', '16', '18',
+    ]);
+    for (const size of PLANNER_PARTY_OPTIONS) {
+      expect(en.planner.steps.party.options[size]).toBeTruthy();
+      expect(bg.planner.steps.party.options[size]).toBeTruthy();
+    }
+  });
+
+  it('preserves exact guest counts for 3, 4, 6, 7, 10 and 18', () => {
+    const cases = [
+      { party: '3', stayId: 'stone' },
+      { party: '4', stayId: 'stone' },
+      { party: '6', stayId: 'stone' },
+      { party: '7', stayId: 'buyout' },
+      { party: '10', stayId: 'buyout' },
+      { party: '18', stayId: 'buyout' },
+    ];
+    for (const { party, stayId } of cases) {
+      const result = recommendStay({ party, mood: 'group', connectivity: 'either' });
+      expect(result).toMatchObject({
+        stayId,
+        party: Number(party),
+        searchAdults: Number(party),
+      });
+    }
+  });
+
+  it('sends two offline guests to The Cabin without clamping', () => {
     expect(recommendStay({ party: '2', mood: 'quiet', connectivity: 'none' })).toMatchObject({
       stayId: 'cabin',
       searchAdults: 2,
+      capacityExceeded: false,
       offlineMismatch: false,
     });
   });
@@ -32,15 +65,14 @@ describe('homepage planner', () => {
     expect(recommendStay({ party: '2', mood: 'couple', connectivity: 'some' }).stayId).toBe('lux');
   });
 
-  it('sends a family to the Stone House and a large group to the whole Valley', () => {
-    expect(recommendStay({ party: '4', mood: 'group', connectivity: 'either' })).toMatchObject({
+  it('flags capacity overflow without changing the exact party size', () => {
+    const result = recommendStay({ party: '2', mood: 'quiet', connectivity: 'none' });
+    expect(capacityExceeded('cabin', 4)).toBe(true);
+    expect(result.searchAdults).toBe(2);
+    expect(recommendStay({ party: '4', mood: 'quiet', connectivity: 'none' })).toMatchObject({
       stayId: 'stone',
       searchAdults: 4,
-    });
-    expect(recommendStay({ party: '10', mood: 'group', connectivity: 'none' })).toMatchObject({
-      stayId: 'buyout',
-      searchAdults: null,
-      offlineMismatch: true,
+      capacityExceeded: false,
     });
   });
 
@@ -50,13 +82,16 @@ describe('homepage planner', () => {
     expect(buildItinerary('aframe', 1)[0]).toMatchObject({ body: 'arrivalValley', oneNight: true });
   });
 
-  it('uses the existing search query contract and refuses missing dates', () => {
+  it('preserves children, babies and pets in the search query contract', () => {
     expect(buildAvailabilitySearch({
       checkIn: new Date(2026, 10, 12),
       checkOut: new Date(2026, 10, 14),
-      adults: 2,
+      adults: 4,
+      children: 2,
+      babies: 1,
+      pets: 1,
       language: 'bg',
-    })).toBe('/bg/search?checkIn=2026-11-12&checkOut=2026-11-14&adults=2&children=0&babies=0&pets=0');
+    })).toBe('/bg/search?checkIn=2026-11-12&checkOut=2026-11-14&adults=4&children=2&babies=1&pets=1');
 
     expect(buildAvailabilitySearch({
       checkIn: null,
@@ -64,5 +99,25 @@ describe('homepage planner', () => {
       adults: 2,
       language: 'en',
     })).toBeNull();
+  });
+
+  it('carries exact guests and dates into the whole-Valley quote handoff', () => {
+    expect(buildBuyoutHandoff({
+      checkIn: new Date(2026, 10, 12),
+      checkOut: new Date(2026, 10, 15),
+      adults: 10,
+      children: 2,
+      babies: 0,
+      pets: 1,
+      language: 'en',
+    })).toBe('/retreats/the-valley?adults=10&children=2&babies=0&pets=1&checkIn=2026-11-12&checkOut=2026-11-15');
+
+    expect(buildBuyoutHandoff({
+      adults: 18,
+      children: 0,
+      babies: 0,
+      pets: 0,
+      language: 'bg',
+    })).toBe('/bg/retreats/the-valley?adults=18&children=0&babies=0&pets=0');
   });
 });

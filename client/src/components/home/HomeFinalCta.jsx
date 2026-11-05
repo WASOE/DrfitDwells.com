@@ -1,6 +1,9 @@
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../context/BookingSearchContext';
-import { sectionClass, wrapClass } from './homeStyles';
+import { localizePath } from '../../utils/localizedRoutes';
+import { useSiteLanguage } from '../../hooks/useSiteLanguage';
+import { lightCtaClass, outlineLightCtaClass, wrapClass } from './homeStyles';
 
 function scrollToId(id) {
   const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
@@ -9,22 +12,33 @@ function scrollToId(id) {
 
 export default function HomeFinalCta() {
   const { t } = useTranslation('home');
+  const { language } = useSiteLanguage();
   const { openModal } = useBookingSearch();
 
   return (
-    <section className={`bg-[#1c1917] text-[#F1ECE2] ${sectionClass}`} aria-labelledby="home-final-title">
+    <section
+      className="bg-[#1c1917] text-[#F1ECE2] py-14 md:py-20 lg:py-24"
+      aria-labelledby="home-final-title"
+    >
       <div className={`${wrapClass} grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 items-center`}>
         <div className="max-w-xl">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-stone-300 mb-4">{t('final.eyebrow')}</p>
-          <h2 id="home-final-title" className="font-serif text-3xl sm:text-4xl md:text-5xl tracking-tight leading-[1.08]">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-stone-300 mb-4">
+            {t('final.eyebrow')}
+          </p>
+          <h2
+            id="home-final-title"
+            className="font-serif text-3xl sm:text-4xl md:text-5xl lg:text-[3.4rem] tracking-tight leading-[1.06]"
+          >
             {t('final.title')}
           </h2>
-          <p className="mt-5 text-base md:text-lg text-stone-300 leading-relaxed max-w-2xl">{t('final.body')}</p>
+          <p className="mt-5 text-base md:text-lg text-stone-300 leading-relaxed max-w-2xl">
+            {t('final.body')}
+          </p>
         </div>
         <div className="flex flex-col sm:flex-row lg:justify-end gap-3 max-w-xl">
           <button
             type="button"
-            className="inline-flex w-full sm:w-auto items-center justify-center min-h-12 px-6 py-3 rounded-full bg-[#F1ECE2] text-[#1c1917] text-xs font-semibold uppercase tracking-[0.18em] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F1ECE2] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1c1917]"
+            className={lightCtaClass}
             onClick={() => {
               scrollToId('booking');
               openModal();
@@ -32,12 +46,9 @@ export default function HomeFinalCta() {
           >
             {t('final.dates')}
           </button>
-          <a
-            href="#planner"
-            className="inline-flex w-full sm:w-auto items-center justify-center min-h-12 px-6 py-3 rounded-full border border-[#F1ECE2] text-[#F1ECE2] text-xs font-semibold uppercase tracking-[0.18em] hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F1ECE2] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1c1917]"
-          >
-            {t('final.choose')}
-          </a>
+          <Link to={localizePath('/gift-vouchers', language)} className={outlineLightCtaClass}>
+            {t('final.gift')}
+          </Link>
         </div>
       </div>
     </section>

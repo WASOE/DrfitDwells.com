@@ -58,42 +58,56 @@
       "place": "Bachevo · a forest cabin for two",
       "price": "From €100 / night",
       "body": "A private, genuinely off-grid cabin with a wood stove and its own wood-fired hot tub. No guest Wi-Fi. A few days of being left alone, together.",
-      "imageAlt": "Wood-fired stove and timber interior of The Cabin near Bachevo",
+      "imageAlt": "The Cabin exterior in the forest near Bachevo",
       "explore": "Explore The Cabin",
       "facts": {
         "sleeps": "2 guests",
         "location": "Near Bachevo, Razlog area",
         "connection": "No guest Wi-Fi",
         "access": "Rough forest road; high clearance recommended"
-      }
+      },
+      "capacityNote": "Your search is for {{count}} guests. The Cabin sleeps 2 — we keep your guest count and open the calendar so you can change dates or choose another stay."
     },
     "valley": {
       "name": "The Valley",
       "place": "Chereshovo · a mountain village",
       "price": "A-frames from €60 / night",
       "body": "Five A-frames, a Luxury Cabin and the Stone House, with room for up to 18 guests when the whole place is free. Fire pit, outdoor hot tub and space to spread out.",
-      "imageAlt": "A-frame cabins at The Valley in the Rhodope Mountains",
+      "imageAlt": "A-frame cabins and the Stone House at The Valley",
       "explore": "Explore The Valley",
       "facts": {
         "sleeps": "Up to 18 across 7 stays",
         "location": "Near Chereshovo, Rhodope Mountains",
         "connection": "Starlink in the Stone House only",
         "access": "Park in Chereshovo, then walk or transfer"
-      }
+      },
+      "capacityNote": "Your search is for {{count}} guests. An A-frame sleeps 2; use Check dates to see what is free, or explore the whole Valley for larger groups."
     }
   },
   "group": {
     "eyebrow": "The whole place, just for you",
     "title": "Bring everyone. Keep the whole Valley.",
-    "body": "A birthday in the mountains. A few days with the family. A company retreat without a conference room. Book the entire Valley and give everyone their own place to sleep, with the meadow, fire pit and outdoor hot tub to share. Meals, facilitation and meeting equipment are not included.",
-    "imageAlt": "Stone House and A-frame cabins at The Valley on a winter morning",
+    "body": "A birthday in the mountains. A few days with the family. A company retreat without a conference room. Book the entire Valley and give everyone their own place to sleep, with the meadow, fire pit and outdoor hot tub to share.",
+    "imageAlt": "A-frame cabins at The Valley with the Stone House in view",
     "hire": "Explore private hire",
     "retreat": "Plan a team retreat",
     "stats": {
-      "guests": { "value": "18", "label": "Overnight guests" },
-      "stays": { "value": "7", "label": "Separate stays" },
-      "aframes": { "value": "5", "label": "A-frame cabins" },
-      "valley": { "value": "1", "label": "Valley to share" }
+      "guests": {
+        "value": "18",
+        "label": "Overnight guests"
+      },
+      "stays": {
+        "value": "7",
+        "label": "Separate stays"
+      },
+      "aframes": {
+        "value": "5",
+        "label": "A-frame cabins"
+      },
+      "valley": {
+        "value": "1",
+        "label": "Valley to share"
+      }
     }
   },
   "occasions": {
@@ -111,13 +125,13 @@
         "title": "All together, somewhere else.",
         "body": "Family weekends and private group stays for up to 18.",
         "cta": "See the whole Valley",
-        "imageAlt": "Fire pit at sunset at The Valley"
+        "imageAlt": "Guests outside the A-frame cabins at The Valley"
       },
       "quiet": {
         "title": "A few days without the noise.",
         "body": "No guest Wi-Fi at The Cabin. More time outside.",
         "cta": "Discover the stay",
-        "imageAlt": "Forest around The Cabin near Bachevo"
+        "imageAlt": "Quiet cabin interior with a wood stove and a forest view"
       }
     }
   },
@@ -144,12 +158,20 @@
     "steps": {
       "party": {
         "title": "Who's coming?",
-        "body": "We'll only suggest a place with enough beds.",
+        "body": "Choose the exact number of overnight guests. We only suggest a place with enough beds.",
         "options": {
           "1": "Just me",
           "2": "The two of us",
-          "4": "Family or friends, 3 to 6",
-          "10": "A group of 7 to 18"
+          "3": "3 guests",
+          "4": "4 guests",
+          "5": "5 guests",
+          "6": "6 guests",
+          "7": "7 guests",
+          "8": "8 guests",
+          "10": "10 guests",
+          "12": "12 guests",
+          "16": "16 guests",
+          "18": "18 guests"
         }
       },
       "mood": {
@@ -219,14 +241,17 @@
       "openDay": "Leave this day open: read, walk or rest. Nothing else is scheduled, and extra activities are not included.",
       "departure": "A quiet morning and check-out by 11:00, unless a later departure was agreed in advance.",
       "oneNight": "These stays are set up with a two-night minimum. Confirm that on the calendar before you travel."
-    }
+    },
+    "partySummary": "Exact party size for booking: {{count}} guests.",
+    "capacityExceeded": "This stay sleeps up to {{max}}. Your party of {{count}} is larger — Check dates keeps that exact count so you can see what fits, or choose the whole Valley."
   },
   "story": {
     "eyebrow": "From the people who built it",
     "title": "We didn't find these places. We made them.",
     "body": "Drift & Dwells started with The Cabin in the forest. Then came The Valley, built one cabin and one shared space at a time. We know the roads, the weather and the small details because we are here doing the work.",
     "cta": "Meet Drift & Dwells",
-    "imageAlt": "The Cabin in the forest near Bachevo"
+    "imageAlt": "Jose at The Valley, Drift & Dwells",
+    "buildAlt": "Early construction of The Cabin"
   },
   "philosophy": {
     "eyebrow": "One Bulgarian word we keep coming back to",
@@ -257,7 +282,7 @@
       },
       "group": {
         "q": "Can we book for a family or a company?",
-        "a": "Yes. The Valley has seven stays and room for up to 18 overnight guests when all of them are free: five A-frames for two, the Luxury Cabin for two, and the Stone House for up to six."
+        "a": "Yes. The Valley has seven stays and room for up to 18 overnight guests when all of them are free: five A-frames for two, the Luxury Cabin for two, and the Stone House for up to six. Meals, facilitation and meeting equipment are not included with a private hire."
       },
       "times": {
         "q": "What time is check-in and check-out?",
@@ -277,14 +302,14 @@
     "valid": "Valid for 12 months",
     "delivery": "Email or physical card",
     "cta": "Create a gift voucher",
-    "imageAlt": "Drift & Dwells gift voucher"
+    "imageAlt": "Drift & Dwells gift voucher card preview"
   },
   "final": {
     "eyebrow": "Ready when you are",
     "title": "Come and see it for yourself.",
     "body": "Two places, and more than one way to stay. Pick your dates, or tell us what would suit you.",
     "dates": "Find available dates",
-    "choose": "Help me choose"
+    "gift": "Gift a stay"
   },
   "memory": {
     "loading": "Loading memories…",

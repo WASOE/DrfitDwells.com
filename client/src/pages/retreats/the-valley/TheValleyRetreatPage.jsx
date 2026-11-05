@@ -18,6 +18,7 @@ import { locationInventoryAPI } from '../../../services/locationApi';
 import '../../the-valley/the-valley.css';
 import Seo from '../../../components/Seo';
 import { buildHreflangAlternates } from '../../../utils/localizedRoutes';
+import { useHydrateBookingSearchFromQuery } from '../../../hooks/useHydrateBookingSearchFromQuery';
 import '../../../i18n/ns/valley';
 import '../../../i18n/ns/booking';
 
@@ -26,6 +27,7 @@ const TheValleyRetreatPage = () => {
   const { season } = useSeason();
   const { t: tb } = useTranslation('booking');
   const { t: tv } = useTranslation('valley');
+  useHydrateBookingSearchFromQuery();
 
   const containerRef = useRef(null);
   const heroRef = useRef(null);

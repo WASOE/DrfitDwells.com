@@ -10,7 +10,9 @@ export const BG_EXCLUDED_PATHS = new Set([
   '/cancellation-policy',
   '/career',
   '/press',
-  '/cabin/faq'
+  '/cabin/faq',
+  // Public Valley arrival guide is registered EN-only in App.jsx.
+  '/guides/the-valley',
 ]);
 
 export const stripLocaleFromPath = (pathname = '/') => {
