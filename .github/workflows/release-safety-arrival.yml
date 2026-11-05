@@ -1,0 +1,22 @@
+name: Release safety arrival guard
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  arrival-email-deploy-guard:
+    name: Arrival email deploy guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Arrival, booking, and payment release guards
+        run: node --test ops/driftdwells-production/arrivalEmailGuard.test.cjs ops/driftdwells-production/deploy-api-guarded.test.cjs
