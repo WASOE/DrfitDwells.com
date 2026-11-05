@@ -83,7 +83,7 @@ describe('HomeTripPlanner and booking handoffs', () => {
         <Route path="*" element={<HomeTripPlanner />} />
       </Routes>
     );
-    await answer('The two of us');
+    fireEvent.click(screen.getByRole('button', { name: 'The two of us' }));
     await answer('Proper time offline');
     await answer('No guest Wi-Fi, please');
     await answer('A weekend (2 nights)');
@@ -102,6 +102,7 @@ describe('HomeTripPlanner and booking handoffs', () => {
       { seed: { adults: 2, children: 1, babies: 0, pets: 1 } }
     );
 
+    await answer('Family or friends');
     await answer('6 guests');
     await answer('Being together as a group');
     await answer("I don't mind");
@@ -122,6 +123,7 @@ describe('HomeTripPlanner and booking handoffs', () => {
       { seed: { adults: 2, children: 2, babies: 0, pets: 0 } }
     );
 
+    await answer('A group of 8+');
     await answer('10 guests');
     await answer('Being together as a group');
     await answer("I don't mind");
@@ -131,6 +133,25 @@ describe('HomeTripPlanner and booking handoffs', () => {
     expect(screen.getByTestId('location')).toHaveTextContent(
       '/retreats/the-valley?adults=10&children=2&babies=0&pets=0&checkIn=2026-11-12&checkOut=2026-11-14'
     );
+  });
+
+  it('offers previously missing exact counts including 9 and 17 for groups', async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="*" element={<HomeTripPlanner />} />
+      </Routes>
+    );
+
+    await answer('A group of 8+');
+    expect(screen.getByRole('button', { name: '9 guests' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '11 guests' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '17 guests' })).toBeInTheDocument();
+    await answer('17 guests');
+    await answer('Being together as a group');
+    await answer("I don't mind");
+    await answer('Three nights');
+
+    expect(within(screen.getByTestId('home-planner')).getByText(/Exact party size for booking: 17 guests/i)).toBeInTheDocument();
   });
 
   it('does not silently reduce a family search when Cabin check dates is used', async () => {

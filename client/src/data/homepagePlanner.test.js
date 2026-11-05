@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 import en from '../i18n/locales/en/home.json';
 import bg from '../i18n/locales/bg/home.json';
 import {
+  PLANNER_GROUP_COUNTS,
   PLANNER_PARTY_OPTIONS,
+  PLANNER_WHO_OPTIONS,
   buildAvailabilitySearch,
   buildBuyoutHandoff,
   buildItinerary,
   capacityExceeded,
+  partyCountsForWho,
   recommendStay,
+  resolvePartyFromWho,
 } from './homepagePlanner';
 
 function keyTree(value) {
@@ -23,13 +27,23 @@ describe('homepage planner', () => {
     expect(keyTree(bg)).toEqual(keyTree(en));
   });
 
-  it('offers exact party sizes instead of falsified buckets', () => {
-    expect(PLANNER_PARTY_OPTIONS).toEqual([
-      '1', '2', '3', '4', '5', '6', '7', '8', '10', '12', '16', '18',
+  it('offers a friendly who-choice then exact party sizes 1–18 with no gaps', () => {
+    expect(PLANNER_WHO_OPTIONS).toEqual(['solo', 'couple', 'family', 'group']);
+    expect(resolvePartyFromWho('solo')).toBe('1');
+    expect(resolvePartyFromWho('couple')).toBe('2');
+    expect(resolvePartyFromWho('family')).toBeNull();
+    expect(PLANNER_PARTY_OPTIONS).toEqual(Array.from({ length: 18 }, (_, i) => String(i + 1)));
+    expect(partyCountsForWho('group')).toEqual(PLANNER_GROUP_COUNTS);
+    expect(PLANNER_GROUP_COUNTS).toEqual([
+      '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18',
     ]);
     for (const size of PLANNER_PARTY_OPTIONS) {
       expect(en.planner.steps.party.options[size]).toBeTruthy();
       expect(bg.planner.steps.party.options[size]).toBeTruthy();
+    }
+    for (const who of PLANNER_WHO_OPTIONS) {
+      expect(en.planner.steps.who.options[who]).toBeTruthy();
+      expect(bg.planner.steps.who.options[who]).toBeTruthy();
     }
   });
 

@@ -21,7 +21,7 @@
   "intro": {
     "eyebrow": "Welcome to Drift & Dwells",
     "title": "A forest cabin near Bachevo. A small village in the Rhodopes.",
-    "body": "Two places to stay in southwestern Bulgaria. A private cabin for two in the forest, or a mountain village of A-frames and stone buildings for couples, friends and groups."
+    "body": "Book a private cabin for two, or stay among the A-frames and stone buildings of The Valley."
   },
   "stays": {
     "eyebrow": "Find your place",
@@ -55,7 +55,7 @@
       "place": "Chereshovo · a mountain village",
       "price": "A-frames from €60 / night",
       "body": "A mountain village of five A-frames, a Luxury Cabin and the Stone House. Stay as a couple or bring your people — up to 18 when the whole place is free.",
-      "imageAlt": "A-frame cabins on the meadow at The Valley",
+      "imageAlt": "Aerial view of The Valley showing the Stone House, A-frame cabins and Luxury Cabin",
       "explore": "Explore The Valley",
       "facts": {
         "sleeps": "Up to 18 across 7 stays",
@@ -80,36 +80,48 @@
     },
     "capacityLine": "Up to 18 overnight guests across seven stays.",
     "imageAlt": "A-frame cabins on the meadow at The Valley",
-    "hire": "Book a private stay",
+    "hire": "Request private Valley hire",
     "retreat": "Plan a company retreat",
     "stats": {
-      "guests": { "value": "18", "label": "Overnight guests" },
-      "stays": { "value": "7", "label": "Separate stays" },
-      "shared": { "value": "Shared", "label": "Fire pit & hot tub" },
-      "valley": { "value": "1", "label": "Private valley" }
+      "guests": {
+        "value": "18",
+        "label": "Overnight guests"
+      },
+      "stays": {
+        "value": "7",
+        "label": "Separate stays"
+      },
+      "shared": {
+        "value": "Shared",
+        "label": "Fire pit & hot tub"
+      },
+      "valley": {
+        "value": "1",
+        "label": "Private valley"
+      }
     }
   },
   "occasions": {
-    "eyebrow": "The reasons people come",
-    "title": "Three clear reasons to book.",
-    "body": "A romantic weekend, everyone together, or a real no-Wi-Fi cabin escape — each maps to a stay you can reserve.",
+    "eyebrow": "Moments people come for",
+    "title": "A weekend offline. Or everyone together.",
+    "body": "Romantic time for two, a private gathering for friends and family, or a cabin stay with no guest Wi-Fi.",
     "items": {
       "two": {
-        "title": "Romantic weekend.",
-        "body": "A private cabin, wood-fired hot tub and a few days with no audience.",
-        "cta": "Book The Cabin",
+        "title": "Romantic weekend at The Cabin",
+        "body": "Wood stove, wood-fired hot tub, forest road — and no audience.",
+        "cta": "See The Cabin",
         "imageAlt": "Two guests on the swing at The Valley"
       },
       "together": {
-        "title": "Get everyone together.",
-        "body": "Several homes or the whole Valley. Shared evenings at the fire pit.",
-        "cta": "See private Valley stays",
+        "title": "Friends and family at The Valley",
+        "body": "Several homes or the whole place. Evenings at the shared fire pit.",
+        "cta": "See private Valley hire",
         "imageAlt": "Guests together near the A-frames at The Valley"
       },
       "quiet": {
-        "title": "Real no-Wi-Fi escape.",
-        "body": "No guest Wi-Fi at The Cabin. Forest time instead of screen time.",
-        "cta": "Book The Cabin",
+        "title": "No Wi-Fi. Real forest time.",
+        "body": "The Cabin has no guest Wi-Fi. Leave the screens and take the days outside.",
+        "cta": "See The Cabin",
         "imageAlt": "Wood stove and quiet interior at The Cabin"
       }
     }
@@ -135,21 +147,37 @@
     "restart": "Start again",
     "offlineMismatch": "The Cabin is the stay with no guest Wi-Fi, and it sleeps two. For a larger group the Stone House has Starlink.",
     "steps": {
-      "party": {
+      "who": {
         "title": "Who's coming?",
-        "body": "Choose the exact number of overnight guests. We only suggest a place with enough beds.",
+        "body": "Start with the shape of your group. We will ask for the exact overnight count when it matters.",
         "options": {
-          "1": "Just me",
-          "2": "The two of us",
+          "solo": "Just me",
+          "couple": "The two of us",
+          "family": "Family or friends",
+          "group": "A group of 8+"
+        }
+      },
+      "party": {
+        "title": "Exact overnight guests",
+        "body": "Choose the exact number. We only suggest a place with enough beds.",
+        "options": {
+          "1": "1 guest",
+          "2": "2 guests",
           "3": "3 guests",
           "4": "4 guests",
           "5": "5 guests",
           "6": "6 guests",
           "7": "7 guests",
           "8": "8 guests",
+          "9": "9 guests",
           "10": "10 guests",
+          "11": "11 guests",
           "12": "12 guests",
+          "13": "13 guests",
+          "14": "14 guests",
+          "15": "15 guests",
           "16": "16 guests",
+          "17": "17 guests",
           "18": "18 guests"
         }
       },
@@ -229,7 +257,7 @@
     "word": "Aylyak",
     "phonetic": "[ahy-lyak]",
     "type": "noun",
-    "line": "The art of not being in a hurry — enough quiet, and enough time, to take the day as it comes."
+    "line": "The Bulgarian art of not being hurried — enough quiet, and enough time, to take the day as it comes. It is the rule we build by."
   },
   "faq": {
     "eyebrow": "Before you book",
@@ -271,21 +299,24 @@
     "from": "From €15",
     "valid": "Valid for 12 months",
     "delivery": "Email or physical card",
-    "cta": "Create a gift voucher",
-    "imageAlt": "Drift & Dwells gift voucher card preview"
+    "cta": "Buy a gift voucher",
+    "imageAlt": "Drift & Dwells gift voucher card preview",
+    "ctaHint": "Choose an amount, add a note, and send it by email or as a physical card."
   },
   "final": {
     "eyebrow": "Ready when you are",
     "title": "Come and see it for yourself.",
-    "body": "Two places, and more than one way to stay. Pick your dates, or tell us what would suit you.",
+    "body": "Book dates for a stay, ask for a private Valley hire, or buy a gift voucher.",
     "dates": "Find available dates",
     "choose": "Help me choose",
-    "gift": "Gift a stay"
+    "private": "Private Valley hire",
+    "gift": "Buy a gift voucher"
   },
   "memory": {
+    "eyebrow": "From the places",
+    "title": "What it looks like when you are there.",
+    "subtitle": "Authentic photographs from The Cabin and The Valley — the forest, the builds, the quiet.",
     "loading": "Loading memories…",
-    "title": "Slide through the archive",
-    "subtitle": "Drag to feel each chapter breathe.",
     "photos": {
       "lakeDawn": "First light · misty water, Rhodopes",
       "fernRhodopes": "Forest ferns · growth near The Cabin",

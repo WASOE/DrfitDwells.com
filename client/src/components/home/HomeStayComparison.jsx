@@ -29,7 +29,7 @@ const STAYS = [
     id: 'valley',
     stayId: 'aframe',
     image: HOME_IMAGES.valleyAframes,
-    imageClass: 'object-[center_62%]',
+    imageClass: 'object-center',
     path: '/valley',
     facts: ['sleeps', 'location', 'connection', 'access'],
   },

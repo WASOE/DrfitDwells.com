@@ -41,13 +41,16 @@ export default function MemoryStream() {
   }, [mountGallery]);
 
   return (
-    <section ref={sectionRef} className="py-12 md:py-24 bg-[#f4f2ed] overflow-hidden">
-      <div className="max-w-7xl mx-auto px-4 md:px-6">
-        <div className="text-center mb-12 md:mb-16">
-          <h2 className="font-serif text-4xl md:text-5xl text-stone-900 mb-4">
+    <section ref={sectionRef} className="py-14 md:py-20 lg:py-24 bg-[#F3EFE6] overflow-hidden">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <div className="max-w-3xl mb-10 md:mb-14">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-stone-500 mb-4">
+            {t("memory.eyebrow")}
+          </p>
+          <h2 className="font-serif text-3xl sm:text-4xl md:text-5xl text-[#1c1917] tracking-tight leading-[1.06] mb-4">
             {t("memory.title")}
           </h2>
-          <p className="text-sm md:text-xl text-stone-400 font-light italic mt-2">
+          <p className="text-[17px] md:text-lg text-stone-800 leading-relaxed max-w-2xl">
             {t("memory.subtitle")}
           </p>
         </div>

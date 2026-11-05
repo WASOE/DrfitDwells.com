@@ -4,9 +4,9 @@ import DualityHero from '../components/DualityHero';
 import Seo from '../components/Seo';
 import HomeIntro from '../components/home/HomeIntro';
 import HomeStayComparison from '../components/home/HomeStayComparison';
-import HomeGroupStay from '../components/home/HomeGroupStay';
-import HomeOccasions from '../components/home/HomeOccasions';
 import HomeTripPlanner from '../components/home/HomeTripPlanner';
+import HomeOccasions from '../components/home/HomeOccasions';
+import HomeGroupStay from '../components/home/HomeGroupStay';
 import HomeAylyak from '../components/home/HomeAylyak';
 import HomeFaq, { HOME_FAQ_KEYS } from '../components/home/HomeFaq';
 import HomeVoucher from '../components/home/HomeVoucher';
@@ -22,6 +22,7 @@ import { BRANDING } from '../config/brandingAssets';
 
 const BookingDrawer = lazy(() => import('../components/BookingDrawer'));
 const AuthorityStrip = lazy(() => import('../components/AuthorityStrip'));
+const MemoryStream = lazy(() => import('../components/MemoryStream'));
 const Footer = lazy(() => import('../components/Footer'));
 
 const origin = getSiteUrl();
@@ -125,9 +126,12 @@ const Home = () => {
 
         <HomeIntro />
         <HomeStayComparison />
-        <HomeGroupStay />
-        <HomeOccasions />
         <HomeTripPlanner />
+        <HomeOccasions />
+        <Suspense fallback={<div className="min-h-[280px] bg-[#f4f2ed]" aria-hidden />}>
+          <MemoryStream />
+        </Suspense>
+        <HomeGroupStay />
         <HomeAylyak />
         <HomeFaq />
         <HomeVoucher />
