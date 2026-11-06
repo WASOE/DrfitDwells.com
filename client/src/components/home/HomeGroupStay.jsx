@@ -20,10 +20,10 @@ export default function HomeGroupStay() {
     >
       <div className="absolute inset-0" aria-hidden="true">
         <HomePicture
-          image={HOME_IMAGES.valleyAframesSummer}
+          image={HOME_IMAGES.together}
           alt=""
           sizes="100vw"
-          className="h-full w-full object-cover object-[center_40%] opacity-[0.28]"
+          className="h-full w-full object-cover object-[center_68%] opacity-[0.28]"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#1c1917] via-[#1c1917]/88 to-[#1c1917]/55" />
       </div>

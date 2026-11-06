@@ -43,7 +43,7 @@
       "place": "15 km from Bansko, in the Rila Mountains",
       "price": "From €100 / night",
       "body": "A private off-grid cabin for two: wood stove, wood-fired hot tub, and no guest Wi-Fi. A few days left alone together.",
-      "imageAlt": "The Cabin on a mountain meadow near Bansko, southwestern Bulgaria",
+      "imageAlt": "Wooden cabin in the forest with smoke from the wood stove, 15 km from Bansko",
       "explore": "Explore The Cabin",
       "facts": {
         "sleeps": "2 guests",
@@ -58,7 +58,7 @@
       "place": "30 km from Bansko, in the Rhodope Mountains",
       "price": "A-frames from €60 / night",
       "body": "A mountain village of five A-frames, a Luxury Cabin and the Stone House. Stay as a couple or bring your people — up to 18 when the whole place is free.",
-      "imageAlt": "A-frame cabins at The Valley, Rhodope Mountains, Bulgaria",
+      "imageAlt": "A close row of A-frame cabins at sunset, 30 km from Bansko",
       "explore": "Explore The Valley",
       "facts": {
         "sleeps": "Up to 18 across 7 stays",
@@ -113,7 +113,7 @@
         "title": "A few days offline",
         "body": "No guest Wi-Fi at The Cabin.",
         "cta": "See the digital detox",
-        "imageAlt": "Wood stove inside The Cabin near Bansko, southwestern Bulgaria"
+        "imageAlt": "Two guests in bed facing a large snowy window, 15 km from Bansko"
       }
     }
   },
@@ -281,7 +281,7 @@
     "valid": "Valid for 12 months",
     "delivery": "Email or physical card",
     "cta": "Create a gift voucher",
-    "imageAlt": "Drift & Dwells gift voucher card preview"
+    "imageAlt": "Drift & Dwells kraft gift card package with the physical card and envelope"
   },
   "final": {
     "eyebrow": "Ready when you are",
@@ -308,10 +308,10 @@
         "caption": "A small private gathering in the mountains. Ask us — there is no wedding package.",
         "cta": "Ask about a private stay"
       },
-      "cabin": {
-        "alt": "The Cabin on a mountain meadow near Bansko",
-        "caption": "A cabin weekend for two, with a wood-fired hot tub.",
-        "cta": "See The Cabin"
+      "lux": {
+        "alt": "Luxury Cabin in the snow at The Valley, 30 km from Bansko",
+        "caption": "The Luxury Cabin for two, set apart inside The Valley.",
+        "cta": "See the Luxury Cabin"
       },
       "guests": {
         "alt": "Three guests beside two A-frames at The Valley",
@@ -319,12 +319,12 @@
         "cta": "Plan a company retreat"
       },
       "aframes": {
-        "alt": "Two A-frame cabins on the meadow at The Valley",
+        "alt": "A row of A-frame cabins at sunset, 30 km from Bansko",
         "caption": "Several places to sleep, shared outdoor space, and time together.",
         "cta": "See The Valley"
       },
       "stove": {
-        "alt": "Wood stove inside The Cabin near Bansko",
+        "alt": "Wooden cabin in the forest with smoke from the wood stove, 15 km from Bansko",
         "caption": "Forest, a wood stove, and no guest Wi-Fi at The Cabin.",
         "cta": "See the digital detox"
       }

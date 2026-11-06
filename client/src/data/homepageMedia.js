@@ -23,6 +23,14 @@ export const HOME_IMAGES = {
     width: 1600,
     height: 900,
   },
+  /** Valley stay card — close A-frame row so the cabins fill the wide crop. */
+  valleyAframesClose: {
+    avifSrcSet: '',
+    webpSrcSet: '',
+    src: '/media/home/valley-aframes-close.jpg',
+    width: 1024,
+    height: 767,
+  },
   /** Valley lead — clear A-frame row + Stone House, not landscape filler. */
   valleyAframes: {
     avifSrcSet: '',
@@ -54,6 +62,46 @@ export const HOME_IMAGES = {
     src: '/media/winter/stone-house-aframes-winter-morning-1200w.webp',
     width: 1447,
     height: 1087,
+  },
+  /** Real Cabin exterior — meadow, not a video frame. */
+  cabinPortrait: {
+    avifSrcSet: '',
+    webpSrcSet: '',
+    src: '/uploads/The%20Cabin/011f4645-32ce-4739-ac8e-16a900612ac7.jpeg',
+    width: 1154,
+    height: 2560,
+  },
+  /** Winter interior: bed facing the snowy window. */
+  winterBed: {
+    avifSrcSet: '',
+    webpSrcSet: '',
+    src: '/media/seo/aframe-bedroom-winter.jpeg',
+    width: 948,
+    height: 1660,
+  },
+  /** Archive — close A-frame row at sunset, several places to sleep. */
+  valleyAframesRow: {
+    avifSrcSet: '',
+    webpSrcSet: '',
+    src: '/media/home/valley-aframes-row.jpg',
+    width: 695,
+    height: 1024,
+  },
+  /** Archive — wooden cabin in the forest, smoke from the stove. */
+  cabinForestStove: {
+    avifSrcSet: '',
+    webpSrcSet: '',
+    src: '/media/home/cabin-forest-stove.jpg',
+    width: 1024,
+    height: 1024,
+  },
+  /** Luxury Cabin at The Valley — dark cabin in the snow, with a deer. */
+  cabinDeer: {
+    avifSrcSet: '',
+    webpSrcSet: '',
+    src: '/media/home/cabin-winter-deer.jpg',
+    width: 576,
+    height: 1024,
   },
   /** Romantic occasion — couple on the Valley swing. */
   couple: {
@@ -108,5 +156,13 @@ export const HOME_IMAGES = {
     src: '/media/ai-search/cabin-forest-1200w.webp',
     width: 1200,
     height: 675,
+  },
+  /** Homepage gift section — physical kraft gift-card package. */
+  giftKraft: {
+    avifSrcSet: '',
+    webpSrcSet: '',
+    src: '/media/home/gift-voucher-kraft.jpg',
+    width: 576,
+    height: 1024,
   },
 };

@@ -10,10 +10,10 @@ import { useSiteLanguage } from '../hooks/useSiteLanguage';
 const PHOTOS = [
   { image: HOME_IMAGES.firepit, key: 'fire', href: '/retreats/the-valley', position: 'object-[center_62%]' },
   { image: HOME_IMAGES.valleyVillage, key: 'stone', href: '/retreats/the-valley', position: 'object-[42%_center]' },
-  { image: HOME_IMAGES.cabinExterior, key: 'cabin', href: '/cabin', position: 'object-[22%_center]' },
+  { image: HOME_IMAGES.cabinDeer, key: 'lux', href: '/stays/lux-cabin', position: 'object-[center_58%]' },
   { image: HOME_IMAGES.together, key: 'guests', href: '/retreat-venue-bulgaria', position: 'object-center' },
-  { image: HOME_IMAGES.valleyAframesSummer, key: 'aframes', href: '/valley', position: 'object-[center_70%]' },
-  { image: HOME_IMAGES.cabinInterior, key: 'stove', href: '/digital-detox-bulgaria', position: 'object-[78%_center]' },
+  { image: HOME_IMAGES.valleyAframesRow, key: 'aframes', href: '/valley', position: 'object-center' },
+  { image: HOME_IMAGES.cabinForestStove, key: 'stove', href: '/digital-detox-bulgaria', position: 'object-center' },
 ];
 
 function ArchiveCard({ photo, caption, alt, cta, href, frameClass }) {

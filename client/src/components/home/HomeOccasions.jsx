@@ -9,7 +9,7 @@ import { eyebrowClass, titleClass, wrapClass } from './homeStyles';
 const OCCASIONS = [
   { id: 'two', image: HOME_IMAGES.couple, path: '/cabin', object: 'object-center' },
   { id: 'together', image: HOME_IMAGES.together, path: '/retreats/the-valley', object: 'object-center' },
-  { id: 'quiet', image: HOME_IMAGES.quiet, path: '/digital-detox-bulgaria', object: 'object-[18%_center]' },
+  { id: 'quiet', image: HOME_IMAGES.winterBed, path: '/digital-detox-bulgaria', object: 'object-[center_42%]' },
 ];
 
 export default function HomeOccasions() {
