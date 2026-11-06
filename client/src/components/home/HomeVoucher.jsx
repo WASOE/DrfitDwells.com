@@ -1,11 +1,6 @@
-import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import GiftVoucherCardPreview from '../giftVoucher/GiftVoucherCardPreview';
-import {
-  buildPreviewVoucher,
-  createInitialBuilderState,
-} from '../giftVoucher/giftVoucherBuilderState';
+import { HOME_IMAGES } from '../../data/homepageMedia';
 import { localizePath } from '../../utils/localizedRoutes';
 import { useSiteLanguage } from '../../hooks/useSiteLanguage';
 import { eyebrowClass, primaryCtaClass, titleClass, wrapClass } from './homeStyles';
@@ -13,10 +8,7 @@ import { eyebrowClass, primaryCtaClass, titleClass, wrapClass } from './homeStyl
 export default function HomeVoucher() {
   const { t } = useTranslation('home');
   const { language } = useSiteLanguage();
-  const previewFields = useMemo(
-    () => buildPreviewVoucher(createInitialBuilderState(language), 15000),
-    [language]
-  );
+  const image = HOME_IMAGES.giftKraft;
 
   return (
     <section id="gift" className="bg-[#FFFDF8] py-14 md:py-20 lg:py-[6.5rem]" aria-labelledby="home-voucher-title">
@@ -38,11 +30,18 @@ export default function HomeVoucher() {
             {t('voucher.cta')}
           </Link>
         </div>
-        <div className="order-1 lg:order-2 w-full max-w-md mx-auto lg:max-w-none">
-          <div className="bg-[#F3EFE6] border border-[#E5E5E0] p-5 sm:p-8 min-h-[320px] lg:min-h-[420px] flex items-center justify-center">
-            <GiftVoucherCardPreview fields={previewFields} />
-          </div>
-          <p className="sr-only">{t('voucher.imageAlt')}</p>
+        <div className="order-1 lg:order-2 w-full max-w-sm mx-auto lg:max-w-md">
+          <figure className="overflow-hidden bg-[#F3EFE6] border border-[#E5E5E0]">
+            <img
+              src={image.src}
+              alt={t('voucher.imageAlt')}
+              width={image.width}
+              height={image.height}
+              className="h-auto w-full object-cover object-center"
+              loading="lazy"
+              decoding="async"
+            />
+          </figure>
         </div>
       </div>
     </section>

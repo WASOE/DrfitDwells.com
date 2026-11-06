@@ -83,7 +83,7 @@ const Home = () => {
             media: '(max-width: 767px)'
           }
         ]}
-        ogImage="/uploads/Videos/The-cabin-header.winter-poster.jpg"
+        ogImage="/uploads/The%20Cabin/011f4645-32ce-4739-ac8e-16a900612ac7.jpeg"
         jsonLd={[
           {
             '@context': 'https://schema.org',
