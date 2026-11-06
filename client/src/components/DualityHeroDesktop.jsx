@@ -11,7 +11,6 @@ const SearchBar = lazy(() => import('./SearchBar'));
 
 export default function DualityHeroDesktop() {
   const { season } = useSeason();
-  const [hoveredPane, setHoveredPane] = useState(null);
   const [rightPaneVideoOk, setRightPaneVideoOk] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [isLowBandwidth, setIsLowBandwidth] = useState(false);
@@ -96,70 +95,15 @@ export default function DualityHeroDesktop() {
     playVideos();
   }, [baseVideoOk, rightPaneVideoOk, season]);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const handleMouseMove = (e) => {
-      const rect = container.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const width = rect.width;
-      const threshold = width / 2;
-
-      if (x < threshold - 10) {
-        setHoveredPane('left');
-      } else if (x > threshold + 10) {
-        setHoveredPane('right');
-      }
-    };
-
-    const handleMouseLeave = () => {
-      setHoveredPane(null);
-    };
-
-    container.addEventListener('mousemove', handleMouseMove);
-    container.addEventListener('mouseleave', handleMouseLeave);
-
-    return () => {
-      container.removeEventListener('mousemove', handleMouseMove);
-      container.removeEventListener('mouseleave', handleMouseLeave);
-    };
-  }, []);
-
-  const leftFlex = hoveredPane === 'left' ? 7 : hoveredPane === 'right' ? 3 : 5;
-  const rightFlex = hoveredPane === 'right' ? 7 : hoveredPane === 'left' ? 3 : 5;
-
-  const driftTextVariants = {
-    idle: { opacity: 1, y: 0 },
-    hovered: { opacity: 1, y: 0 },
-    notHovered: { opacity: 0, y: -12, pointerEvents: 'none' }
-  };
-
-  const dwellTextVariants = {
-    idle: { opacity: 1, y: 0 },
-    hovered: { opacity: 1, y: 0 },
-    notHovered: { opacity: 0, y: -12, pointerEvents: 'none' }
-  };
-
-  const getLeftTextState = () => {
-    if (hoveredPane === null) return 'idle';
-    return hoveredPane === 'left' ? 'hovered' : 'notHovered';
-  };
-
-  const getRightTextState = () => {
-    if (hoveredPane === null) return 'idle';
-    return hoveredPane === 'right' ? 'hovered' : 'notHovered';
-  };
-
   return (
     <section ref={containerRef} className="relative w-full overflow-hidden h-screen">
+      <h1 className="absolute top-[calc(var(--header-offset,5.5rem)+4.15rem)] left-1/2 z-20 -translate-x-1/2 max-w-xl px-4 text-center text-[11px] sm:text-xs uppercase tracking-[0.22em] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.65)]">
+        {t('hero.kicker')}
+      </h1>
       <HeroSeasonToggle position="below-menu" />
 
       <div className="flex w-full h-full">
-        <div
-          className="relative h-full z-10 bg-black overflow-hidden"
-          style={{ flex: leftFlex, transition: 'flex 0.6s cubic-bezier(0.22,1,0.36,1)' }}
-        >
+        <div className="relative h-full z-10 min-w-0 flex-1 basis-1/2 bg-black overflow-hidden">
           <div className="relative w-full h-full">
             <HeroPane
               side="left"
@@ -173,33 +117,20 @@ export default function DualityHeroDesktop() {
             <div className="absolute inset-0 bg-black/40" />
 
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
-              <motion.h1
-                className="font-['Playfair_Display'] text-2xl sm:text-3xl md:text-4xl lg:text-5xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl"
-                initial="idle"
-                animate={getLeftTextState()}
-                variants={dwellTextVariants}
-                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              >
+              <h2 className="font-['Playfair_Display'] text-2xl sm:text-3xl md:text-4xl lg:text-5xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl">
                 {t('hero.leftHeadline')}
-              </motion.h1>
-              <motion.a
+              </h2>
+              <a
                 href={localizePath('/cabin', language)}
-                initial="idle"
-                animate={getLeftTextState()}
-                variants={dwellTextVariants}
-                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                className="inline-flex items-center gap-2 mt-6 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors"
+                className="mt-5 max-w-xs text-sm md:text-base text-white leading-snug hover:underline underline-offset-4"
               >
-                {t('hero.exploreCabin')}
-              </motion.a>
+                {t('hero.cabinLine')}
+              </a>
             </div>
           </div>
         </div>
 
-        <div
-          className="relative h-full z-10 bg-black overflow-hidden"
-          style={{ flex: rightFlex, transition: 'flex 0.6s cubic-bezier(0.22,1,0.36,1)' }}
-        >
+        <div className="relative h-full z-10 min-w-0 flex-1 basis-1/2 bg-black overflow-hidden">
           <div className="relative w-full h-full">
             <HeroPane
               side="right"
@@ -213,41 +144,31 @@ export default function DualityHeroDesktop() {
             <div className="absolute inset-0 bg-black/20" />
 
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
-              <motion.h2
-                className="font-['Playfair_Display'] text-2xl sm:text-3xl md:text-4xl lg:text-5xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl whitespace-nowrap"
-                initial="idle"
-                animate={getRightTextState()}
-                variants={driftTextVariants}
-                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              >
+              <h2 className="font-['Playfair_Display'] text-2xl sm:text-3xl md:text-4xl lg:text-5xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl">
                 {t('hero.rightHeadline')}
-              </motion.h2>
-              <motion.a
+              </h2>
+              <a
                 href={localizePath('/valley', language)}
-                initial="idle"
-                animate={getRightTextState()}
-                variants={driftTextVariants}
-                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                className="inline-flex items-center gap-2 mt-6 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors"
+                className="mt-5 max-w-xs text-sm md:text-base text-white leading-snug hover:underline underline-offset-4"
               >
-                {t('hero.exploreValley')}
-              </motion.a>
+                {t('hero.valleyLine')}
+              </a>
             </div>
           </div>
         </div>
       </div>
 
       <div className="absolute bottom-8 lg:bottom-12 left-1/2 -translate-x-1/2 z-20 w-full max-w-4xl px-4 sm:px-6 pointer-events-auto">
-        <motion.div className="bg-white/[0.07] border border-white/20 backdrop-blur-sm rounded-xl px-4 py-3 sm:px-5 sm:py-3.5 transition-colors duration-300 hover:bg-white/[0.09] hover:border-white/30">
+        <motion.div className="bg-[#F6F1E8] border border-[#E6E0D4] shadow-[0_18px_40px_rgba(12,10,9,0.45)] rounded-xl px-4 py-3 sm:px-5 sm:py-3.5">
           <Suspense
             fallback={
               <div
-                className="h-12 sm:h-14 w-full rounded-lg bg-white/[0.06] border border-white/10"
+                className="h-12 sm:h-14 w-full rounded-lg bg-[#E7E1D6]"
                 aria-hidden
               />
             }
           >
-            <SearchBar buttonTheme="hero" variant="glass" />
+            <SearchBar buttonTheme="hero" />
           </Suspense>
         </motion.div>
       </div>

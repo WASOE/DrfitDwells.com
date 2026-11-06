@@ -118,7 +118,7 @@ export const imageMetadata = {
       },
       seo: {
         alt: 'Bucephalus off-grid cabin',
-        baseDescription: 'Authentic images of the Bucephalus off-grid mountain cabin near Bachevo, Razlog area, southwestern Bulgaria'
+        baseDescription: 'Authentic images of the Bucephalus off-grid mountain cabin, 15 km from Bansko, in the Rila Mountains, near Bachevo'
       },
       useCases: ['cabin-gallery', 'cabin-details-page', 'booking-presentation', 'lifestyle-content']
     }
@@ -818,7 +818,7 @@ export const imageMetadata = {
       perspective: 'interior',
       content: 'Interior view of Bucephalus cabin showing main living space, wooden interior, and cozy atmosphere',
       seo: {
-        alt: 'Interior of Bucephalus off-grid cabin showing rustic wooden walls and cozy living space, Rhodope Mountains, Bulgaria',
+        alt: 'Interior of Bucephalus off-grid cabin showing rustic wooden walls and cozy living space, 15 km from Bansko, in the Rila Mountains',
         title: 'Cabin Interior - Bucephalus Living Space',
         description: 'The cozy interior of the Bucephalus cabin near Bachevo, showcasing rustic wooden construction and the comfortable off-grid living space.'
       },
@@ -833,9 +833,9 @@ export const imageMetadata = {
       perspective: 'exterior',
       content: 'Front porch area of Bucephalus cabin showing two seats, outdoor space, and forest setting',
       seo: {
-        alt: 'Front porch of Bucephalus cabin with two seats and forest view, showing outdoor relaxation area, Rhodope Mountains',
+        alt: 'Front porch of Bucephalus cabin with two seats and forest view, showing outdoor relaxation area, 15 km from Bansko, in the Rila Mountains',
         title: 'Cabin Front Porch - Outdoor Seating at Bucephalus',
-        description: 'The welcoming front porch of the Bucephalus cabin, featuring two comfortable seats and offering a peaceful outdoor space to relax while surrounded by the forest of the Rhodope Mountains.'
+        description: 'The welcoming front porch of the Bucephalus cabin, featuring two comfortable seats and offering a peaceful outdoor space to relax, 15 km from Bansko, in the Rila Mountains, near Bachevo.'
       },
       tags: ['exterior', 'porch', 'front-porch', 'seating', 'outdoor', 'cabin', 'bucephalus'],
       note: '❌ DO NOT USE FOR VALLEY - This is actually a Cabin (Bachevo) image showing front porch with 2 seats!',
@@ -853,9 +853,9 @@ export const imageMetadata = {
       perspective: 'exterior',
       content: 'Hero image showing Bucephalus cabin exterior in forest setting, used as video poster and header image',
       seo: {
-        alt: 'The Cabin (Bucephalus) - Off-grid mountain cabin exterior showing rustic wooden structure in forest setting near Bachevo, Razlog area, southwestern Bulgaria',
-        title: 'The Cabin - Off-Grid Mountain Retreat in Rhodope Mountains',
-        description: 'Hero image of The Cabin (formerly Bucephalus), an off-grid mountain retreat nestled in the forest near Bachevo in the Rhodope Mountains, showcasing rustic wooden architecture and natural setting.'
+        alt: 'The Cabin, 15 km from Bansko, in the Rila Mountains, near Bachevo',
+        title: 'The Cabin - Off-Grid Mountain Retreat, 15 km from Bansko, in the Rila Mountains',
+        description: 'Hero image of The Cabin (formerly Bucephalus), an off-grid mountain retreat 15 km from Bansko, in the Rila Mountains, near Bachevo, showcasing rustic wooden architecture and natural setting.'
       },
       tags: ['cabin', 'bucephalus', 'hero', 'header', 'video-poster', 'exterior', 'forest'],
       useCases: ['hero-image', 'video-poster', 'header', 'cabin-showcase']
@@ -1035,7 +1035,7 @@ export function getImageMetadata(imagePath) {
       perspective: 'unknown',
       content: 'Image from Bucephalus cabin collection - verify specific content',
       seo: {
-        alt: 'Bucephalus off-grid cabin image, Rhodope Mountains, Bulgaria',
+        alt: 'Bucephalus off-grid cabin image, 15 km from Bansko, in the Rila Mountains',
         title: 'Bucephalus Cabin Image',
         description: 'An image from the Bucephalus off-grid mountain cabin near Bachevo, in the Razlog area of southwestern Bulgaria.'
       },
@@ -1131,7 +1131,7 @@ export function findImagesByCriteria(criteria = {}) {
  */
 export function getSEOAlt(imagePath) {
   const metadata = getImageMetadata(imagePath);
-  return metadata?.seo?.alt || 'Drift & Dwells mountain retreat image, Rhodope Mountains, Bulgaria';
+  return metadata?.seo?.alt || 'Drift & Dwells mountain retreat in southwestern Bulgaria';
 }
 
 /**

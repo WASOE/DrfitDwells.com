@@ -7,19 +7,19 @@
 export const PRODUCTION_HOST = 'driftdwells.com';
 
 export const ROUTING_CASES = [
-  { id: 'home', scheme: 'https', path: '/', titleIncludes: 'Off-Grid Mountain Retreats' },
+  { id: 'home', scheme: 'https', path: '/', titleIncludes: "Off-Grid Cabins in Bulgaria's Mountains" },
   { id: 'search', scheme: 'https', path: '/search?checkIn=2026-11-16&checkOut=2026-11-18&adults=2', stayOnPath: '/search' },
   { id: 'search-bg', scheme: 'https', path: '/bg/search?checkIn=2026-11-16&checkOut=2026-11-18', stayOnPath: '/bg/search' },
   { id: 'checkout', scheme: 'https', path: '/checkout?checkIn=2026-11-16&checkOut=2026-11-18', stayOnPath: '/checkout' },
-  { id: 'cabin', scheme: 'https', path: '/cabin?checkIn=2026-11-16', directory: '/cabin/', titleIncludes: 'near Bachevo', redirectQuery: 'checkIn=2026-11-16' },
-  { id: 'cabin-bg', scheme: 'https', path: '/bg/cabin', directory: '/bg/cabin/', titleIncludes: 'Бачево' },
+  { id: 'cabin', scheme: 'https', path: '/cabin?checkIn=2026-11-16', directory: '/cabin/', titleIncludes: '15 km from Bansko', redirectQuery: 'checkIn=2026-11-16' },
+  { id: 'cabin-bg', scheme: 'https', path: '/bg/cabin', directory: '/bg/cabin/', titleIncludes: '15 км от Банско' },
   { id: 'valley', scheme: 'https', path: '/valley', directory: '/valley/', titleIncludes: 'The Valley' },
   { id: 'valley-bg', scheme: 'https', path: '/bg/valley', directory: '/bg/valley/', titleIncludes: 'The Valley' },
-  { id: 'stay-cabin', scheme: 'https', path: '/stays/the-cabin', directory: '/stays/the-cabin/', titleIncludes: 'The Cabin near Bachevo' },
+  { id: 'stay-cabin', scheme: 'https', path: '/stays/the-cabin', directory: '/stays/the-cabin/', titleIncludes: '15 km from Bansko' },
   { id: 'stay-a-frame', scheme: 'https', path: '/stays/a-frame', directory: '/stays/a-frame/', titleIncludes: 'Valley A-Frame' },
   { id: 'stay-lux', scheme: 'https', path: '/stays/lux-cabin', directory: '/stays/lux-cabin/', titleIncludes: 'Luxury Cabin' },
   { id: 'stay-stone', scheme: 'https', path: '/stays/stone-house', directory: '/stays/stone-house/', titleIncludes: 'Stone House' },
-  { id: 'stay-cabin-bg', scheme: 'https', path: '/bg/stays/the-cabin', directory: '/bg/stays/the-cabin/', titleIncludes: 'Бачево' },
+  { id: 'stay-cabin-bg', scheme: 'https', path: '/bg/stays/the-cabin', directory: '/bg/stays/the-cabin/', titleIncludes: '15 км от Банско' },
   { id: 'gift-vouchers', scheme: 'https', path: '/gift-vouchers', directory: '/gift-vouchers/', titleIncludes: 'Gift Vouchers' },
   { id: 'gift-vouchers-bg', scheme: 'https', path: '/bg/gift-vouchers', directory: '/bg/gift-vouchers/', titleIncludes: 'Подаръчни ваучери' },
   { id: 'confirm', scheme: 'https', path: '/stays/the-cabin/confirm?checkIn=2026-11-16&checkOut=2026-11-18&adults=2', stayOnPath: '/stays/the-cabin/confirm' },
@@ -122,7 +122,12 @@ export function evaluateRoutingCase(testCase, response) {
     if (!title.includes(testCase.titleIncludes)) {
       errors.push(`${testCase.id} title "${title}" does not include "${testCase.titleIncludes}".`);
     }
-    if (testCase.id !== 'home' && title.includes('Off-Grid Mountain Retreats in Bulgaria')) {
+    if (
+      testCase.id !== 'home' &&
+      (title.includes('Off-Grid Mountain Retreats in Bulgaria') ||
+        title.includes('Off-grid cabin and mountain village stays') ||
+        title.includes("Off-Grid Cabins in Bulgaria's Mountains"))
+    ) {
       errors.push(`${testCase.id} rendered the homepage title.`);
     }
   }

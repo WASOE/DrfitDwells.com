@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import Header from "../components/Header";
 import PaidTrafficHeader from "../components/PaidTrafficHeader";
 import Footer from "../components/Footer";
@@ -41,6 +42,7 @@ function PaidTrafficConsentBanner() {
 
 export default function SiteLayout() {
   const location = useLocation();
+  const { t } = useTranslation('nav');
   const { bottomOffset } = useFloatingSafeArea();
 
   useEffect(() => {
@@ -71,7 +73,7 @@ export default function SiteLayout() {
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-white focus:px-4 focus:py-2 focus:rounded focus:shadow-lg focus:text-sm focus:font-medium"
       >
-        Skip to content
+        {t('skipToContent')}
       </a>
       <div
         className="pointer-events-none fixed inset-0 z-0 opacity-5 mix-blend-soft-light"

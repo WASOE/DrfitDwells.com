@@ -1,6 +1,6 @@
-import { useLocation, Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useTranslation, Trans } from 'react-i18next';
-import { localizePath, stripLocaleFromPath } from '../utils/localizedRoutes';
+import { localizePath } from '../utils/localizedRoutes';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { CONTACT_EMAIL, CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
 import { BRANDING, BRANDING_DIMENSIONS } from '../config/brandingAssets';
@@ -16,16 +16,15 @@ const Footer = () => {
   const { t: tn } = useTranslation('nav');
   const { t: tc } = useTranslation('common');
   const { language } = useSiteLanguage();
-  const location = useLocation();
-  const basePath = stripLocaleFromPath(location.pathname);
-  const isHome = basePath === '/';
+  const { pathname } = useLocation();
+  const hideRatings = pathname === '/' || pathname === '/bg' || pathname === '/bg/';
 
   return (
     <footer className="relative bg-[#F9F8F6] text-[#111] z-10 mt-0">
       <div
-        className={`max-w-7xl mx-auto ${isHome ? 'pt-[200px] md:pt-[350px]' : ''}`}
+        className="max-w-7xl mx-auto"
         style={{
-          paddingTop: isHome ? undefined : 'clamp(28px, 4vw, 48px)',
+          paddingTop: 'clamp(28px, 4vw, 48px)',
           paddingBottom: 'clamp(28px, 4vw, 48px)',
           paddingLeft: 'clamp(30px, 4vw, 40px)',
           paddingRight: 'clamp(30px, 4vw, 40px)'
@@ -34,7 +33,7 @@ const Footer = () => {
         <style>{`
           @media (min-width: 1024px) {
             footer > div:first-child {
-              padding-top: ${isHome ? '350px' : 'clamp(28px, 4vw, 48px)'} !important;
+              padding-top: clamp(28px, 4vw, 48px) !important;
             }
           }
         `}</style>
@@ -178,13 +177,12 @@ const Footer = () => {
                     {tn('exploreOffGrid')}
                   </Link>
                 </li>
-                <li className="mb-4">
-                  <Link to={`${localizePath('/digital-detox-bulgaria', language)}/`} className="text-sm underline underline-offset-4">
-                    {language === 'bg' ? 'Дигитален детокс' : 'Digital detox'}
-                  </Link>
-                </li>
-                <li className="mb-4">
-                  <Link to={`${localizePath('/digital-detox-bulgaria', language)}/`} className="text-sm underline underline-offset-4">
+                <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
+                  <Link
+                    to={localizePath('/digital-detox-bulgaria', language)}
+                    className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase"
+                    style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}
+                  >
                     {language === 'bg' ? 'Дигитален детокс' : 'Digital detox'}
                   </Link>
                 </li>
@@ -318,6 +316,7 @@ const Footer = () => {
           </div>
         </div>
 
+        {!hideRatings ? (
         <div className="border-t border-b border-[#111] py-16 lg:py-20" style={{ borderColor: 'rgba(17, 17, 17, 0.25)' }}>
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-10 lg:gap-12">
             <div className="flex flex-col items-center text-center md:items-start md:text-left px-6 md:px-10">
@@ -376,6 +375,7 @@ const Footer = () => {
             </div>
           </div>
         </div>
+        ) : null}
 
         <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12 lg:gap-16 py-6 mt-24 lg:mt-28">
           {bottomStripConfig.map((item, index) => {

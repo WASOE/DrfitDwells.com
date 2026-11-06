@@ -23,21 +23,21 @@ export default function PublicStayIntro({ slug, children }) {
     staySlug === 'the-cabin'
       ? {
           location: language === 'bg'
-            ? 'Бачево, район Разлог, югозападна България'
-            : 'Near Bachevo, in the Razlog area of southwestern Bulgaria',
+            ? 'На 15 км от Банско, в Рила, край Бачево'
+            : '15 km from Bansko, in the Rila Mountains, near Bachevo',
           occupancy: 2
         }
       : staySlug === 'stone-house'
         ? {
             location: language === 'bg'
-              ? 'Черешово / Орцево, Родопите, България'
-              : 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria',
+              ? 'На 30 км от Банско, в Родопите, край Черешово и Орцево'
+              : '30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo',
             occupancy: 6
           }
         : {
             location: language === 'bg'
-              ? 'Черешово / Орцево, Родопите, България'
-              : 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria',
+              ? 'На 30 км от Банско, в Родопите, край Черешово и Орцево'
+              : '30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo',
             occupancy: 2
           };
   const jsonLd = [

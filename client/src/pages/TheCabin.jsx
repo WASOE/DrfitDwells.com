@@ -227,12 +227,12 @@ const TheCabin = () => {
   };
   const seoTitle =
     language === 'bg'
-      ? 'Оф-грид къща край Бачево – The Cabin от Drift & Dwells'
-      : 'Off-Grid Cabin near Bachevo – The Cabin by Drift & Dwells';
+      ? 'Офгрид къща на 15 км от Банско – The Cabin от Drift & Dwells'
+      : 'Off-Grid Cabin, 15 km from Bansko – The Cabin by Drift & Dwells';
   const seoDescription =
     language === 'bg'
-      ? 'Оф-грид дървена къща за двама близо до Бачево, район Разлог: без Wi-Fi за гости, отопление на дърва и отдалечен горски достъп.'
-      : 'Off-grid wooden cabin for two near Bachevo, in the Razlog area of southwestern Bulgaria: no guest Wi-Fi, wood-burning heat and remote forest-road access.';
+      ? 'Офгрид дървена къща за двама, на 15 км от Банско, в Рила, край Бачево: без Wi-Fi за гости, отопление на дърва и отдалечен горски достъп.'
+      : 'Off-grid wooden cabin for two, 15 km from Bansko, in the Rila Mountains, near Bachevo: no guest Wi-Fi, wood-burning heat and remote forest-road access.';
 
   return (
     <>
@@ -274,8 +274,8 @@ const TheCabin = () => {
           {!shouldPlayVideo ? (
             <img
               src={CABIN_STILLS[season]}
-              alt={getSEOAlt(CABIN_STILLS[season]) || 'The Cabin (Bucephalus) - Off-grid mountain cabin exterior showing rustic wooden structure in forest setting near Bachevo, Razlog area, southwestern Bulgaria'}
-              title={getSEOTitle(CABIN_STILLS[season]) || 'The Cabin - Off-Grid Mountain Retreat near Bachevo, Razlog area'}
+              alt={getSEOAlt(CABIN_STILLS[season]) || 'The Cabin, 15 km from Bansko, in the Rila Mountains, near Bachevo'}
+              title={getSEOTitle(CABIN_STILLS[season]) || 'The Cabin, 15 km from Bansko, in the Rila Mountains, near Bachevo'}
               className="absolute inset-0 w-full h-full object-cover"
               loading="eager"
               fetchPriority="high"
@@ -305,7 +305,7 @@ const TheCabin = () => {
               playsInline
               preload="none"
               poster={CABIN_STILLS[season]}
-              aria-label={getSEOAlt(CABIN_STILLS[season]) || 'Video showing The Cabin (Bucephalus) off-grid mountain cabin in forest setting near Bachevo, Razlog area, southwestern Bulgaria'}
+              aria-label={getSEOAlt(CABIN_STILLS[season]) || 'Video of The Cabin, 15 km from Bansko, in the Rila Mountains, near Bachevo'}
               style={{
                 minWidth: '100%',
                 minHeight: '100%',
@@ -335,7 +335,7 @@ const TheCabin = () => {
             transition={{ duration: 0.8, delay: 0.2 }}
               className="font-['Playfair_Display'] text-5xl md:text-7xl lg:text-8xl text-[#F1ECE2] font-semibold tracking-tight leading-tight drop-shadow-2xl mb-4"
           >
-              <span className="sr-only">Off grid cabin near Bachevo, Razlog area | Drift & Dwells </span>{t('hero.title')}
+              <span className="sr-only">Off-grid cabin, 15 km from Bansko, in the Rila Mountains, near Bachevo | Drift & Dwells </span>{t('hero.title')}
           </motion.h1>
             
           <motion.p 

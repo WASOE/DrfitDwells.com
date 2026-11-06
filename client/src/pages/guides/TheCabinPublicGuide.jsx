@@ -54,7 +54,7 @@ export default function TheCabinPublicGuide() {
       externalGuideUrl={PDF_CHECKLIST_URL}
       canonicalPath="/guides/the-cabin"
       seoTitle="The Cabin Arrival Guide | Drift & Dwells"
-      seoDescription="Practical public arrival guide for The Cabin: route checkpoints, final approach, parking, and support."
+      seoDescription="Practical public arrival guide for The Cabin, 15 km from Bansko, in the Rila Mountains, near Bachevo: route checkpoints, final approach, parking, and support."
       noindex
       showWeakSignalWarning
     />

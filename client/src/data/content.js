@@ -3,7 +3,7 @@ export const locations = [
     id: "cabin",
     name: "The Cabin",
     tagline: "Unplug. Unwind. Disappear.",
-    description: "Near Bachevo, in the Razlog area of southwestern Bulgaria, The Cabin is a testament to the beauty of subtraction. Formerly 'Bucephalus', this is a sanctuary for the over-connected.",
+    description: "15 km from Bansko, in the Rila Mountains, near Bachevo in the Razlog area, The Cabin is a testament to the beauty of subtraction. Formerly 'Bucephalus', this is a sanctuary for the over-connected.",
     price: "From €100/night",
     cta: "View The Cabin",
     details: {
@@ -76,7 +76,7 @@ export const home = {
   },
   mission: {
     title: "Handcrafted Stories",
-    narrative: "We are not a hotel. We are a collection of hideaways designed for those who seek the edge of the map. Drift & Dwells was born from a simple duality: the urge to roam the untamed heights and the need to root oneself in raw, unvarnished comfort. Whether you crave the absolute, off-grid silence near Bachevo or the ethereal, high-altitude community of the Rhodope meadows, we offer the rarest amenity of all: presence."
+    narrative: "We are not a hotel. We are a collection of hideaways designed for those who seek the edge of the map. Drift & Dwells was born from a simple duality: the urge to roam the untamed heights and the need to root oneself in raw, unvarnished comfort. Whether you crave the absolute, off-grid silence 15 km from Bansko, in the Rila Mountains, or the high-altitude community 30 km from Bansko, in the Rhodope Mountains, we offer the rarest amenity of all: presence."
   },
   trust: [
     { 

@@ -90,6 +90,16 @@ const Step2ArrivalMethod = () => {
     loadCabin();
   }, [cabinId]);
 
+  useEffect(() => {
+    if (loading || !transportMethod) return;
+    const allowed = (cabin?.transportOptions || []).some(
+      (transport) => transport.isAvailable && transport.type === transportMethod.type
+    );
+    if (!allowed) setTransportMethod(null);
+  }, [loading, cabin, transportMethod, setTransportMethod]);
+
+  const availableTransports = cabin?.transportOptions?.filter((transport) => transport.isAvailable) || [];
+
   const handleTransportSelect = (transport) => {
     setTransportMethod(transport);
   };
@@ -108,7 +118,7 @@ const Step2ArrivalMethod = () => {
     // Transport selection is always optional - we want to gather preferences
     // Even if they don't select, we can proceed (data gathering goal)
     // If cabin is selected and they want to proceed, we encourage selection but don't block
-    if (cabinId && !transportMethod) {
+    if (cabinId && availableTransports.length > 0 && !transportMethod) {
       const proceed = window.confirm('No transport method selected. You can select one later or proceed without. Continue?');
       if (!proceed) {
         return;
@@ -124,12 +134,8 @@ const Step2ArrivalMethod = () => {
     navigate('/craft/step-1');
   };
 
-  // Calculate total transport cost
   const totalGuests = adults + children;
   const totalTransportCost = transportMethod ? transportMethod.pricePerPerson * totalGuests : 0;
-
-  // If no cabin selected, show option to skip or select transport manually
-  const availableTransports = cabin?.transportOptions?.filter(transport => transport.isAvailable) || [];
   
   if (loading && cabinId) {
     return (
@@ -144,58 +150,7 @@ const Step2ArrivalMethod = () => {
     );
   }
   
-  // All possible transport options - shown when no cabin selected to gather user desires
-  // When cabin is selected later, we'll filter based on what's actually available
-  const allPossibleTransports = [
-    { 
-      type: 'Horse', 
-      description: 'Traditional horse ride through scenic trails', 
-      duration: '45-60 minutes', 
-      pricePerPerson: 50, 
-      isAvailable: true 
-    },
-    { 
-      type: 'ATV', 
-      description: 'Adventure ride on all-terrain vehicle', 
-      duration: '30-45 minutes', 
-      pricePerPerson: 100, 
-      isAvailable: true 
-    },
-    { 
-      type: 'Jeep', 
-      description: 'Comfortable 4x4 transport to the retreat', 
-      duration: '25-35 minutes', 
-      pricePerPerson: 50, 
-      isAvailable: true 
-    },
-    { 
-      type: 'Hike', 
-      description: 'Scenic hiking trail through nature', 
-      duration: '1.5-2 hours', 
-      pricePerPerson: 0, 
-      isAvailable: true 
-    },
-    { 
-      type: 'Boat', 
-      description: 'Scenic boat ride to lakeside cabins', 
-      duration: '20-30 minutes', 
-      pricePerPerson: 40, 
-      isAvailable: true 
-    },
-    { 
-      type: 'Helicopter', 
-      description: 'Luxury aerial transport with stunning views', 
-      duration: '15-20 minutes', 
-      pricePerPerson: 300, 
-      isAvailable: true 
-    }
-  ];
-  
-  // If cabin is selected, show only available transports for that cabin
-  // If no cabin selected, show all options to gather user preferences
-  const transportsToShow = cabinId && availableTransports.length > 0 
-    ? availableTransports 
-    : allPossibleTransports;
+  const transportsToShow = availableTransports;
 
   const stepLabel = `Step ${currentStep || 2} of ${totalSteps || 4}`;
   const transportSummary = transportMethod
@@ -213,9 +168,9 @@ const Step2ArrivalMethod = () => {
             How will you arrive?
           </h1>
           <p className="text-base md:text-lg font-sans font-light text-gray-300 max-w-2xl mx-auto leading-relaxed px-2">
-            {cabin 
-              ? `Choose your preferred way to reach ${cabin.name}`
-              : 'Tell us how you\'d like to arrive. We\'ll match you with cabins that offer your preferred method.'}
+            {transportsToShow.length > 0
+              ? `Choose a published way to reach ${cabin?.name || 'your stay'}.`
+              : 'Directions are sent after booking. We do not sell boat, helicopter or other transfers from this step.'}
           </p>
         </div>
       </div>
@@ -247,10 +202,10 @@ const Step2ArrivalMethod = () => {
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-8 md:py-20">
 
         {/* Info Banner - shown when no cabin selected - Mobile Optimized */}
-        {!cabinId && (
-          <div className="mb-6 md:mb-12 p-4 md:p-6 bg-sage/5 border border-sage/20 rounded-lg">
+        {transportsToShow.length === 0 && (
+          <div className="mb-6 md:mb-12 p-4 md:p-6 bg-sage/5 border border-sage/20 rounded-lg max-w-3xl mx-auto">
             <p className="text-sm md:text-base font-sans font-light text-gray-700 leading-relaxed">
-              <span className="font-semibold">Exploring your options?</span> Select your preferred arrival method below. When you choose your cabin, we'll confirm availability and adjust pricing if needed.
+              The Cabin uses a park-and-walk point on a rough forest road. At The Valley you park in Chereshovo, then walk about 2.5 km or arrange a transfer. We send the exact route after booking.
             </p>
           </div>
         )}

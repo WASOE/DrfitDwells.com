@@ -3,14 +3,14 @@
     "valleyNotFound": "Valley information not found."
   },
   "hero": {
-    "microLabel": "Off-grid Rhodope Mountain Retreat • Bulgaria",
+    "microLabel": "30 km from Bansko • Rhodope Mountains",
     "title": "The Valley",
     "subtitle": "A Private Village Above the Clouds",
     "heroTitle": "The Valley: A Village Above the Clouds.",
-    "heroLead": "A private off-grid mountain village with individual cabins, a historic stone house, and shared outdoor spaces in the Rhodope Mountains, Bulgaria.",
+    "heroLead": "A private off-grid mountain village, 30 km from Bansko, in the Rhodope Mountains, with individual cabins, a historic stone house, and shared outdoor spaces near Chereshovo.",
     "altitudeBadge": "1,550m Altitude",
     "chipAboveClouds": "Above the clouds",
-    "body1": "A private mountain village with individual cabins, a historic stone house, and shared outdoor spaces in the Rhodope Mountains.",
+    "body1": "A private mountain village, 30 km from Bansko, in the Rhodope Mountains, with individual cabins, a historic stone house, and shared outdoor spaces near Chereshovo.",
     "body2": "Designed for quiet, privacy, and comfort, with heating, hot water, and year-round access.",
     "ctaPrimary": "Check Availability",
     "ctaSecondary": "Explore Stays",
@@ -20,7 +20,7 @@
     "chipAltitude": "1,550m altitude",
     "browse": {
       "headline": "One valley, three ways to stay",
-      "subline": "A private off-grid mountain village with individual cabins, a historic stone house, and shared outdoor spaces in the Rhodope Mountains, Bulgaria.",
+      "subline": "A private off-grid mountain village, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo.",
       "ctaExploreStays": "Explore stays",
       "ctaViewStays": "View stays"
     },
@@ -214,7 +214,7 @@
   "retreat": {
     "seo": {
       "title": "Book The Valley — Exclusive Private Retreat | Drift & Dwells",
-      "description": "Reserve the entire Valley for your group. Flat buyout pricing, direct checkout, and every cabin and the stone house included for your dates."
+      "description": "Reserve the entire Valley, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo. Flat buyout pricing, direct checkout, and every cabin and the stone house included for your dates."
     },
     "hero": {
       "eyebrow": "Private group buyout",

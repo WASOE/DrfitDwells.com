@@ -8,7 +8,7 @@ Hero image: Real wide photograph of the Valley showing individual stays and shar
 
 # Corporate retreats and team building in Bulgaria, without the conference hotel.
 
-Some teams need more than another meeting room. The Valley by Drift & Dwells is a small off-grid mountain village in the Rhodope Mountains near Chereshovo and Ortsevo, approximately 1,550 metres above sea level. Instead of sharing a hotel corridor, your group can spread out across available private cabins and the Stone House, then come together around the fire, at shared tables and in the open air.
+Some teams need more than another meeting room. The Valley by Drift & Dwells is a small off-grid mountain village, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo, approximately 1,550 metres above sea level. Instead of sharing a hotel corridor, your group can spread out across available private cabins and the Stone House, then come together around the fire, at shared tables and in the open air.
 
 **The short answer:** The Valley is a candidate for small-company offsites, creative retreats, founders' gatherings and unconventional team-building trips of up to **18 overnight guests** when all current accommodation is available: five A-frame cabins (2 guests each), the Luxury Cabin (2) and the Stone House (up to 6). You can enquire about a group stay or reserve the whole active village through its dedicated buyout experience. Bed layout, price and unit availability still depend on your dates. Additional tents may be deployable for suitable groups on request; they are not part of the standard 18-guest capacity and are not permanently installed. The setting is deliberately remote, so access planning matters.
 
@@ -74,7 +74,7 @@ CTA: Check exclusive-buyout dates -> /retreats/the-valley/
 ## Frequently asked questions
 
 ### Where can we do an unusual team building in Bulgaria?
-The Valley offers a remote, private-village alternative to a hotel offsite in the Rhodope Mountains near Chereshovo and Ortsevo. It is suited to teams that want real mountain surroundings, shared fireside time and a flexible programme.
+The Valley offers a remote, private-village alternative to a hotel offsite, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo. It is suited to teams that want real mountain surroundings, shared fireside time and a flexible programme.
 
 ### How many employees can stay overnight?
 When all current units are available, The Valley sleeps up to **18 overnight guests**: five A-frames (2 each), Luxury Cabin (2) and Stone House (up to 6). Private sleeping is in individual buildings; shared gathering uses the outdoor fire pit, BBQ area, hot tub and Stone House spaces. Request a confirmed rooming list or use the current buyout availability tool for your dates. Do not use planned future A-frames as current capacity. Tent expansion is optional, on request only, and does not increase the stated 18-guest fixed capacity.

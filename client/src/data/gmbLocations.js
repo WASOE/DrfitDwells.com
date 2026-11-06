@@ -28,7 +28,7 @@ export const GMB_LOCATIONS = {
     businessName: 'The Cabin – Drift & Dwells',
     slug: 'cabin',
     url: `${ORIGIN}/cabin`,
-    description: 'Off-grid mountain cabin for two near Bachevo, in the Razlog area of southwestern Bulgaria. Wood stove heating, spring water, and no guest wifi for a deep digital detox.',
+    description: 'Off-grid mountain cabin for two, 15 km from Bansko, in the Rila Mountains, near Bachevo. Wood stove heating, spring water, and no guest wifi for a deep digital detox.',
     address: {
       street: '',
       locality: 'Bachevo',
@@ -50,7 +50,7 @@ export const GMB_LOCATIONS = {
     businessName: 'The Valley – Drift & Dwells',
     slug: 'valley',
     url: `${ORIGIN}/valley`,
-    description: 'Private mountain village near Chereshovo and Ortsevo in the Rhodope Mountains: five A-frame cabins, a Luxury Cabin and Stone House for up to 18 guests, shared outdoor spaces, outdoor hot tub and Starlink in the Stone House.',
+    description: 'Private mountain village, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo: five A-frame cabins, a Luxury Cabin and Stone House for up to 18 guests, shared outdoor spaces, outdoor hot tub and Starlink in the Stone House.',
     address: {
       street: '',
       locality: 'Chereshovo',

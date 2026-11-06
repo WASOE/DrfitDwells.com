@@ -8,6 +8,8 @@ import {
 describe('public SEO locale routes', () => {
   it('limits English-only pages to English and x-default alternates', () => {
     expect(BG_EXCLUDED_PATHS.has('/about')).toBe(true);
+    expect(BG_EXCLUDED_PATHS.has('/guides/the-valley')).toBe(true);
+    expect(localizePath('/guides/the-valley', 'bg')).toBe('/guides/the-valley');
     expect(buildHreflangAlternates('/about')).toEqual([
       { href: '/about/', hreflang: 'en' },
       { href: '/about/', hreflang: 'x-default' }
