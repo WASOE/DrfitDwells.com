@@ -128,8 +128,8 @@ const Home = () => {
         <HomeStayComparison />
         <HomeGroupStay />
         <HomeOccasions />
-        <MemoryStream />
         <HomeTripPlanner />
+        <MemoryStream />
         <HomeAylyak />
         <HomeFaq />
         <HomeVoucher />

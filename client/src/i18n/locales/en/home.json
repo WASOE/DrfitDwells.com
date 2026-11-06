@@ -93,26 +93,26 @@
     }
   },
   "occasions": {
-    "eyebrow": "The reasons people come",
-    "title": "Three ways to disappear.",
-    "body": "A cabin weekend for two, a group stay in the mountains, or days without guest Wi-Fi.",
+    "eyebrow": "What would bring you here?",
+    "title": "Three reasons to book.",
+    "body": "A weekend for two, the Valley to yourselves, or a few days offline.",
     "items": {
       "two": {
-        "title": "A romantic cabin weekend",
-        "body": "A private cabin for two, a wood stove and a wood-fired hot tub near Bansko.",
-        "cta": "See The Cabin",
+        "title": "A weekend for two",
+        "body": "A private cabin in the forest, and a wood-fired hot tub.",
+        "cta": "Book The Cabin",
         "imageAlt": "Two guests on the swing at The Valley, Rhodope Mountains, Bulgaria"
       },
       "together": {
-        "title": "A group stay in the Rhodopes",
-        "body": "Seven stays and one fire pit, for a birthday, family gathering or company offsite.",
-        "cta": "See the retreat venue",
+        "title": "Bring everyone together",
+        "body": "A birthday, a family weekend, friends or a team — the Valley, privately.",
+        "cta": "See private hire",
         "imageAlt": "Guests together near the A-frames at The Valley, Rhodope Mountains, Bulgaria"
       },
       "quiet": {
-        "title": "A real digital detox",
-        "body": "No guest Wi-Fi at The Cabin. Time in the forest instead of on a screen.",
-        "cta": "See digital detox stays",
+        "title": "A few days offline",
+        "body": "No guest Wi-Fi at The Cabin.",
+        "cta": "See the digital detox",
         "imageAlt": "Wood stove inside The Cabin near Bansko, southwestern Bulgaria"
       }
     }
@@ -294,17 +294,40 @@
   "memory": {
     "loading": "Loading memories…",
     "title": "Slide through the archive",
-    "subtitle": "Drag to feel each chapter breathe.",
+    "subtitle": "Real photographs, and a few of the reasons people book.",
     "prev": "Previous photo",
     "next": "Next photo",
     "photos": {
-      "cabin": "The Cabin on a mountain meadow near Bansko",
-      "stove": "Wood stove inside The Cabin near Bansko",
-      "swing": "Two guests on the swing at The Valley",
-      "aframes": "A-frame cabins on the meadow at The Valley",
-      "fire": "Fire pit at The Valley at sunset",
-      "stone": "Stone House and A-frames at The Valley on a winter morning",
-      "guests": "Guests beside the A-frames at The Valley"
+      "fire": {
+        "alt": "Fire pit and chairs at The Valley at sunset",
+        "caption": "Bring friends, book the Valley, and take the evening around the fire.",
+        "cta": "See private hire"
+      },
+      "stone": {
+        "alt": "Stone House and A-frames at The Valley on a frosty morning",
+        "caption": "A small private gathering in the mountains. Ask us — there is no wedding package.",
+        "cta": "Ask about a private stay"
+      },
+      "cabin": {
+        "alt": "The Cabin on a mountain meadow near Bansko",
+        "caption": "A cabin weekend for two, with a wood-fired hot tub.",
+        "cta": "See The Cabin"
+      },
+      "guests": {
+        "alt": "Three guests beside two A-frames at The Valley",
+        "caption": "Get the team out of the office and book the Valley privately.",
+        "cta": "Plan a company retreat"
+      },
+      "aframes": {
+        "alt": "Two A-frame cabins on the meadow at The Valley",
+        "caption": "Several places to sleep, shared outdoor space, and time together.",
+        "cta": "See The Valley"
+      },
+      "stove": {
+        "alt": "Wood stove inside The Cabin near Bansko",
+        "caption": "Forest, a wood stove, and no guest Wi-Fi at The Cabin.",
+        "cta": "See the digital detox"
+      }
     }
   }
 }
