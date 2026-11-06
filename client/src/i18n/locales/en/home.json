@@ -162,6 +162,23 @@
           "18": "18 guests"
         }
       },
+      "sharing": {
+        "title": "How would you like to sleep?",
+        "body": "This decides whether we use the Stone House, or separate cabins.",
+        "options": {
+          "share": "Sharing is fine — bunks and sofa beds are OK",
+          "pairs": "Private places — each couple or pair in their own cabin",
+          "own": "Everyone in their own place"
+        }
+      },
+      "exclusivity": {
+        "title": "Do you want the Valley to yourselves?",
+        "body": "Nobody else would be staying. Otherwise we use only the places you need.",
+        "options": {
+          "no": "Only the places we need",
+          "yes": "Yes, the whole Valley"
+        }
+      },
       "mood": {
         "title": "What would make this trip good?",
         "body": "Choose the thing that matters most.",
@@ -207,7 +224,7 @@
       },
       "stone": {
         "title": "The Valley · Stone House",
-        "body": "A house for up to six, with room to gather and Starlink inside. A bigger group needs more than one stay, or the whole Valley."
+        "body": "A house for up to six, with room to gather and Starlink inside."
       },
       "buyout": {
         "title": "The whole Valley",
@@ -226,10 +243,55 @@
       "dayCabin": "Spend the day outside. If you want the wood-fired hot tub in the evening, start the fire early — it takes several hours to heat.",
       "dayValley": "Walk from the village, then use the shared fire pit or the outdoor wood-fired hot tub if they are free. Bring the food you want to cook.",
       "dayBuyout": "A slow morning, time on the meadow, and an evening at the fire pit if the weather allows. Each group keeps their own place to sleep.",
+      "dayQuiet": "A slow, unscheduled day: read, walk, and keep screens off. Use the shared fire pit if it is free. Starlink is only in the Stone House.",
+      "dayCouple": "A late start, a walk on the paths, and the outdoor wood-fired hot tub in the evening if it is free. Start the fire early — it takes time to heat.",
+      "dayNature": "Walk from the village into the mountains, with long stops on the meadow. Bring what you want to eat and drink for the day.",
+      "dayGroup": "Cook and eat together, with the shared fire pit or the outdoor wood-fired hot tub in the evening if they are free. Bring the food you want to cook.",
       "openDay": "Leave this day open: read, walk or rest. Nothing else is scheduled, and extra activities are not included.",
       "departure": "A quiet morning and check-out by 11:00, unless a later departure was agreed in advance.",
       "oneNight": "These stays are set up with a two-night minimum. Confirm that on the calendar before you travel."
     },
+    "units": {
+      "stone": "Stone House",
+      "lux": "Luxury Cabin",
+      "aframe": "{{count}} A-frame",
+      "aframe_plural": "{{count}} A-frames"
+    },
+    "arrangement": {
+      "title": "Sleeping arrangement",
+      "guests": "{{count}} guest",
+      "guests_plural": "{{count}} guests",
+      "stoneNote": "shared sleeping, with bunks and sofa beds (up to 6)",
+      "luxNote": "a private cabin for two",
+      "aframeNote": "private cabins for two each; bed layout varies by cabin and is confirmed when you book"
+    },
+    "why": {
+      "cabinOffline": "You asked for no guest Wi-Fi, and The Cabin is the one stay that is truly offline.",
+      "cabinQuiet": "For quiet or time together, The Cabin is a private stay on its own property.",
+      "aframeNature": "A compact A-frame puts you outside for most of the day, with the meadow and paths at the door.",
+      "luxDefault": "The Luxury Cabin is a private place for two, with the Valley outside.",
+      "luxConnected": "You'd like a connection nearby, so we keep you in the Valley, where Starlink is in the Stone House.",
+      "stoneShared": "Everyone fits in the Stone House. It sleeps up to six with shared sleeping (bunks and sofa beds), so you stay together on one booking.",
+      "stoneStarlink": "Everyone fits in the Stone House, with shared sleeping (bunks and sofa beds) and Starlink inside.",
+      "stoneAndCabins": "The Stone House takes six of you together and the rest go in the fewest cabins needed. No extra places.",
+      "privatePairs": "Each pair gets a private two-person cabin — A-frames first, then the Luxury Cabin. Only as many as your group needs.",
+      "privateOwn": "Everyone gets their own private cabin — A-frames first, then the Luxury Cabin.",
+      "privateNoStarlink": "Private two-person cabins, only as many as you need. Starlink is only in the Stone House, not in these cabins.",
+      "privacyRelaxed": "Your group needs more separate places than the Valley's cabins offer, so this plan uses the Stone House for shared sleeping and cabins for the rest.",
+      "buyoutChosen": "You'd like the Valley to yourselves. Nobody else would be staying, and everyone has their own place to sleep.",
+      "buyoutFull": "A group this size needs almost every bed in the Valley, so the whole Valley is the simplest plan. Nobody else would be staying."
+    },
+    "alternatives": {
+      "cabinToValley": "Want a connection nearby instead? Choose the Valley, where Starlink is in the Stone House.",
+      "aframeToLux": "Prefer a little more comfort? The Luxury Cabin also sleeps two.",
+      "luxToAframe": "Prefer to be outside more? An A-frame also sleeps two.",
+      "privateUnits": "Would you rather not share? We can look at separate two-person cabins instead.",
+      "sharedStone": "Happy to share? The Stone House takes up to six together on one booking.",
+      "combination": "Don't need the whole Valley? We can also look at the Stone House plus cabins for your group."
+    },
+    "upgradeBuyout": "Prefer the whole Valley to yourselves? See the whole Valley",
+    "askAboutDates": "Ask about these dates",
+    "enquiryNote": "This plan uses more than one place, and online checkout books one stay at a time. Send us your dates and group size and we'll check the places together.",
     "partySummary": "Exact party size for booking: {{count}} guests.",
     "capacityExceeded": "This stay sleeps up to {{max}}. Your party of {{count}} is larger — Check dates keeps that exact count so you can see what fits, or choose the whole Valley."
   },
