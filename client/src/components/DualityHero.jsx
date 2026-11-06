@@ -202,14 +202,14 @@ function MobileDualityHeroStack() {
           <div className="absolute inset-0 bg-black/40" />
 
           <div className="relative z-20 pointer-events-none text-center px-2">
-            <h2 className="font-['Playfair_Display'] text-lg sm:text-xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl">
+            <h2 className="font-['Playfair_Display'] text-lg sm:text-xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl whitespace-nowrap">
               {t('hero.leftHeadline')}
             </h2>
             <a
               href={localizePath('/cabin', language)}
-              className="mt-2 max-w-[16rem] text-sm text-white leading-snug pointer-events-auto hover:underline underline-offset-4"
+              className="inline-flex items-center gap-2 mt-2 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors pointer-events-auto"
             >
-              {t('hero.cabinLine')}
+              {t('hero.exploreCabin')}
             </a>
           </div>
         </div>
@@ -240,9 +240,9 @@ function MobileDualityHeroStack() {
             </h2>
             <a
               href={localizePath('/valley', language)}
-              className="mt-2 max-w-[16rem] text-sm text-white leading-snug pointer-events-auto hover:underline underline-offset-4"
+              className="inline-flex items-center gap-2 mt-2 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors pointer-events-auto"
             >
-              {t('hero.valleyLine')}
+              {t('hero.exploreValley')}
             </a>
           </div>
         </div>
