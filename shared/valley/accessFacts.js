@@ -10,7 +10,7 @@ export const VALLEY_LOCATION = Object.freeze({
   betweenVillages: Object.freeze(['Chereshovo', 'Ortsevo']),
   approxKmFromBansko: 30,
   summary:
-    'an off-grid hideaway in the Rhodope Mountains, between Chereshovo and Ortsevo, around 30 km from Bansko'
+    '30 km from Bansko, in the Rhodope Mountains, between Chereshovo and Ortsevo'
 });
 
 export const DEFAULT_ACCESS_VILLAGE = 'Chereshovo';

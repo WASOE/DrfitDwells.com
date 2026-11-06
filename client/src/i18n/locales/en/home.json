@@ -3,8 +3,8 @@
     "kicker": "Off-grid cabins in the mountains of southwest Bulgaria",
     "leftHeadline": "Dwell in the Silence.",
     "rightHeadline": "Drift into the Wild.",
-    "cabinLine": "A private cabin for two near Bansko",
-    "valleyLine": "A village of A-frames, about 30 km from Bansko",
+    "cabinLine": "A private cabin for two, 15 km from Bansko, in the Rila Mountains.",
+    "valleyLine": "A village of A-frames, 30 km from Bansko, in the Rhodope Mountains.",
     "exploreCabin": "Explore The Cabin",
     "exploreValley": "Explore The Valley"
   },
@@ -24,7 +24,7 @@
   "intro": {
     "eyebrow": "Welcome to Drift & Dwells",
     "title": "Two hideaways in Bulgaria's wild southwest.",
-    "body": "Near Bansko, a private off-grid cabin for two sits alone at the edge of the pine forest, with a wood stove inside and a wood-fired hot tub under the stars. Deeper in the Rhodope Mountains, at 1,550 metres, The Valley gathers five A-frames, a Luxury Cabin and an old stone house around one fire. Come as a couple, or bring up to 18 of your people."
+    "body": "15 km from Bansko, in the Rila Mountains, a private off-grid cabin for two sits alone at the edge of the pine forest, with a wood stove inside and a wood-fired hot tub under the stars. 30 km from Bansko, in the Rhodope Mountains, at 1,550 metres, The Valley gathers five A-frames, a Luxury Cabin and an old stone house around one fire. Come as a couple, or bring up to 18 of your people."
   },
   "stays": {
     "eyebrow": "Find your place",
@@ -40,14 +40,14 @@
     },
     "cabin": {
       "name": "The Cabin",
-      "place": "Near Bansko · a forest cabin for two",
+      "place": "15 km from Bansko, in the Rila Mountains",
       "price": "From €100 / night",
       "body": "A private off-grid cabin for two: wood stove, wood-fired hot tub, and no guest Wi-Fi. A few days left alone together.",
       "imageAlt": "The Cabin on a mountain meadow near Bansko, southwestern Bulgaria",
       "explore": "Explore The Cabin",
       "facts": {
         "sleeps": "2 guests",
-        "location": "Near Bansko, Razlog area",
+        "location": "15 km from Bansko, near Bachevo",
         "connection": "No guest Wi-Fi",
         "access": "Rough forest road; high clearance recommended"
       },
@@ -55,14 +55,14 @@
     },
     "valley": {
       "name": "The Valley",
-      "place": "Rhodope Mountains · a mountain village",
+      "place": "30 km from Bansko, in the Rhodope Mountains",
       "price": "A-frames from €60 / night",
       "body": "A mountain village of five A-frames, a Luxury Cabin and the Stone House. Stay as a couple or bring your people — up to 18 when the whole place is free.",
       "imageAlt": "A-frame cabins at The Valley, Rhodope Mountains, Bulgaria",
       "explore": "Explore The Valley",
       "facts": {
         "sleeps": "Up to 18 across 7 stays",
-        "location": "Rhodope Mountains, near Chereshovo",
+        "location": "30 km from Bansko, near Chereshovo",
         "connection": "Starlink in the Stone House only",
         "access": "Park in Chereshovo, then walk or transfer"
       },
@@ -73,7 +73,7 @@
   "group": {
     "eyebrow": "Private Valley hire",
     "title": "An exclusive private mountain retreat.",
-    "body": "A private retreat venue in the Rhodopes for birthdays, friends' weekends, family gatherings and company offsites. Everyone sleeps in their own place. Evenings gather at the shared fire pit and outdoor wood-fired hot tub — and nobody else is staying.",
+    "body": "A private retreat venue, 30 km from Bansko, in the Rhodope Mountains, for birthdays, friends' weekends, family gatherings and company offsites. Everyone sleeps in their own place. Evenings gather at the shared fire pit and outdoor wood-fired hot tub — and nobody else is staying.",
     "points": {
       "private": "The whole retreat for your birthday, family gathering, friends’ weekend or company trip.",
       "capacity": "Private accommodation for up to 18 overnight guests.",
@@ -195,7 +195,7 @@
     "results": {
       "cabin": {
         "title": "The Cabin",
-        "body": "A private forest stay for two near Bachevo. No guest Wi-Fi, a wood stove, and a wood-fired hot tub. High clearance is recommended on the forest road."
+        "body": "A private forest stay for two, 15 km from Bansko, in the Rila Mountains, near Bachevo. No guest Wi-Fi, a wood stove, and a wood-fired hot tub. High clearance is recommended on the forest road."
       },
       "aframe": {
         "title": "The Valley · A-frame",
@@ -257,7 +257,7 @@
       },
       "sofia": {
         "q": "Where are your stays, and how do I get there?",
-        "a": "The Cabin is near Bachevo, in the Razlog/Bansko area. The Valley is near Chereshovo in the Rhodope Mountains, reached via Eleshnitsa and Palatik. Each property has its own parking point and arrival instructions, which we send after booking."
+        "a": "The Cabin is 15 km from Bansko, in the Rila Mountains, near Bachevo in the Razlog area. The Valley is 30 km from Bansko, in the Rhodope Mountains, near Chereshovo, reached via Eleshnitsa and Palatik. Each property has its own parking point and arrival instructions, which we send after booking."
       },
       "wifi": {
         "q": "Is there Wi-Fi?",

@@ -175,8 +175,8 @@ const TheValleyPage = () => {
       : 'Mountain Stone House Retreat – The Valley by Drift & Dwells';
   const seoDescription =
     language === 'bg'
-      ? 'The Valley край Черешово и Орцево: пет A-frame къщички, Luxury Cabin и каменна къща за до 18 гости, огнище, гореща вана и Starlink в каменната къща.'
-      : 'The Valley near Chereshovo and Ortsevo: five A-frame cabins, a Luxury Cabin and Stone House for up to 18 guests, shared fire pit, outdoor hot tub and Starlink in the Stone House.';
+      ? 'The Valley, на 30 км от Банско, в Родопите, край Черешово и Орцево: пет A-frame къщички, Luxury Cabin и каменна къща за до 18 гости, огнище, гореща вана и Starlink в каменната къща.'
+      : 'The Valley, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo: five A-frame cabins, a Luxury Cabin and Stone House for up to 18 guests, shared fire pit, outdoor hot tub and Starlink in the Stone House.';
 
   return (
     <>

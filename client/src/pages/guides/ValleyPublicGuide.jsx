@@ -17,7 +17,7 @@ export default function ValleyPublicGuide() {
   return (
     <ValleyGuestGuideLayout
       seoTitle="The Valley Guest Guide | Drift & Dwells"
-      seoDescription="Pre-trip guide for The Valley: location near Bansko, Chereshovo arrival via Eleshnitsa and Palatik, parking, and the final 2.5 km approach."
+      seoDescription="Pre-trip guide for The Valley: 30 km from Bansko, in the Rhodope Mountains, Chereshovo arrival via Eleshnitsa and Palatik, parking, and the final 2.5 km approach."
       canonicalPath={CANONICAL_GUIDE_PATH}
       noindex
       heroImageUrl="/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.23%20AM.jpeg"

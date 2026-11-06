@@ -6,8 +6,8 @@
     "intro": "Off-grid here means comfort, not survival. Solar power, wood stoves, and spring water—with the silence and stars you came for.",
     "cabinVsValley": {
       "title": "The Cabin vs The Valley",
-      "cabin": "The Cabin: Cosy off-grid mountain hideaway for two. No guest wifi, wood stove, deep silence. Near Bachevo, in the Razlog area of southwestern Bulgaria.",
-      "valley": "The Valley: Mountain village at 1,550m with five A-frames, Luxury Cabin and Stone House for up to 18 guests. Starlink in the Stone House."
+      "cabin": "The Cabin: Cosy off-grid mountain hideaway for two. No guest wifi, wood stove, deep silence. 15 km from Bansko, in the Rila Mountains, near Bachevo.",
+      "valley": "The Valley: Mountain village 30 km from Bansko, in the Rhodope Mountains, at 1,550m, with five A-frames, Luxury Cabin and Stone House for up to 18 guests. Starlink in the Stone House."
     },
     "digitalDetox": {
       "title": "Digital Detox—What It Actually Means",
@@ -15,7 +15,7 @@
     },
     "location": {
       "title": "Location & How to Get There",
-      "body": "The Cabin is near Bachevo in the Razlog area; The Valley is in the Rhodope Mountains near Chereshovo and Ortsevo. Sofia, Plovdiv, and Bansko are the main gateways. High clearance recommended for The Cabin; Chereshovo parking plus walk or arranged transfer for The Valley."
+      "body": "The Cabin is 15 km from Bansko, in the Rila Mountains, near Bachevo in the Razlog area. The Valley is 30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo. High clearance recommended for The Cabin; Chereshovo parking plus walk or arranged transfer for The Valley."
     },
     "links": {
       "cabinCardTitle": "The Cabin: Cosy off-grid mountain hideaway",
@@ -26,7 +26,7 @@
   },
   "rhodopes": {
     "metaTitle": "Rhodope Mountain Retreat | The Valley | Drift & Dwells",
-    "metaDescription": "Explore the Rhodopes as a destination and stay at The Valley near Chereshovo and Ortsevo. Practical travel tips, hikes and quiet mountain nights.",
+    "metaDescription": "Explore the Rhodopes and stay at The Valley, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo. Practical travel tips, hikes and quiet mountain nights.",
     "h1": "Rhodope Mountain Retreat: Nature, Villages & Silence",
     "whyRhodopes": "The Rhodopes are quieter than the crowded ski resorts. Wild meadows, forests, and villages that move at a different pace.",
     "thingsToDo": {
@@ -35,14 +35,14 @@
     },
     "links": {
       "offGridOverview": "Off-grid cabins in Bulgaria (overview)",
-      "bookCabin": "Book The Cabin near Bachevo",
+      "bookCabin": "Book The Cabin, 15 km from Bansko",
       "bookValley": "Book The Valley: peace & space"
     },
     "cta": "Check availability"
   },
   "bansko": {
     "metaTitle": "Cabin Near Bansko | Mountain Reset | Drift & Dwells",
-    "metaDescription": "Mountain escape near Bansko: nature and silence as the flip side of the town's nomad scene. Choose an offline cabin or a Valley stay with Stone House Starlink.",
+    "metaDescription": "Mountain escape from Bansko: The Cabin is 15 km away, in the Rila Mountains; The Valley is 30 km away, in the Rhodope Mountains. Choose an offline cabin or a Valley stay with Stone House Starlink.",
     "h1": "Cabin Near Bansko for a Mountain Reset",
     "whyBansko": "Bansko has grown into a remote-work hub: coworking, coliving, and nomad events. When you need to disconnect, Drift & Dwells stays nearby are the flip side—not a Wi-Fi campus.",
     "twoPaths": {
@@ -125,9 +125,9 @@
     "stays": {
       "the-cabin": {
         "title": "The Cabin",
-        "metaTitle": "The Cabin near Bachevo | Off-Grid for 2 | Drift & Dwells",
+        "metaTitle": "The Cabin, 15 km from Bansko | Off-Grid for 2 | Drift & Dwells",
         "price": "From €100/night",
-        "fitLine": "Private off-grid forest cabin for two near Bachevo, in the Razlog area of southwestern Bulgaria—no guest Wi-Fi, wood heat, and remote forest-road access.",
+        "fitLine": "Private off-grid forest cabin for two, 15 km from Bansko, in the Rila Mountains, near Bachevo—no guest Wi-Fi, wood heat, and remote forest-road access.",
         "facts": [
           "Rugged mountain access — plan for the approach",
           "No mains electricity — solar and gas only",
@@ -145,7 +145,7 @@
         "title": "The Valley A-Frame",
         "metaTitle": "Valley A-Frame Cabin | Rhodope Mountains | Drift & Dwells",
         "price": "From €60/night",
-        "fitLine": "Minimal A-frame cabin for two in The Valley near Chereshovo and Ortsevo in the Rhodope Mountains, with shared outdoor spaces and Starlink in the Stone House.",
+        "fitLine": "Minimal A-frame cabin for two in The Valley, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo, with shared outdoor spaces and Starlink in the Stone House.",
         "facts": [
           "Elevated Rhodope setting around 1,550m",
           "Focused, minimal interiors",
@@ -163,7 +163,7 @@
         "title": "The Valley Stone House",
         "metaTitle": "Valley Stone House | Sleeps 6 | Drift & Dwells",
         "price": "From €75/night",
-        "fitLine": "Historic Stone House for up to six guests in The Valley near Chereshovo and Ortsevo, with Starlink on site and shared outdoor gathering spaces.",
+        "fitLine": "Historic Stone House for up to six guests in The Valley, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo, with Starlink on site and shared outdoor gathering spaces.",
         "facts": [
           "Historic stone house, shared spaces",
           "Starlink in the stone house",
@@ -181,7 +181,7 @@
         "title": "The Valley Lux Cabin",
         "metaTitle": "Valley Luxury Cabin for 2 | Drift & Dwells",
         "price": "€110/night base rate; seasonal rates vary",
-        "fitLine": "Private Luxury Cabin for two in The Valley near Chereshovo and Ortsevo—elevated comfort and mountain views; Starlink available in the Stone House.",
+        "fitLine": "Private Luxury Cabin for two in The Valley, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo and Ortsevo—elevated comfort and mountain views; Starlink available in the Stone House.",
         "facts": [
           "Private cabin, elevated comfort",
           "Panoramic mountain views",
@@ -209,7 +209,7 @@
   },
   "enduro": {
     "metaTitle": "The Valley | Off-Grid Enduro Basecamp in the Rhodopes",
-    "metaDescription": "Ride from your door. Single track and forest roads out the gate, off-grid cabins deep in the Rhodope Mountains. 10% off with code ENDURO.",
+    "metaDescription": "Ride from your door. Single track and forest roads out the gate, off-grid cabins 30 km from Bansko, in the Rhodope Mountains. 10% off with code ENDURO.",
     "hero": {
       "eyebrow": "DRIFT & DWELLS",
       "location": "RHODOPE MTS · BULGARIA",
@@ -234,7 +234,7 @@
       },
       "two": {
         "title": "Sleep off-grid",
-        "body": "Off-grid cabins deep in the Rhodopes."
+        "body": "Off-grid cabins, 30 km from Bansko, in the Rhodope Mountains."
       },
       "three": {
         "title": "Fire after the ride",
@@ -256,7 +256,7 @@
     "gallery": {
       "eyebrow": "THE VALLEY",
       "title": "Ride out. Come home to this.",
-      "intro": "Dirt tracks from the door, fire when you get back, cabins deep in the Rhodopes.",
+      "intro": "Dirt tracks from the door, fire when you get back, cabins 30 km from Bansko, in the Rhodope Mountains.",
       "items": {
         "aframes-sunset": {
           "alt": "A-frame cabins at The Valley in golden hour light, Rhodope Mountains",
@@ -288,7 +288,7 @@
         },
         "wildflowers-meadow": {
           "alt": "Standing in The Valley meadow with cabin and A-frames behind",
-          "caption": "Deep in the Rhodopes"
+          "caption": "30 km from Bansko"
         },
         "bathroom-mirror": {
           "alt": "Cabin bathroom mirror reflecting an A-frame at The Valley",

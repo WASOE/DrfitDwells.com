@@ -20,18 +20,18 @@ const metaBySlug = Object.fromEntries(
 export const WINTER_VILLAGE_SEO = Object.freeze({
   title: 'Winter Cabins & Christmas in Bulgaria | Drift & Dwells',
   description:
-    "Stay in a private winter cabin in Bulgaria's Rhodope Mountains. Choose a quiet break, a hosted parent and child weekend, or Christmas in The Valley.",
-  ogTitle: "A Winter Village in Bulgaria's Rhodope Mountains",
+    'Stay in a private winter cabin, 30 km from Bansko, in the Rhodope Mountains. Choose a quiet break, a hosted parent and child weekend, or Christmas in The Valley.',
+  ogTitle: 'A winter village, 30 km from Bansko',
   ogDescription:
-    'Private cabins, shared fires and three ways to experience winter at The Valley, from a quiet two-night stay to a hosted family Christmas.',
+    'Private cabins, shared fires and three ways to experience winter at The Valley, 30 km from Bansko, in the Rhodope Mountains.',
   canonicalPath: '/winter-village',
   ogImage: '/media/winter/rhodope-winter-valley-aerial.jpg'
 });
 
 export const WINTER_VILLAGE_HERO = Object.freeze({
-  eyebrow: 'Winter cabins in the Rhodope Mountains · December 2026 to March 2027',
+  eyebrow: '30 km from Bansko, in the Rhodope Mountains · December 2026 to March 2027',
   headline: 'A winter village above the clouds.',
-  copy: "Private cabins, wood fires and shared winter spaces at 1,550m in Bulgaria's Rhodope Mountains. Come for a quiet stay, a hosted weekend with your child, or Christmas in The Valley.",
+  copy: 'Private cabins, wood fires and shared winter spaces at 1,550m, 30 km from Bansko, in the Rhodope Mountains. Come for a quiet stay, a hosted weekend with your child, or Christmas in The Valley.',
   primaryCta: 'Choose your winter stay',
   trustLine: 'Private accommodation · Small number of guests · Direct booking',
   selectorTitle: 'Choose your winter stay',
@@ -408,7 +408,7 @@ export const WINTER_VILLAGE_FAQ = Object.freeze({
       id: 'what-is',
       question: 'What is the Valley Winter Village?',
       answer:
-        "The Valley is a small off-grid mountain stay near Chereshovo in Bulgaria's Rhodope Mountains. From December 2026 to March 2027, guests can choose a private winter cabin stay, a hosted parent and child weekend, or a hosted family Christmas."
+        'The Valley is a small off-grid mountain stay, 30 km from Bansko, in the Rhodope Mountains, near Chereshovo. From December 2026 to March 2027, guests can choose a private winter cabin stay, a hosted parent and child weekend, or a hosted family Christmas.'
     },
     {
       id: 'hosted',

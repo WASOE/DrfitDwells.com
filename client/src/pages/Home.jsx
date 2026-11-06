@@ -39,8 +39,8 @@ const Home = () => {
       : "Off-Grid Cabins in Bulgaria's Mountains | Drift & Dwells";
   const seoDescription =
     language === 'bg'
-      ? 'Частна горска къща край Банско и скрито селище от A-frame на 1550 м в Родопите. Горещи вани на дърва, без тълпи. Директна резервация, без такси.'
-      : 'A private forest cabin near Bansko and a hidden A-frame village at 1,550 m in the Rhodopes. Wood-fired hot tubs, no crowds. Book direct, no fees.';
+      ? 'Частна горска къща на 15 км от Банско, в Рила, и скрито селище от A-frame на 30 км от Банско, в Родопите. Горещи вани на дърва, без тълпи. Директна резервация, без такси.'
+      : 'A private forest cabin 15 km from Bansko, in the Rila Mountains, and a hidden A-frame village 30 km from Bansko, in the Rhodope Mountains. Wood-fired hot tubs, no crowds. Book direct, no fees.';
 
   const faqJsonLd = {
     '@context': 'https://schema.org',
