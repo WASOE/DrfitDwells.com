@@ -20,7 +20,32 @@ The browser job is mocked. It serves that artifact through Apache and stubs `/ap
 
 Both jobs upload evidence only after they pass. A coverage label or an environment variable is not evidence.
 
+The Apache/browser job also uploads `frontend-validation-test-key`: the complete
+tested build as a tar archive, its SHA-256, and a per-file inventory including
+hidden files. CI unpacks and verifies the archive before upload. This artifact
+contains a **test** Stripe publishable key and is not a production release.
+Its inventory establishes package integrity, not the authenticity of a
+download or production compatibility; associate it with the trusted CI run.
+
 ## What blocks a production deploy
+
+**Production frontend publication is currently blocked.** The existing
+in-place publisher can leave nested prerendered pages and other static files
+from different releases after interruption, and its legacy snapshot only
+contains the shell. Do not remove the production block until a transactional
+publication and complete recovery path have been implemented and verified on
+the production hosting layout. The separate legacy `activateTestedRelease`
+helper is disabled as it also copied in place and could not restore all files.
+The release host need not run Apache for production HTTP checks; the Apache
+routing check belongs in the verified build workflow.
+
+The existing production `public_html` is a directory whose parent is owned by
+`apache`, not the deploy user. DirectAdmin also configures a test-site root
+under `public_html`, and Apache proxies `/uploads` to the API. A transition
+must preserve these and the hosting configuration, establish Apache's effective
+symlink behavior, and be tested for interruption and recovery on the hosting
+layout. A rename of a replacement symlink over the nonempty directory is not an
+ordinary atomic switch. No activation or rollback procedure is approved yet.
 
 `npm run deploy:frontend:safe` always refuses to publish unless `RELEASE_SAFETY_REPORT` matches the release SHA and a completed successful GitHub Actions run. The run must contain both artifacts:
 
@@ -44,7 +69,13 @@ Install that token only in `/home/illoc/.config/gh` as mode `600`. Do not paste 
 
 ## Rollback
 
-A real `WEBROOT` publish snapshots `index.html`, `sw.js`, `.htaccess`, and `release-manifest.json` in `../private-release-snapshots/<sha>`, which is outside `public_html`. After the files are copied, Apache must still serve `/search` and `/checkout` as HTTP 200 on those paths. If publication or that probe fails, the snapshot is restored. Hashed assets and uploads stay. The API is not restarted and the database is not written.
+The legacy `WEBROOT` publisher snapshots only `index.html`, `sw.js`,
+`.htaccess`, and `release-manifest.json` in
+`../private-release-snapshots/<sha>`. Its post-copy Apache probe and shell
+restore do **not** protect nested prerendered pages or other static files.
+Do not use it to publish production until complete transactional recovery has
+been implemented and verified. The local production block is not installed on
+the production host; operators must not run the old publisher there.
 
 Remote rsync publication is refused because it cannot restore that snapshot.
 

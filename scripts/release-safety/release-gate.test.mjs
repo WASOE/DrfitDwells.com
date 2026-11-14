@@ -139,7 +139,7 @@ test('apache config mismatch and missing staging block the corresponding gates',
   assert.ok(brokenRoute.artifactBlockers.includes('apache-routing'));
 });
 
-test('rollback restores the shell and keeps the previous hashed asset', async () => {
+test('legacy activation is disabled before any publication', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-webroot-'));
   const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-dist-'));
   fs.mkdirSync(path.join(root, 'assets'));
@@ -162,7 +162,7 @@ test('rollback restores the shell and keeps the previous hashed asset', async ()
     evidence
   }));
 
-  const activated = await activateTestedRelease({
+  await assert.rejects(activateTestedRelease({
     distDir: dist,
     webroot: root,
     reportPath,
@@ -170,14 +170,12 @@ test('rollback restores the shell and keeps the previous hashed asset', async ()
     requirePaymentContract: false,
     verifyRun: () => {},
     probe: async () => ({ ok: false, errors: ['/checkout redirected to the homepage'] })
-  });
-  assert.equal(activated.rolledBack, true);
-  assert.equal(activated.snapshot.snapshotDir.startsWith(`${root}${path.sep}`), false);
+  }), /Legacy frontend activation is disabled/);
   assert.equal(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), 'old-shell');
   assert.equal(fs.readFileSync(path.join(root, '.htaccess'), 'utf8'), 'old-htaccess');
   assert.equal(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), 'old-sw');
   assert.equal(fs.existsSync(path.join(root, 'assets/old-app.js')), true);
-  assert.equal(fs.existsSync(path.join(root, 'assets/new-app.js')), true);
+  assert.equal(fs.existsSync(path.join(root, 'assets/new-app.js')), false);
 
   const kept = executeLocalPublish({ distDir: dist, webroot: root, requirePaymentContract: false });
   assert.ok(kept.assetsWritten.includes('new-app.js'));

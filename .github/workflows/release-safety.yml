@@ -49,6 +49,24 @@ jobs:
         run: node scripts/release-safety/run-gate.mjs
       - name: Mocked booking browser gate
         run: node scripts/release-safety/run-browser-gate.mjs
+      - name: Package and verify the tested frontend
+        run: |
+          node --test scripts/release-safety/frontend-inventory.test.mjs
+          node scripts/release-safety/frontend-inventory.mjs create client/dist frontend-inventory.json "$GITHUB_SHA" test
+          tar -C client/dist -cf frontend-validation.tar .
+          mkdir "$RUNNER_TEMP/frontend-artifact-check"
+          tar -C "$RUNNER_TEMP/frontend-artifact-check" -xf frontend-validation.tar
+          node scripts/release-safety/frontend-inventory.mjs verify "$RUNNER_TEMP/frontend-artifact-check" frontend-inventory.json
+          sha256sum frontend-validation.tar > frontend-validation.tar.sha256
+      - name: Upload tested frontend artifact (test Stripe key)
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-validation-test-key
+          path: |
+            frontend-validation.tar
+            frontend-validation.tar.sha256
+            frontend-inventory.json
+          if-no-files-found: error
       - name: Upload Apache and browser evidence
         uses: actions/upload-artifact@v4
         with:

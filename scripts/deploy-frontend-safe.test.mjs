@@ -913,6 +913,16 @@ test('publisher refuses a missing, stale, or fabricated release report', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+test('real production publication fails closed before touching the webroot', () => {
+  const result = runCLI([], {
+    WEBROOT: '/home/illoc/domains/driftdwells.com/public_html',
+    REMOTE: '',
+    DRY_RUN: ''
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /blocked until atomic release switching/);
+});
+
 test('publisher rolls back the shell when the published routes bounce home', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-cli-rollback-'));
   const webroot = makeMockWebroot(tmp);
