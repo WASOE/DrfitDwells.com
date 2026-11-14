@@ -51,13 +51,17 @@ DirectoryIndex index.html
   const stderr = [];
   apache.stderr.on('data', (data) => stderr.push(data.toString()));
   const origin = `http://127.0.0.1:${port}`;
+  const localFetch = (url, options = {}) => fetch(url, {
+    ...options,
+    headers: { ...options.headers, 'X-Forwarded-Proto': 'https' }
+  });
   try {
     let responsive = false;
     for (let attempt = 0; attempt < 100; attempt += 1) {
       if (startupError) throw startupError;
       if (apache.exitCode !== null) throw new Error(`Apache exited: ${stderr.join('')}`);
       try {
-        responsive = (await fetch(origin, { signal: AbortSignal.timeout(1000) })).ok;
+        responsive = (await localFetch(origin, { signal: AbortSignal.timeout(1000) })).ok;
       } catch (error) {
         if (error.cause?.code !== 'ECONNREFUSED') throw error;
       }
@@ -67,16 +71,20 @@ DirectoryIndex index.html
     assert.ok(responsive, `Apache must be responsive: ${stderr.join('')}`);
     for (const route of contract.ROUTES) {
       for (const suffix of route === '/' ? [''] : ['', '/']) {
-        const response = await fetch(`${origin}${route}${suffix}?seo-check=1`);
+        const response = await localFetch(`${origin}${route}${suffix}?seo-check=1`);
         assert.equal(response.status, 200, route);
         assert.match(response.headers.get('content-type'), /text\/html/);
         assert.match(response.headers.get('cache-control'), /no-cache/);
-        contract.validateHtml(await response.text(), route);
+        try {
+          contract.validateHtml(await response.text(), route);
+        } catch (error) {
+          throw new Error(`Packaged route ${route}${suffix}: ${error.message}`, { cause: error });
+        }
       }
     }
     for (const filename of fs.readdirSync(path.join(webroot, 'assets'))) {
       if (!/\.(js|css|woff2?)$/.test(filename)) continue;
-      const response = await fetch(`${origin}/assets/${filename}`);
+      const response = await localFetch(`${origin}/assets/${filename}`);
       assert.equal(response.status, 200, filename);
       assert.equal(hash(Buffer.from(await response.arrayBuffer())), hash(fs.readFileSync(path.join(webroot, 'assets', filename))));
       if (/\.(js|css|woff2)$/.test(filename)) {
@@ -85,24 +93,24 @@ DirectoryIndex index.html
     }
     for (const entry of originals) {
       const url = `/media/build-originals/${path.basename(entry.original)}`;
-      const response = await fetch(`${origin}${encodeURI(url)}`);
+      const response = await localFetch(`${origin}${encodeURI(url)}`);
       assert.equal(response.status, 200, url);
       assert.match(response.headers.get('content-type'), /image\/jpeg/);
       assert.equal(hash(Buffer.from(await response.arrayBuffer())), entry.sha256);
     }
-    assert.equal((await fetch(`${origin}/assets/missing-file.js`)).status, 404);
-    assert.equal((await fetch(`${origin}/api/missing`)).status, 404);
-    const fallback = await fetch(`${origin}/search`);
+    assert.equal((await localFetch(`${origin}/assets/missing-file.js`)).status, 404);
+    assert.equal((await localFetch(`${origin}/api/missing`)).status, 404);
+    const fallback = await localFetch(`${origin}/search`);
     assert.equal(fallback.status, 200);
     contract.validateHtml(await fallback.text(), '/');
-    const legacy = await fetch(`${origin}/cabin/69b2ff947f141a71ffa7c492`, { redirect: 'manual' });
+    const legacy = await localFetch(`${origin}/cabin/69b2ff947f141a71ffa7c492`, { redirect: 'manual' });
     assert.equal(legacy.status, 301);
     assert.equal(new URL(legacy.headers.get('location')).pathname, '/stays/lux-cabin');
     for (const [source, destination] of [
       ['/off-grid-stays-bulgaria', '/off-grid-cabins-bulgaria/'],
       ['/bg/off-grid-stays-bulgaria/', '/bg/off-grid-cabins-bulgaria/']
     ]) {
-      const response = await fetch(`${origin}${source}`, { redirect: 'manual' });
+      const response = await localFetch(`${origin}${source}`, { redirect: 'manual' });
       assert.equal(response.status, 301, `${source} must permanently redirect`);
       assert.equal(new URL(response.headers.get('location')).pathname, destination);
     }
@@ -136,7 +144,7 @@ try {
       }
     }
     assert.equal(fs.readFileSync(path.join(webroot, 'uploads/preserve.txt'), 'utf8'), 'Existing uploads must survive');
-    assert.equal(contract.validateArtifacts(webroot).length, 38);
+    assert.equal(contract.validateArtifacts(webroot).length, 40);
     if (verification) assert.throws(() => contract.assertProductionArtifacts(webroot), /must never be published/);
     const missing = contract.artifactPath(webroot, '/bg/stays/stone-house');
     const saved = fs.readFileSync(missing);

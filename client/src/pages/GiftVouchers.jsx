@@ -556,9 +556,9 @@ export default function GiftVouchers() {
                   )}
                   <button type="button" className="gv2-edit" disabled={loading} onClick={resetAttempt}>{t('payment.editDetails')}</button>
                 </div>}
-                <a className="corporate-link" href={`mailto:jose@driftdwells.com?subject=${encodeURIComponent(reference.footer.corporate)}`}>
+                <Link className="corporate-link" to={`${localizePath('/wishlist', language)}?intent=hr`}>
                   <span>{c.team}</span><strong>{c.talk}</strong>
-                </a>
+                </Link>
               </div>
             </div>
           </div>

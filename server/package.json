@@ -80,6 +80,8 @@
     "maintenance:backfill-cabin-i18n-bg": "node scripts/backfillCabinI18nBg.cjs",
     "check:cabin-i18n": "node scripts/checkCabinI18nCompleteness.cjs",
     "start:messaging-worker": "node scripts/runMessagingWorker.js",
+    "start:corporate-gift-lead-worker": "node scripts/runCorporateGiftLeadWorker.js",
+    "ensure:index:corporate-gift-leads": "node scripts/ensureCorporateGiftLeadIndexes.js",
     "start:gift-voucher-delivery-worker": "node scripts/runGiftVoucherDeliveryWorker.js",
     "start:booking-confirmation-delivery-worker": "node scripts/runBookingConfirmationDeliveryWorker.js",
     "test:booking-confirmation-delivery-worker": "node --test --test-concurrency=1 scripts/bookingConfirmationDeliveryWorker.test.cjs",

@@ -714,6 +714,14 @@ function stringEntries(value, path = '') {
 }
 
 describe('GiftVouchers localization and accessibility', () => {
+  it.each(['en', 'bg'])('links the corporate CTA to the localized HR wishlist (%s)', async (language) => {
+    mocks.language = language;
+    await renderPage(language === 'bg' ? '/bg/gift-vouchers' : '/gift-vouchers');
+    expect(document.querySelector('.corporate-link')).toHaveAttribute(
+      'href', `${language === 'bg' ? '/bg' : ''}/wishlist?intent=hr`
+    );
+  });
+
   it('keeps route language independent from card language and preserves entered details while switching', async () => {
     await renderPage('/gift-vouchers', { includeHeader: true });
     change(en.v2.name, 'Elena Petrova');

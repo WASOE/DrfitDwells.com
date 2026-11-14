@@ -141,11 +141,11 @@ async function check() {
         await live.goto(`${origin}/`, { waitUntil: 'networkidle2' });
         await waitForClientRoot(live);
         if (viewport.isMobile) {
-          await live.click('#root header button[aria-label="Toggle menu"]');
-          await live.waitForFunction(() => document.querySelector('#root header button[aria-label="Toggle menu"]')?.getAttribute('aria-expanded') === 'true');
+          await live.click('#root header button[aria-controls="site-mobile-nav"]');
+          await live.waitForFunction(() => document.querySelector('#root header button[aria-controls="site-mobile-nav"]')?.getAttribute('aria-expanded') === 'true');
         }
         const navigationSelector = viewport.isMobile
-          ? '[role="dialog"][aria-label="Site navigation"] a[href="/cabin"]'
+          ? '#site-mobile-nav[role="dialog"] a[href="/cabin"]'
           : '#root header a[href="/cabin"]';
         await live.waitForSelector(navigationSelector, { visible: true });
         await live.evaluate(() => { window.__spaNavigationCheck = true; });

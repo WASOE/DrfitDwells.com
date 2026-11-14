@@ -23,7 +23,7 @@ import {
 
 describe('opsNavConfig', () => {
   it('lists desktop nav items in OpsLayout order', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(26);
+    expect(OPS_NAV_ITEMS).toHaveLength(27);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
@@ -47,6 +47,7 @@ describe('opsNavConfig', () => {
       '/ops/conversion',
       '/ops/conversion/recovery',
       '/ops/build-enquiries',
+      '/ops/corporate-gift-leads',
       '/ops/manual-review',
       '/ops/readiness',
       '/ops/settings/cleaning',
@@ -320,8 +321,8 @@ describe('opsNavConfig', () => {
 
     it('places every nav destination in exactly one desktop group', () => {
       const groupedTos = getOpsSidebarGroups().flatMap((group) => group.items.map((item) => item.to));
-      expect(groupedTos).toHaveLength(26);
-      expect(new Set(groupedTos).size).toBe(26);
+      expect(groupedTos).toHaveLength(27);
+      expect(new Set(groupedTos).size).toBe(27);
       expect(new Set(groupedTos)).toEqual(new Set(OPS_NAV_ITEMS.map((item) => item.to)));
       expect(OPS_NAV_ITEMS.every((item) => Boolean(item.desktopGroup))).toBe(true);
       expect(OPS_NAV_ITEMS.some((item) => item.to === '/ops/design-system')).toBe(false);
@@ -351,7 +352,8 @@ describe('opsNavConfig', () => {
         '/ops/rate-plans',
         '/ops/gift-vouchers',
         '/ops/payment-terms',
-        '/ops/pricing-calendar'
+        '/ops/pricing-calendar',
+        '/ops/corporate-gift-leads'
       ]);
       expect(groupChildren('property')).toEqual(['/ops/cabins', '/ops/creator-partners']);
       expect(groupChildren('cleaning')).toEqual(['/ops/cleaning', '/ops/settings/cleaning']);
@@ -562,7 +564,8 @@ describe('opsNavConfig', () => {
           '/ops/insights',
           '/ops/conversion',
           '/ops/conversion/recovery',
-          '/ops/build-enquiries'
+          '/ops/build-enquiries',
+          '/ops/corporate-gift-leads'
         ],
         more: [
           '/ops/creator-partners',
@@ -579,6 +582,7 @@ describe('opsNavConfig', () => {
       expect(getActiveOpsMobileTabId('/ops/conversion')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/conversion/recovery')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/build-enquiries')).toBe('finance');
+      expect(getActiveOpsMobileTabId('/ops/corporate-gift-leads/123')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/manual-review')).toBe('more');
     });
 
@@ -614,7 +618,8 @@ describe('opsNavConfig', () => {
           '/ops/insights/performance',
           '/ops/conversion',
           '/ops/conversion/recovery',
-          '/ops/build-enquiries'
+          '/ops/build-enquiries',
+          '/ops/corporate-gift-leads'
         ],
         ['/ops/cabins', '/ops/creator-partners'],
         [

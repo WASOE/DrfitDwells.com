@@ -16,6 +16,7 @@ const OPS_FRONTEND_MODULE_ROUTES = [
   { prefix: '/ops/gift-vouchers', module: 'finance' },
   { prefix: '/ops/conversion', module: 'finance' },
   { prefix: '/ops/build-enquiries', module: 'finance' },
+  { prefix: '/ops/corporate-gift-leads', module: 'finance' },
   { prefix: '/ops/insights', module: 'finance' },
   { prefix: '/ops/promo-codes', module: 'finance' },
   { prefix: '/ops/rate-plans', module: 'finance' },
@@ -288,6 +289,16 @@ export const OPS_NAV_ITEMS = [
     match: 'prefix'
   },
   {
+    to: '/ops/corporate-gift-leads',
+    label: 'Corporate gift leads',
+    module: 'finance',
+    desktopGroup: 'finance',
+    sidebarOrder: 6,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
     to: '/ops/manual-review',
     label: 'Manual',
     module: 'operations',
@@ -346,7 +357,8 @@ export const OPS_MOBILE_TAB_ROUTE_PREFIXES = {
     '/ops/insights',
     '/ops/conversion',
     '/ops/conversion/recovery',
-    '/ops/build-enquiries'
+    '/ops/build-enquiries',
+    '/ops/corporate-gift-leads'
   ],
   more: [
     '/ops/creator-partners',
@@ -408,7 +420,8 @@ export const OPS_MORE_GROUPS = [
       { to: '/ops/insights/performance', label: 'Historical performance' },
       { to: '/ops/conversion', label: 'Conversion' },
       { to: '/ops/conversion/recovery', label: 'Quote recovery' },
-      { to: '/ops/build-enquiries', label: 'Build enquiries' }
+      { to: '/ops/build-enquiries', label: 'Build enquiries' },
+      { to: '/ops/corporate-gift-leads', label: 'Corporate gift leads' }
     ]
   },
   {

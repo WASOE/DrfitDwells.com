@@ -68,6 +68,10 @@ const opsReadAPI = {
   manualReview: (params) => api.get('/ops/manual-review', { params, headers: authHeaders() }),
   giftVouchers: (params) => api.get('/ops/gift-vouchers', { params, headers: authHeaders() }),
   giftVoucherDetail: (id) => api.get(`/ops/gift-vouchers/${id}`, { headers: authHeaders() }),
+  corporateGiftLeads: (params) => api.get('/ops/corporate-gift-leads', { params, headers: authHeaders() }),
+  corporateGiftLead: (id) => api.get(`/ops/corporate-gift-leads/${id}`, { headers: authHeaders() }),
+  updateCorporateGiftLead: (id, body) => api.patch(`/ops/corporate-gift-leads/${id}`, body, { headers: authHeaders() }),
+  retryCorporateGiftLead: (id, lane) => api.post(`/ops/corporate-gift-leads/${id}/retry/${lane}`, {}, { headers: authHeaders() }),
   insightsSummary: (params) => api.get('/ops/insights/summary', { params, headers: authHeaders() }),
   insightsDataQuality: (params) =>
     api.get('/ops/insights/data-quality', { params, headers: authHeaders() }),
