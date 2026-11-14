@@ -74,8 +74,8 @@ describe('P0A isolation guards', () => {
     expect(app).toContain('path="/ops/design-system"');
   });
 
-  it('does not change navigation configuration', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(26);
+  it('keeps navigation configuration including corporate gift leads', () => {
+    expect(OPS_NAV_ITEMS).toHaveLength(27);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
@@ -99,6 +99,7 @@ describe('P0A isolation guards', () => {
       '/ops/conversion',
       '/ops/conversion/recovery',
       '/ops/build-enquiries',
+      '/ops/corporate-gift-leads',
       '/ops/manual-review',
       '/ops/readiness',
       '/ops/settings/cleaning',

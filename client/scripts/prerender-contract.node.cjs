@@ -73,7 +73,9 @@ function fixture(route) {
 }
 
 test('finite registry includes eligible localized public routes, not private/transaction routes', () => {
-  assert.equal(ROUTES.length, 38);
+  assert.equal(ROUTES.length, 40);
+  assert.ok(ROUTES.includes('/wishlist'));
+  assert.ok(ROUTES.includes('/bg/wishlist'));
   assert.ok(!ROUTES.includes('/off-grid-stays-bulgaria'));
   assert.ok(!ROUTES.includes('/bg/off-grid-stays-bulgaria'));
   assert.equal(new Set(ROUTES).size, ROUTES.length);
@@ -150,7 +152,7 @@ test('artifact contract rejects missing, wrong-route, generic, loading, noindex 
       fs.mkdirSync(path.dirname(output), { recursive: true });
       fs.writeFileSync(output, fixture(route));
     }
-    assert.equal(validateArtifacts(tmp).length, 38);
+    assert.equal(validateArtifacts(tmp).length, 40);
     fs.writeFileSync(artifactPath(tmp, '/'), '<html><div id="root"></div></html>');
     assert.throws(() => validateArtifacts(tmp));
   } finally {

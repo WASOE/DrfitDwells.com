@@ -127,6 +127,21 @@ module.exports = {
       }
     },
     {
+      name: 'driftdwells-corporate-gift-lead-worker',
+      cwd: __dirname,
+      script: 'server/scripts/runCorporateGiftLeadWorker.js',
+      interpreter: 'node',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      restart_delay: 5000,
+      max_restarts: 20,
+      min_uptime: '10s',
+      kill_timeout: 15000,
+      env: { NODE_ENV: 'development' },
+      env_production: { NODE_ENV: 'production' }
+    },
+    {
       // Dedicated Arrival Automation V2 worker.
       // Development stays parked. Production is guest-wide: a restart or
       // deploy must not return these flags to 0 or to a staff allowlist.

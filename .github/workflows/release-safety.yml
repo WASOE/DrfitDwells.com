@@ -12,7 +12,7 @@ permissions:
 jobs:
   artifact-and-browser:
     name: Apache, browser, and payment contract
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       VITE_FRONTEND_RELEASE: ${{ github.sha }}
@@ -60,7 +60,7 @@ jobs:
 
   staging-booking-integration:
     name: Isolated staging booking
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       VITE_FRONTEND_RELEASE: ${{ github.sha }}

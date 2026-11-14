@@ -80,6 +80,7 @@ const OpsConversion = lazy(() => import('./pages/ops/OpsConversion'))
 const OpsConversionRecovery = lazy(() => import('./pages/ops/OpsConversionRecovery'))
 const OpsBuildEnquiries = lazy(() => import('./pages/ops/OpsBuildEnquiries'))
 const OpsBuildEnquiryDetail = lazy(() => import('./pages/ops/OpsBuildEnquiryDetail'))
+const OpsCorporateGiftLeads = lazy(() => import('./pages/ops/OpsCorporateGiftLeads'))
 const MaintenanceHome = lazy(() => import('./pages/maintenance/MaintenanceHome'))
 const MaintenanceCabins = lazy(() => import('./pages/maintenance/MaintenanceCabins'))
 const MaintenanceReservations = lazy(() => import('./pages/maintenance/MaintenanceReservations'))
@@ -92,6 +93,7 @@ const CraftEmbedded = lazy(() => import('./pages/embedded/CraftEmbedded'))
 const ConfirmBooking = lazy(() => import('./pages/ConfirmBooking'))
 const BookingRefundResolution = lazy(() => import('./pages/BookingRefundResolution'))
 const GiftVouchers = lazy(() => import('./pages/GiftVouchers'))
+const CorporateWishlist = lazy(() => import('./pages/CorporateWishlist'))
 const GiftVoucherSuccess = lazy(() => import('./pages/GiftVoucherSuccess'))
 const GiftVoucherRedeem = lazy(() => import('./pages/GiftVoucherRedeem'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
@@ -171,6 +173,8 @@ function App() {
               <Route path="/bg/booking-refund" element={<BookingRefundResolution />} />
               <Route path="/gift-vouchers" element={<GiftVouchers />} />
               <Route path="/bg/gift-vouchers" element={<GiftVouchers />} />
+              <Route path="/wishlist" element={<CorporateWishlist />} />
+              <Route path="/bg/wishlist" element={<CorporateWishlist />} />
               <Route path="/gift-vouchers/success" element={<GiftVoucherSuccess />} />
               <Route path="/bg/gift-vouchers/success" element={<GiftVoucherSuccess />} />
               <Route path="/gift-vouchers/redeem" element={<GiftVoucherRedeem />} />
@@ -280,6 +284,8 @@ function App() {
               <Route path="/ops/conversion/recovery" element={<OpsConversionRecovery />} />
               <Route path="/ops/build-enquiries" element={<OpsBuildEnquiries />} />
               <Route path="/ops/build-enquiries/:id" element={<OpsBuildEnquiryDetail />} />
+              <Route path="/ops/corporate-gift-leads" element={<OpsCorporateGiftLeads />} />
+              <Route path="/ops/corporate-gift-leads/:id" element={<OpsCorporateGiftLeads />} />
               <Route path="/ops/readiness" element={<OpsReadiness />} />
               <Route path="/ops/cleaning" element={<OpsCleaningCalendar />} />
               <Route path="/ops/settings/cleaning" element={<OpsCleaningSettings />} />

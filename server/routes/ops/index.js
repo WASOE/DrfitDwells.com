@@ -63,6 +63,7 @@ router.use('/payments', paymentsRoutes);
 router.use('/insights', insightsRoutes);
 router.use('/conversion', conversionRoutes);
 router.use('/build-enquiries', buildEnquiriesRoutes);
+router.use('/corporate-gift-leads', require('./modules/corporateGiftLeadsRoutes'));
 router.use('/cabins', cabinsRoutes);
 router.use('/reviews', reviewsRoutes);
 router.use('/communications', communicationsRoutes);
