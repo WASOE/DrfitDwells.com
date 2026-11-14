@@ -281,6 +281,12 @@ shared `driftdwells` name or restart/reload all PM2 processes.
    endpoint and worker gates before its PM2 configuration can be saved.
    Failed recovery is surfaced as a hard blocker; no automatic reboot occurs.
 
+An explicitly configured `"deferSave": true` in the protected plan leaves a
+verified new API running without saving PM2, so the operator can verify other
+release components before saving. Complete those checks and save promptly; if
+they fail, restore a verified rollback instead. Emergency rollback within the
+guard is still saved only after its own verification succeeds.
+
 The guarded command deliberately requires a fresh plan and existing Ops
 authorization; it does not guess a production target, provision indexes,
 run migrations, modify payment states or change the dedicated workers.

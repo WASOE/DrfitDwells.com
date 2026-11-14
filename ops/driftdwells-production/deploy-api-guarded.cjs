@@ -426,8 +426,8 @@ async function cutover(io, context) {
     await io.checkWorkers();
     verified = true;
     for (const id of [currentId, candidateId, rollbackId]) await io.remove(id);
-    await io.save();
-    return { productionId: newId, rolledBack: false };
+    if (!context.deferSave) await io.save();
+    return { productionId: newId, rolledBack: false, pm2Saved: !context.deferSave };
   } catch (err) {
     if (verified) {
       err.message = 'Production verified; PM2 finalization failed; live API left running. ' + err.message;
@@ -590,11 +590,17 @@ async function main() {
   if (plan.enableRebookOnCutover !== undefined && typeof plan.enableRebookOnCutover !== 'boolean') {
     fail('enableRebookOnCutover must be a boolean');
   }
+  if (plan.deferSave !== undefined && typeof plan.deferSave !== 'boolean') {
+    fail('deferSave must be a boolean');
+  }
   if (['--candidate', '--rollback'].includes(args[1])) {
     console.log(JSON.stringify({ status: 'probe_verified', ...await startProbe(plan, args[1].slice(2)) }));
     return;
   }
-  const context = { currentId: plan.current.id, candidateId: plan.candidate.id, rollbackId: plan.rollback.id };
+  const context = {
+    currentId: plan.current.id, candidateId: plan.candidate.id, rollbackId: plan.rollback.id,
+    deferSave: plan.deferSave === true
+  };
   const releaseRoots = ['current', 'candidate', 'rollback'].map(role => {
     const root = fs.realpathSync(plan[role].root);
     if (!root.startsWith('/home/illoc/releases/')) fail('Release is outside isolated releases');

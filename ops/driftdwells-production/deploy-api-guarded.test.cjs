@@ -441,6 +441,19 @@ test('successful cutover saves only after endpoint, stability and worker gates',
   ]);
   assert.deepEqual(calls.filter(call => call[0] === 'stop').map(call => call[1]), [40, 41, 31]);
 });
+test('deferred finalization leaves PM2 unsaved after successful API verification', async () => {
+  const { io, calls } = fakeIO();
+  const result = await cutover(io, { ...context, deferSave: true });
+  assert.equal(result.pm2Saved, false);
+  assert.equal(result.productionId, 50);
+  assert.ok(calls.some(call => call[0] === 'checkWorkers'));
+  assert.ok(!calls.some(call => call[0] === 'save'));
+});
+test('deferred finalization still saves a verified emergency rollback', async () => {
+  const { io, calls } = fakeIO('monitor');
+  await assert.rejects(cutover(io, { ...context, deferSave: true }), /verified rollback restored/);
+  assert.equal(calls.at(-1)[0], 'save');
+});
 for (const failure of ['preflight', 'checkpoint']) {
   test(`${failure} failure cannot stop production or save`, async () => {
     const { io, calls } = fakeIO(failure);
