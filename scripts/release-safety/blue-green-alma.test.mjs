@@ -97,7 +97,7 @@ DirectoryIndex index.html
     try {
       if ((await get('/')).status === 200) { ready = true; break; }
     } catch (error) {
-      if (error.code !== 'ECONNREFUSED') throw error;
+      if (!['ECONNREFUSED', 'ECONNRESET'].includes(error.code)) throw error;
     }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
@@ -108,7 +108,7 @@ DirectoryIndex index.html
   const args = { releases, pointer, state, candidate,
     inventory: createInventory(candidate, 'a'.repeat(40), 'production'),
     previousInventory: createInventory(previous, 'b'.repeat(40), 'production'),
-    preflight: async () => ({ ok: true }) };
+    preflight: async () => ({ ok: true }), rollbackSmoke: async () => ({ ok: true }) };
   await assert.rejects(activateRelease({ ...args, smoke: async () => {
     assert.equal((await get('/bg/wishlist/')).text, 'new-nested');
     assert.equal((await get('/uploads/sample.txt')).text, 'upload');

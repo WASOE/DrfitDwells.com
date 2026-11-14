@@ -50,9 +50,9 @@ ordinary atomic switch. No activation or rollback procedure is approved yet.
 `scripts/release-safety/blue-green.mjs` is an isolated prototype. It stages a
 verified inventory outside the active tree, atomically switches an existing
 symlink, and journals activation so an interrupted switch can be restored.
-It is **not a production deployment command**: provenance and smoke checks
-are caller-supplied, staging is not serialized, and the initial DirectAdmin
-vhost transition, the original directory snapshot, file ownership, test-site
+It is **not a production activation command**: activation preflight and smoke
+checks are caller-supplied, and the initial site vhost transition, the original
+directory snapshot, file ownership, test-site
 routing, SELinux, and production HTTP checks are not implemented or validated.
 Removing write permissions does not make an owner-controlled directory
 immutable. The optional `RUN_ALMA_HTTPD_TEST=1 node --test
@@ -62,6 +62,23 @@ test vhost and uploads proxy. It does not reproduce the full DirectAdmin
 configuration, TLS, or SELinux. SELinux was observed disabled on the host;
 recheck its state before any future transition. Do not use this prototype to
 switch the live site.
+
+The read-only vhost inspection identified an explicit `/legal/` alias as well
+as the `/api` and `/uploads` proxies. `vhost-migration.mjs` prepares a proposed
+site-only configuration in memory, including the legal alias, while leaving
+the test-site vhosts unchanged. It does not apply or roll back a configuration.
+The host runs Apache 2.4.66 on AlmaLinux 9.7 with `SymLinksIfOwnerMatch`;
+Apache's user can traverse `/home/illoc`. A real transition must establish
+matching symlink and target owners and recheck all permissions and labels.
+
+The development branch contains `production-artifact.yml`, which builds a
+production-key artifact only after an exact `master` SHA dispatch, and
+`stage-production.mjs`, which verifies the artifact and the matching GitHub
+release-safety evidence before staging. The workflow is not usable until it is
+present on `master`, its production public Stripe key variable is configured,
+and an exact-SHA workflow run has succeeded. The staging command does not
+activate a release or implement the first vhost migration; do not use it as
+an activation procedure.
 
 `npm run deploy:frontend:safe` always refuses to publish unless `RELEASE_SAFETY_REPORT` matches the release SHA and a completed successful GitHub Actions run. The run must contain both artifacts:
 

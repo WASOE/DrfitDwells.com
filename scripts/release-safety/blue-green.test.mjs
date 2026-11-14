@@ -37,7 +37,7 @@ function fixture(t) {
   return { root, releases, state, pointer, previous, candidate,
     inventory: createInventory(candidate, 'a'.repeat(40), 'production'),
     previousInventory: createInventory(previous, 'b'.repeat(40), 'production'),
-    preflight: async () => ({ ok: true }), smoke: async () => ({ ok: true }) };
+    preflight: async () => ({ ok: true }), smoke: async () => ({ ok: true }), rollbackSmoke: async () => ({ ok: true }) };
 }
 
 test('switches the complete release and retains the previous release', async t => {
@@ -51,15 +51,29 @@ test('switches the complete release and retains the previous release', async t =
 
 test('stages and verifies a complete release before it becomes available', async t => {
   const f = fixture(t);
-  const args = { source: f.candidate, releases: f.releases, inventory: f.inventory,
+  const args = { source: f.candidate, releases: f.releases, state: f.state, inventory: f.inventory,
     verifyProvenance: async () => ({ ok: true }) };
   await assert.rejects(stageRelease({ ...args, verifyProvenance: async () => ({ ok: false }) }), /provenance/);
   const result = await stageRelease(args);
   assert.equal(path.basename(result), 'a'.repeat(40));
   assert.equal(fs.readFileSync(path.join(result, 'bg/wishlist/index.html'), 'utf8'), 'new-nested');
   assert.equal(fs.statSync(path.join(result, 'index.html')).mode & 0o222, 0);
+  assert.equal(fs.statSync(result).mode & 0o777, 0o555);
+  assert.equal(fs.statSync(path.join(result, 'index.html')).mode & 0o777, 0o444);
   assert.equal(fs.realpathSync(f.pointer), f.previous);
   await assert.rejects(stageRelease(args), /already exists/);
+});
+
+test('a failed staging copy cannot change the active release', async t => {
+  const f = fixture(t);
+  await assert.rejects(stageRelease({ source: f.candidate, releases: f.releases, state: f.state,
+    inventory: f.inventory, verifyProvenance: async () => {
+      fs.writeFileSync(path.join(f.candidate, 'index.html'), 'changed during upload');
+      return { ok: true };
+    } }), /inventory mismatch/);
+  assert.equal(fs.realpathSync(f.pointer), f.previous);
+  assert.equal(fs.readFileSync(path.join(f.pointer, 'bg/wishlist/index.html'), 'utf8'), 'old-nested');
+  assert.equal(fs.existsSync(path.join(f.releases, 'a'.repeat(40))), false);
 });
 
 test('failed smoke or thrown error restores every file by switching the pointer', async t => {
@@ -69,6 +83,15 @@ test('failed smoke or thrown error restores every file by switching the pointer'
   assert.equal(fs.readFileSync(path.join(f.pointer, 'bg/wishlist/index.html'), 'utf8'), 'old-nested');
   await assert.rejects(activateRelease({ ...f, smoke: async () => { throw new Error('offline'); } }), /offline/);
   assert.equal(fs.realpathSync(f.pointer), f.previous);
+});
+
+test('failed rollback smoke retains journal for recovery', async t => {
+  const f = fixture(t);
+  await assert.rejects(activateRelease({ ...f, smoke: async () => ({ ok: false }),
+    rollbackSmoke: async () => ({ ok: false }) }), /rollback smoke failed/);
+  assert.equal(fs.realpathSync(f.pointer), f.previous);
+  assert.equal(fs.existsSync(path.join(f.state, 'pending.json')), true);
+  assert.equal(recoverInterruptedActivation(f).active, f.previous);
 });
 
 test('preflight, artifact changes, a directory pointer and concurrent lock fail before switch', async t => {
@@ -106,7 +129,7 @@ test('interruption after switch leaves a journal for explicit complete recovery'
   const moduleUrl = new URL('./blue-green.mjs', import.meta.url).href;
   const script = `import {activateRelease} from ${JSON.stringify(moduleUrl)};
     const args = JSON.parse(process.argv[1]);
-    await activateRelease({...args, preflight: async () => ({ok:true}), smoke: async () => process.exit(23)});`;
+    await activateRelease({...args, preflight: async () => ({ok:true}), rollbackSmoke: async () => ({ok:true}), smoke: async () => process.exit(23)});`;
   const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, JSON.stringify(f)], { encoding: 'utf8' });
   assert.equal(child.status, 23, child.stderr);
   assert.equal(fs.realpathSync(f.pointer), f.candidate);
