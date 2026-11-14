@@ -426,6 +426,19 @@ async function startProbe(plan, role) {
   if (!current || current.pm2_env.status !== 'online' || live.length !== 1 || live[0].pid !== current.pid) {
     fail('Production listener baseline is unsafe');
   }
+  const currentRoot = fs.realpathSync(plan.current.root);
+  if (!currentRoot.startsWith('/home/illoc/releases/')) fail('Current API must use an isolated release');
+  if (current.pm2_env.pm_cwd !== path.join(currentRoot, 'server') ||
+      current.pm2_env.pm_exec_path !== path.join(currentRoot, 'server/server.js') ||
+      fs.realpathSync(`/proc/${current.pid}/cwd`) !== path.join(currentRoot, 'server')) {
+    fail('Current API release cwd/script mismatch');
+  }
+  const currentDotenv = require(path.join(currentRoot, 'server/node_modules/dotenv'));
+  const currentEnv = currentDotenv.parse(fs.readFileSync(path.join(currentRoot, 'server/.env')));
+  for (const [key, value] of Object.entries(current.pm2_env)) {
+    if (/^[A-Z][A-Z0-9_]*$/.test(key) && typeof value === 'string' && value.trim()) currentEnv[key] = value;
+  }
+  await loadArrivalRuntimeEvidence(apps, currentRoot, currentEnv);
   assertWorkerTopology(apps);
   const port = role === 'candidate' ? 5001 : 5002;
   if (listeners(port).length) fail('Probe port already in use');

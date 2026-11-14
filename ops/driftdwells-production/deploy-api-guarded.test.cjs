@@ -462,6 +462,9 @@ test('release verification rejects modified content, wrong SHA, missing shared a
 test('probe startup runs index safety regression before launching any PM2 API', () => {
   const source = fs.readFileSync(path.join(__dirname, 'deploy-api-guarded.cjs'), 'utf8');
   const probe = source.slice(source.indexOf('async function startProbe'), source.indexOf('async function main'));
+  assert.ok(probe.indexOf('await loadArrivalRuntimeEvidence(apps, currentRoot, currentEnv)') >= 0);
+  assert.ok(probe.indexOf('await loadArrivalRuntimeEvidence(apps, currentRoot, currentEnv)') <
+    probe.indexOf('assertWorkerTopology(apps)'));
   assert.ok(probe.indexOf("['--test', 'server/scripts/apiStartupNoIndexDdl.test.cjs']") <
     probe.indexOf("spawnSync('pm2'"));
   assert.ok(probe.includes("env.API_HOST = '127.0.0.1'"));
