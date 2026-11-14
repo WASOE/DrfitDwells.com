@@ -47,6 +47,22 @@ symlink behavior, and be tested for interruption and recovery on the hosting
 layout. A rename of a replacement symlink over the nonempty directory is not an
 ordinary atomic switch. No activation or rollback procedure is approved yet.
 
+`scripts/release-safety/blue-green.mjs` is an isolated prototype. It stages a
+verified inventory outside the active tree, atomically switches an existing
+symlink, and journals activation so an interrupted switch can be restored.
+It is **not a production deployment command**: provenance and smoke checks
+are caller-supplied, staging is not serialized, and the initial DirectAdmin
+vhost transition, the original directory snapshot, file ownership, test-site
+routing, SELinux, and production HTTP checks are not implemented or validated.
+Removing write permissions does not make an owner-controlled directory
+immutable. The optional `RUN_ALMA_HTTPD_TEST=1 node --test
+scripts/release-safety/blue-green-alma.test.mjs` test exercises an isolated
+AlmaLinux httpd container with selected observed vhost rules, including a
+test vhost and uploads proxy. It does not reproduce the full DirectAdmin
+configuration, TLS, or SELinux. SELinux was observed disabled on the host;
+recheck its state before any future transition. Do not use this prototype to
+switch the live site.
+
 `npm run deploy:frontend:safe` always refuses to publish unless `RELEASE_SAFETY_REPORT` matches the release SHA and a completed successful GitHub Actions run. The run must contain both artifacts:
 
 - `apache-browser-evidence` — `/search` and `/checkout` stayed on path, and the historical redirect failed

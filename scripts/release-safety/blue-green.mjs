@@ -1,0 +1,174 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { verifyInventory } from './frontend-inventory.mjs';
+
+// Isolated prototype only: no production provenance, vhost migration, host
+// smoke checks or cross-process staging lock is wired to this module.
+
+function syncDirectory(dir) {
+  const fd = fs.openSync(dir, 'r');
+  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
+
+function durableJson(file, value) {
+  const tmp = `${file}.${crypto.randomUUID()}.tmp`;
+  const fd = fs.openSync(tmp, 'wx', 0o600);
+  try {
+    fs.writeFileSync(fd, `${JSON.stringify(value)}\n`);
+    fs.fsyncSync(fd);
+  } finally { fs.closeSync(fd); }
+  fs.renameSync(tmp, file);
+  syncDirectory(path.dirname(file));
+}
+
+function requireRelease(releases, release) {
+  const root = fs.realpathSync(releases);
+  const resolved = fs.realpathSync(release);
+  if (path.dirname(resolved) !== root || !fs.lstatSync(release).isDirectory()) {
+    throw new Error('Release must be a real direct child of the release directory');
+  }
+  return resolved;
+}
+
+function readPointer(pointer, releases) {
+  if (!fs.lstatSync(pointer).isSymbolicLink()) throw new Error('Active pointer must be a symbolic link');
+  return requireRelease(releases, path.resolve(path.dirname(pointer), fs.readlinkSync(pointer)));
+}
+
+function switchPointer(pointer, target) {
+  const tmp = `${pointer}.${crypto.randomUUID()}.tmp`;
+  fs.symlinkSync(target, tmp);
+  try {
+    fs.renameSync(tmp, pointer);
+    syncDirectory(path.dirname(pointer));
+  } finally {
+    if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+  }
+}
+
+function lock(state) {
+  const dir = path.join(state, 'activation.lock');
+  fs.mkdirSync(dir);
+  durableJson(path.join(dir, 'owner.json'), { host: os.hostname(), pid: process.pid });
+  return () => {
+    fs.unlinkSync(path.join(dir, 'owner.json'));
+    fs.rmdirSync(dir);
+    syncDirectory(state);
+  };
+}
+
+function journalPath(state) { return path.join(state, 'pending.json'); }
+
+function removeJournal(state) {
+  fs.unlinkSync(journalPath(state));
+  syncDirectory(state);
+}
+
+function retainPreviousAssets(previousInventory, nextInventory) {
+  const next = new Map(nextInventory.files.map(file => [file.path, file.sha256]));
+  for (const file of previousInventory.files) {
+    if (file.path.startsWith('assets/') && next.get(file.path) !== file.sha256) {
+      throw new Error(`Previous asset missing or changed: ${file.path}`);
+    }
+  }
+}
+
+/**
+ * Copy to an unpublished directory first. The caller must validate artifact
+ * provenance independently; an inventory alone is not an authenticity proof.
+ */
+export async function stageRelease({ source, releases, inventory, verifyProvenance }) {
+  if (typeof verifyProvenance !== 'function') throw new Error('Artifact provenance verification is required');
+  if (inventory?.configuration !== 'production') throw new Error('A production artifact is required');
+  verifyInventory(source, inventory);
+  if ((await verifyProvenance({ source, inventory }))?.ok !== true) throw new Error('Artifact provenance did not pass');
+  const root = fs.realpathSync(releases);
+  const destination = path.join(root, inventory.commit);
+  const staging = path.join(root, `.staging-${crypto.randomUUID()}`);
+  if (fs.existsSync(destination)) throw new Error('Release already exists');
+  fs.cpSync(source, staging, { recursive: true, errorOnExist: true, force: false });
+  verifyInventory(staging, inventory);
+  function seal(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) seal(file);
+      else {
+        const fd = fs.openSync(file, 'r');
+        try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+        fs.chmodSync(file, fs.statSync(file).mode & 0o555);
+      }
+    }
+    fs.chmodSync(dir, fs.statSync(dir).mode & 0o555);
+    syncDirectory(dir);
+  }
+  seal(staging);
+  // The releases directory must be writable only by the single trusted
+  // publisher; callers must serialize staging as well as activation.
+  if (fs.existsSync(destination)) throw new Error('Release appeared during staging');
+  fs.renameSync(staging, destination);
+  syncDirectory(root);
+  return destination;
+}
+
+/**
+ * The caller must supply deployment-specific, independently verified preflight
+ * and live smoke checks. This module does not configure Apache.
+ */
+export async function activateRelease({ releases, pointer, state, candidate, inventory, previousInventory, preflight, smoke }) {
+  if (typeof preflight !== 'function' || typeof smoke !== 'function') {
+    throw new Error('Preflight and smoke checks are required');
+  }
+  const release = requireRelease(releases, candidate);
+  verifyInventory(release, inventory);
+  if (inventory.configuration !== 'production') throw new Error('A production artifact is required');
+  const unlock = lock(state);
+  try {
+    if (fs.existsSync(journalPath(state))) throw new Error('Pending activation requires recovery');
+    const previous = readPointer(pointer, releases);
+    if (previous === release) throw new Error('Release is already active');
+    verifyInventory(previous, previousInventory);
+    if (previousInventory.configuration !== 'production') throw new Error('A production rollback artifact is required');
+    retainPreviousAssets(previousInventory, inventory);
+    const ready = await preflight({ candidate: release, previous });
+    if (ready?.ok !== true) throw new Error('Preflight did not pass');
+    verifyInventory(release, inventory);
+    verifyInventory(previous, previousInventory);
+    if (readPointer(pointer, releases) !== previous) throw new Error('Active pointer changed during preflight');
+    durableJson(journalPath(state), { version: 1, previous, candidate: release, pointer: path.resolve(pointer) });
+    try {
+      switchPointer(pointer, release);
+      const result = await smoke({ candidate: release, previous });
+      if (result?.ok !== true) throw new Error('Smoke checks did not pass');
+      if (readPointer(pointer, releases) !== release) throw new Error('Active pointer changed during smoke checks');
+      removeJournal(state);
+      return { active: release, previous };
+    } catch (error) {
+      const current = readPointer(pointer, releases);
+      if (current !== release && current !== previous) throw new Error(`Rollback refused: pointer changed unexpectedly; original error: ${error.message}`);
+      if (current !== previous) switchPointer(pointer, previous);
+      removeJournal(state);
+      throw new Error(`Activation failed and previous release restored: ${error.message}`, { cause: error });
+    }
+  } finally { unlock(); }
+}
+
+/**
+ * After an interrupted activation, acquire the same lock only after an operator
+ * establishes that no publisher is running and removes a stale lock.
+ */
+export function recoverInterruptedActivation({ releases, pointer, state }) {
+  const unlock = lock(state);
+  try {
+    const journal = JSON.parse(fs.readFileSync(journalPath(state), 'utf8'));
+    if (journal.version !== 1 || journal.pointer !== path.resolve(pointer)) throw new Error('Invalid activation journal');
+    const previous = requireRelease(releases, journal.previous);
+    const candidate = requireRelease(releases, journal.candidate);
+    const current = readPointer(pointer, releases);
+    if (current !== previous && current !== candidate) throw new Error('Recovery refused: pointer changed unexpectedly');
+    if (current !== previous) switchPointer(pointer, previous);
+    removeJournal(state);
+    return { active: previous };
+  } finally { unlock(); }
+}
