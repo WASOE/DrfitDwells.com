@@ -52,9 +52,12 @@ switch an existing symlink, retain hashed assets separately, and journal
 activation. The activation entry point downloads and verifies both artifacts,
 checks the site and shared assets, and restores the previous pointer on smoke
 failure. **This is not yet a production-ready migration procedure.** In
-particular, the first migration and independently verified pre-wishlist
-rollback artifact still need end-to-end verification against the production
-layout. Removing write permissions does not make an owner-controlled directory
+particular, the first migration points to `vhost-migration-<uuid>`, whereas
+`activate-production.mjs` requires the active pointer to identify the
+independently verified `<previousCommit>` release. No supported operation
+currently joins these steps; do not relabel the observed snapshot as a commit
+or bypass the check. The independently verified pre-wishlist rollback
+artifact and complete sequence still need verification. Removing write permissions does not make an owner-controlled directory
 immutable. The optional `RUN_ALMA_HTTPD_TEST=1 node --test
 scripts/release-safety/blue-green-alma.test.mjs` test exercises an isolated
 AlmaLinux httpd container with selected observed vhost rules, including a
@@ -75,11 +78,12 @@ production-key artifact only after an exact `master` SHA dispatch, and
 `stage-production.mjs`, which verifies the artifact and the matching GitHub
 release-safety evidence before staging. The workflow is not usable until it is
 present on `master`, its production public Stripe key variable is configured,
-and an exact-SHA workflow run has succeeded. The workflow currently cannot
-produce a verified historical pre-wishlist artifact from a newer master
-dispatch. Do not use the staging or activation commands as a production
-procedure until that independent rollback gap and the first migration are
-resolved.
+and an exact-SHA workflow run has succeeded. The historical rollback workflow
+is pinned to source `9baa749f76afd88f1fe3122414ce9c8ef8217f45`; it is not
+a verified production artifact until its trusted master run succeeds and its
+artifact and evidence have been independently verified. Do not use the
+staging or activation commands as a production procedure until that
+independent rollback gap and the first-migration handoff are resolved.
 
 `npm run deploy:frontend:safe` always refuses to publish unless `RELEASE_SAFETY_REPORT` matches the release SHA and a completed successful GitHub Actions run. The run must contain both artifacts:
 
