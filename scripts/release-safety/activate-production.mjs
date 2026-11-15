@@ -9,6 +9,7 @@ import { activateRelease, recoverInterruptedActivation, stageRelease } from './b
 import { verifyInventory } from './frontend-inventory.mjs';
 import { hasWishlist, scriptFromRelease, smokeProduction } from './production-smoke.mjs';
 import { verifyProductionAssets } from './production-assets.mjs';
+import { verifyObservedMigrationRollback } from './vhost-migration.mjs';
 
 /**
  * Both the active and candidate trees must match independently downloaded,
@@ -17,24 +18,29 @@ import { verifyProductionAssets } from './production-assets.mjs';
  */
 export async function activateVerifiedProduction({
   runId, commit, previousRunId, previousCommit, expectedApiRelease, key, token,
-  releases, state, pointer, sharedAssets, originIp,
+  releases, state, pointer, sharedAssets, originIp, migrationState,
   download = downloadProductionArtifact, smoke = smokeProduction, verifyAssets = verifyProductionAssets
 }) {
-  for (const sha of [commit, previousCommit, expectedApiRelease]) {
+  const observed = previousCommit === 'observed-production';
+  for (const sha of [commit, expectedApiRelease, ...observed ? [] : [previousCommit]]) {
     if (!/^[a-f0-9]{40}$/.test(sha || '')) throw new Error('Full lowercase frontend and API SHAs are required');
   }
   if (commit === previousCommit) throw new Error('Candidate and previous release must differ');
   if (!token?.trim()) throw new Error('An existing authorized Ops token is required');
   if (!net.isIP(originIp || '')) throw new Error('An explicit production origin IP is required');
   const root = fs.realpathSync(releases);
-  const previous = path.join(root, previousCommit);
+  if (observed && !migrationState) throw new Error('Migration state is required for observed rollback');
+  const previous = observed ? fs.realpathSync(pointer) : path.join(root, previousCommit);
+  const checkObserved = ({ previous: release, requireActivePointer = false }) => verifyObservedMigrationRollback({
+    stateRoot: migrationState, releases, pointer, previous: release, requireActivePointer
+  });
   if (!fs.lstatSync(pointer).isSymbolicLink() || fs.realpathSync(pointer) !== previous) {
     throw new Error('Active pointer does not match the independently verified rollback release');
   }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-activation-'));
   try {
-    const previousArtifact = download({ runId: previousRunId, commit: previousCommit,
-      destination: path.join(tmp, 'previous'), key });
+    const previousArtifact = observed ? checkObserved({ previous, requireActivePointer: true }) :
+      download({ runId: previousRunId, commit: previousCommit, destination: path.join(tmp, 'previous'), key });
     const nextArtifact = download({ runId, commit, destination: path.join(tmp, 'candidate'), key });
     if (previousArtifact?.ok !== true || nextArtifact?.ok !== true) throw new Error('Production artifact verification failed');
     const staged = path.join(root, commit);
@@ -54,9 +60,13 @@ export async function activateVerifiedProduction({
     return await activateRelease({
       releases, pointer, state, candidate, sharedAssets,
       inventory: nextArtifact.inventory, previousInventory: previousArtifact.inventory,
+      verifyObservedRollback: observed ? checkObserved : undefined,
       verifyAssetServing: args => verifyAssets({ ...args, originIp }),
       preflight: async () => check(previous), smoke: async () => check(candidate),
-      rollbackSmoke: async () => check(previous)
+      rollbackSmoke: async () => {
+        if (observed) checkObserved({ previous, requireActivePointer: true });
+        return check(previous);
+      }
     });
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -65,30 +75,37 @@ export async function activateVerifiedProduction({
 
 export async function recoverVerifiedProduction({
   previousRunId, previousCommit, expectedApiRelease, key, token, releases, state,
-  pointer, sharedAssets, originIp, download = downloadProductionArtifact,
+  pointer, sharedAssets, originIp, migrationState, download = downloadProductionArtifact,
   smoke = smokeProduction, verifyAssets = verifyProductionAssets
 }) {
-  for (const sha of [previousCommit, expectedApiRelease]) {
+  const observed = previousCommit === 'observed-production';
+  for (const sha of [expectedApiRelease, ...observed ? [] : [previousCommit]]) {
     if (!/^[a-f0-9]{40}$/.test(sha || '')) throw new Error('Full lowercase frontend and API SHAs are required');
   }
   if (!token?.trim() || !net.isIP(originIp || '')) throw new Error('Ops token and production origin IP are required');
   const pending = JSON.parse(fs.readFileSync(path.join(state, 'pending.json'), 'utf8'));
-  if (pending.previous !== path.join(fs.realpathSync(releases), previousCommit)) {
+  if (!observed && pending.previous !== path.join(fs.realpathSync(releases), previousCommit)) {
     throw new Error('Journal does not identify the independently verified rollback release');
   }
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-recovery-'));
   try {
-    const artifact = download({ runId: previousRunId, commit: previousCommit,
-      destination: path.join(temporary, 'previous'), key });
+    const checkObserved = ({ previous }) => verifyObservedMigrationRollback({
+      stateRoot: migrationState, releases, pointer, previous
+    });
+    if (observed && !migrationState) throw new Error('Migration state is required for observed rollback');
+    const artifact = observed ? checkObserved({ previous: pending.previous }) :
+      download({ runId: previousRunId, commit: previousCommit, destination: path.join(temporary, 'previous'), key });
     if (artifact?.ok !== true || artifact.inventory?.commit !== previousCommit) {
       throw new Error('Independently verified rollback artifact is required');
     }
     return await recoverInterruptedActivation({
       releases, pointer, state, previousInventory: artifact.inventory,
+      verifyObservedRollback: observed ? checkObserved : undefined,
       rollbackSmoke: async ({ previous }) => {
         const verified = await verifyAssets({ sharedAssets, originIp,
           assets: artifact.inventory.files.filter(file => file.path.startsWith('assets/')) });
         if (verified?.ok !== true) throw new Error('Rollback asset verification failed');
+        if (observed) checkObserved({ previous });
         return smoke({ token, releaseAsset: scriptFromRelease(previous), wishlist: hasWishlist(previous), expectedApiRelease });
       }
     });
@@ -100,7 +117,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const recovery = process.argv[2] === 'recover';
     const values = process.argv.slice(recovery ? 3 : 2);
     if (values.length !== (recovery ? 3 : 5)) {
-      throw new Error('Usage: activate-production.mjs <run-id> <commit> <previous-run-id> <previous-commit> <api-commit> OR activate-production.mjs recover <previous-run-id> <previous-commit> <api-commit>');
+      throw new Error('Usage: activate-production.mjs <run-id> <commit> <previous-run-id> <previous-commit|observed-production> <api-commit> OR activate-production.mjs recover <previous-run-id> <previous-commit|observed-production> <api-commit>');
     }
     const [runId, commit, previousRunId, previousCommit, expectedApiRelease] = recovery
       ? [undefined, undefined, ...values] : values;
@@ -108,7 +125,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const common = {
       previousRunId, previousCommit, expectedApiRelease,
       key: process.env.VITE_STRIPE_PUBLISHABLE_KEY, token: process.env.OPS_VERIFY_TOKEN, originIp: process.env.DRIFT_ORIGIN_IP,
-      releases: `${base}/releases`, state: `${base}/state`, pointer: `${base}/current`, sharedAssets: `${base}/assets`
+      releases: `${base}/releases`, state: `${base}/state`, pointer: `${base}/current`, sharedAssets: `${base}/assets`,
+      migrationState: `${base}/migration-state`
     };
     const result = recovery ? await recoverVerifiedProduction(common) : await activateVerifiedProduction({ ...common, runId, commit });
     console.log(JSON.stringify(result));

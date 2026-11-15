@@ -8,6 +8,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { assertSiteSharedAssetsMapping, migrateSiteVhost, recoverSiteVhostMigration } from './vhost-migration.mjs';
+import { activateVerifiedProduction, recoverVerifiedProduction } from './activate-production.mjs';
+import { createInventory } from './frontend-inventory.mjs';
 
 const enabled = process.env.RUN_ALMA_HTTPD_TEST === '1';
 const image = process.env.ALMA_HTTPD_TEST_IMAGE || 'drift-wishlist-httpd-validation:local';
@@ -116,7 +118,8 @@ test('real AlmaLinux httpd vhost migration installs first-use assets, serves pre
   }
   fs.mkdirSync(path.join(backend, 'api'), { recursive: true });
   fs.mkdirSync(path.join(backend, 'uploads'), { recursive: true });
-  fs.writeFileSync(path.join(original, 'index.html'), 'original site');
+  const originalIndex = '<html>original site<script src="/assets/app.js"></script></html>';
+  fs.writeFileSync(path.join(original, 'index.html'), originalIndex);
   fs.writeFileSync(path.join(original, 'search', 'index.html'), 'search route');
   fs.writeFileSync(path.join(original, 'checkout', 'index.html'), 'checkout route');
   fs.writeFileSync(path.join(original, 'legal', 'index.html'), 'original legal content');
@@ -250,7 +253,7 @@ Include "${siteConfig}"
     preflightProbe: probeRoutes, probe: probeRoutes, verifyAssetServing,
     run: runner.run
   });
-  const assertPreservedRoutes = async ({ site = 'original site', legal = 'original legal content' } = {}) => {
+  const assertPreservedRoutes = async ({ site = originalIndex, legal = 'original legal content' } = {}) => {
     assert.equal((await httpGet(port, '/')).body.toString(), site);
     assert.equal((await httpGet(port, '/legal/')).body.toString(), legal);
     const api = await httpGet(port, '/api/health');
@@ -274,14 +277,55 @@ Include "${siteConfig}"
   assert.equal(fs.readFileSync(path.join(sharedAssets, 'app.js'), 'utf8'), 'first migration asset bytes');
   assert.equal(fs.statSync(path.join(sharedAssets, 'app.js')).mode & 0o222, 0);
   await waitFor(async () => (await httpGet(port, '/search/')).body.toString() === 'search route', 'Migrated search route');
-  await assertPreservedRoutes({ site: 'original site' });
+  await assertPreservedRoutes();
   const staticAsset = await httpGet(port, '/assets/app.js');
   assert.equal(staticAsset.status, 200);
   assert.equal(staticAsset.body.toString(), 'first migration asset bytes');
 
+  const activationState = path.join(root, 'activation-state');
+  fs.mkdirSync(activationState);
+  const candidateSource = path.join(root, 'candidate-source');
+  fs.cpSync(original, candidateSource, { recursive: true });
+  const candidateIndex = '<html>candidate site<script src="/assets/new.js"></script></html>';
+  fs.writeFileSync(path.join(candidateSource, 'index.html'), candidateIndex);
+  fs.writeFileSync(path.join(candidateSource, 'assets', 'new.js'), 'candidate asset');
+  const candidateSha = 'a'.repeat(40);
+  const candidateInventory = createInventory(candidateSource, candidateSha, 'production');
+  const activation = {
+    runId: '42', commit: candidateSha, previousCommit: 'observed-production',
+    expectedApiRelease: 'b'.repeat(40), key: 'pk_live_fixture', token: 'fixture',
+    releases: releaseRoot, state: activationState, pointer, sharedAssets, migrationState: state,
+    originIp: '127.0.0.1',
+    download: ({ destination }) => {
+      fs.cpSync(candidateSource, destination, { recursive: true });
+      return { ok: true, inventory: candidateInventory };
+    },
+    verifyAssets: ({ assets: manifest }) => verifyAssetServing({
+      sharedAssets, assets: manifest, siteConfig,
+      siteConfigSha256: sha256(fs.readFileSync(siteConfig)),
+      mapping: assertSiteSharedAssetsMapping(fs.readFileSync(siteConfig, 'utf8'), sharedAssets)
+    }),
+    smoke: async ({ releaseAsset }) => {
+      const expected = releaseAsset === '/assets/new.js' ? candidateIndex : originalIndex;
+      const response = await httpGet(port, '/');
+      return { ok: response.status === 200 && response.body.toString() === expected };
+    }
+  };
+  await assert.rejects(activateVerifiedProduction({ ...activation, smoke: async ({ releaseAsset }) =>
+    releaseAsset === '/assets/new.js' ? { ok: false } : activation.smoke({ releaseAsset })
+  }), /previous release restored/);
+  await assertPreservedRoutes();
+  await activateVerifiedProduction(activation);
+  await assertPreservedRoutes({ site: candidateIndex });
+  fs.writeFileSync(path.join(activationState, 'pending.json'), JSON.stringify({
+    version: 1, previous: migrated.documentRoot, candidate: path.join(releaseRoot, candidateSha), pointer
+  }));
+  await recoverVerifiedProduction(activation);
+  await assertPreservedRoutes();
+
   const rollback = recoverSiteVhostMigration({ stateRoot: state, run: runner.run, rollback: true });
   assert.equal(rollback.status, 'rolled-back');
-  await waitFor(async () => (await httpGet(port, '/')).body.toString() === 'original site', 'Rolled-back site');
+  await waitFor(async () => (await httpGet(port, '/')).body.toString() === originalIndex, 'Rolled-back site');
   await assertPreservedRoutes();
   assert.equal(fs.existsSync(path.join(pointer)), false);
   assert.equal(fs.readFileSync(path.join(sharedAssets, 'app.js'), 'utf8'), 'first migration asset bytes',
@@ -339,7 +383,7 @@ Include "${siteConfig}"
   assert.equal(recovered.status, 'recovered');
   assert.equal(fs.readFileSync(siteConfig, 'utf8'), originalSiteConfig);
   assert.equal(fs.existsSync(pointer), false);
-  await waitFor(async () => (await httpGet(port, '/')).body.toString() === 'original site', 'Interrupted migration recovery');
+  await waitFor(async () => (await httpGet(port, '/')).body.toString() === originalIndex, 'Interrupted migration recovery');
   await assertPreservedRoutes();
   assert.equal(fs.readFileSync(path.join(sharedAssets, 'app.js'), 'utf8'), 'first migration asset bytes');
 });

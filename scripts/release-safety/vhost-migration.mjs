@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { apacheSharedAssetsDirectives, publishSharedAssets, verifySharedAssets } from './shared-assets.mjs';
+import { createInventory } from './frontend-inventory.mjs';
 
 const JOURNAL = 'vhost-migration.json';
 const LOCK = 'vhost-migration.lock';
@@ -898,6 +899,31 @@ export function recoverSiteVhostMigration({ stateRoot, run = runCommand, rollbac
   } finally {
     unlock();
   }
+}
+
+// This is an observed snapshot, not an artifact built from a Git commit.
+export function verifyObservedMigrationRollback({ stateRoot, releases, pointer, previous, requireActivePointer = false }) {
+  validatePath(stateRoot, 'State directory');
+  requireRealDirectory(stateRoot, 'State directory');
+  if (fs.statSync(stateRoot).mode & 0o077) throw new Error('Migration state directory must remain private');
+  const unlock = lockState(stateRoot);
+  try {
+    const journal = JSON.parse(readRegularFile(path.join(stateRoot, JOURNAL), 'Migration journal').data.toString('utf8'));
+    validateJournal(stateRoot, journal);
+    if (journal.status !== 'active' || journal.releasesRoot !== fs.realpathSync(releases) ||
+        journal.pointer !== path.resolve(pointer) || journal.release !== previous ||
+        hashFile(journal.siteConfig) !== journal.migratedConfigHash) {
+      throw new Error('Observed rollback does not match the active migration');
+    }
+    if (requireActivePointer && (!fs.lstatSync(pointer).isSymbolicLink() || fs.realpathSync(pointer) !== previous)) {
+      throw new Error('Migration snapshot is not the active pointer');
+    }
+    const saved = JSON.parse(readRegularFile(path.join(stateRoot, 'backup', 'manifest.json'), 'Backup manifest').data.toString('utf8'));
+    const expected = saved.originalWebroot.map(entry => ({ ...entry, mode: entry.mode & ~0o222 }));
+    compareManifest(pathManifest(previous), expected, 'Observed migration rollback');
+    return { ok: true, provenance: 'observed-production', release: previous,
+      inventory: createInventory(previous, 'observed-production', 'observed-production') };
+  } finally { unlock(); }
 }
 
 export function planSiteVhostMigration(options) {

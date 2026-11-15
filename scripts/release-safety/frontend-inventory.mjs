@@ -24,8 +24,12 @@ function inventory(root) {
 }
 
 export function createInventory(root, commit, configuration) {
-  if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('A full lowercase commit SHA is required');
-  if (!['test', 'production'].includes(configuration)) throw new Error('Invalid build configuration');
+  if (configuration === 'observed-production') {
+    if (commit !== 'observed-production') throw new Error('Observed production cannot be labeled as a commit');
+  } else {
+    if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('A full lowercase commit SHA is required');
+    if (!['test', 'production'].includes(configuration)) throw new Error('Invalid build configuration');
+  }
   return { version: 1, commit, configuration, files: inventory(root) };
 }
 

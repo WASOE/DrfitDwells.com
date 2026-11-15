@@ -120,7 +120,7 @@ export async function stageRelease({ source, releases, state, inventory, verifyP
  * deletion/GC is allowed while any browser may still reference it.
  * This module does not install or validate the deployment's Apache config.
  */
-export async function activateRelease({ releases, pointer, state, candidate, inventory, previousInventory, sharedAssets, verifyAssetServing, preflight, smoke, rollbackSmoke }) {
+export async function activateRelease({ releases, pointer, state, candidate, inventory, previousInventory, sharedAssets, verifyAssetServing, preflight, smoke, rollbackSmoke, verifyObservedRollback }) {
   if (typeof preflight !== 'function' || typeof smoke !== 'function' || typeof rollbackSmoke !== 'function' ||
       typeof verifyAssetServing !== 'function' || typeof sharedAssets !== 'string') {
     throw new Error('Shared assets, asset serving verification, preflight, smoke and rollback smoke checks are required');
@@ -134,7 +134,13 @@ export async function activateRelease({ releases, pointer, state, candidate, inv
     const previous = readPointer(pointer, releases);
     if (previous === release) throw new Error('Release is already active');
     verifyInventory(previous, previousInventory);
-    if (previousInventory.configuration !== 'production') throw new Error('A production rollback artifact is required');
+    if (previousInventory.configuration !== 'production') {
+      if (previousInventory.configuration !== 'observed-production' ||
+          typeof verifyObservedRollback !== 'function' ||
+          (await verifyObservedRollback({ previous }))?.ok !== true) {
+        throw new Error('An independently verified production rollback is required');
+      }
+    }
     const shared = fs.realpathSync(sharedAssets);
     const overlaps = other => shared === other || shared.startsWith(`${other}${path.sep}`) ||
       other.startsWith(`${shared}${path.sep}`);
@@ -180,8 +186,9 @@ export async function activateRelease({ releases, pointer, state, candidate, inv
  * After an interrupted activation, acquire the same lock only after an operator
  * establishes that no publisher is running and removes a stale lock.
  */
-export async function recoverInterruptedActivation({ releases, pointer, state, previousInventory, rollbackSmoke }) {
-  if (typeof rollbackSmoke !== 'function' || previousInventory?.configuration !== 'production') {
+export async function recoverInterruptedActivation({ releases, pointer, state, previousInventory, rollbackSmoke, verifyObservedRollback }) {
+  if (typeof rollbackSmoke !== 'function' ||
+      !['production', 'observed-production'].includes(previousInventory?.configuration)) {
     throw new Error('Verified rollback inventory and smoke check are required');
   }
   const unlock = lock(state);
@@ -190,6 +197,10 @@ export async function recoverInterruptedActivation({ releases, pointer, state, p
     if (journal.version !== 1 || journal.pointer !== path.resolve(pointer)) throw new Error('Invalid activation journal');
     const previous = requireRelease(releases, journal.previous);
     const candidate = requireRelease(releases, journal.candidate);
+    if (previousInventory.configuration === 'observed-production' &&
+        (typeof verifyObservedRollback !== 'function' || (await verifyObservedRollback({ previous }))?.ok !== true)) {
+      throw new Error('Observed rollback verification failed');
+    }
     verifyInventory(previous, previousInventory);
     const current = readPointer(pointer, releases);
     if (current !== previous && current !== candidate) throw new Error('Recovery refused: pointer changed unexpectedly');
