@@ -60,6 +60,7 @@ test('publish only two route pages and additive hashed assets, then rollback', a
   assert.equal(rollback.status, 'rolled-back');
   assert.equal(fs.readFileSync(path.join(env.webroot, 'wishlist/index.html'), 'utf8'), '<html>previous EN</html>');
   assert.equal(fs.existsSync(path.join(env.webroot, 'bg/wishlist/index.html')), false);
+  assert.equal(fs.existsSync(path.join(env.webroot, 'bg/wishlist')), false, 'empty route folder removed so SPA fallback works');
   assert.equal(fs.existsSync(path.join(env.webroot, env.entry)), true, 'immutable assets remain to protect old tabs');
 }));
 test('failed origin smoke automatically restores original route files', async t => withSite(t, async env => {
