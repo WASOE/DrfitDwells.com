@@ -94,7 +94,9 @@ restart PM2 processes.
    before switching and through the certificate-validated production origin
    only after switching; any failure atomically restores the original root.
    The command also compares actual HTTP and HTTPS test-subdomain behavior with
-   the immediately preceding baseline.
+   the immediately preceding baseline. It probes the verified origin IP with
+   `test.driftdwells.com` as HTTP Host and TLS SNI, so an intentionally absent
+   public DNS record neither bypasses this check nor blocks it.
 
 6. Verify the journal phase is `complete`, `public_html` resolves through
    `frontend/current` to the exact commit, and the original nonempty tree is at

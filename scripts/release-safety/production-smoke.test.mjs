@@ -87,3 +87,18 @@ test('captures and enforces actual HTTP and HTTPS test-subdomain behavior', asyn
   await assert.rejects(verifyTestSubdomainBaseline(baseline, { fetchImpl: async url =>
     new Response('changed', { status: url.protocol === 'http:' ? 200 : 404, headers: { 'content-type': 'text/html' } }) }), /behavior changed/);
 });
+
+test('test-subdomain probe uses verified origin IP without DNS and retains TLS/HTTP semantics', async () => {
+  const calls = [];
+  const originRequest = async (protocol, originIp, timeoutMs) => {
+    calls.push({ protocol, originIp, timeoutMs });
+    return protocol === 'http:'
+      ? { status: 301, location: 'https://test.driftdwells.com/', contentType: null }
+      : { status: 404, location: null, contentType: 'text/html' };
+  };
+  const baseline = await observeTestSubdomain({ originIp: '192.0.2.10', originRequest });
+  assert.deepEqual(calls.map(call => call.protocol), ['http:', 'https:']);
+  assert.ok(calls.every(call => call.originIp === '192.0.2.10'));
+  assert.equal((await verifyTestSubdomainBaseline(baseline, { originIp: '192.0.2.10', originRequest })).ok, true);
+  await assert.rejects(observeTestSubdomain({ originIp: 'not-an-ip', originRequest }), /valid.*origin IP/);
+});

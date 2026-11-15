@@ -50,14 +50,14 @@ export async function deployAtomicProduction({ runId, commit, previousRunId, pre
     return activatePreparedRelease({ releases, state, pointer, candidate: target, inventory: candidate.inventory, sharedAssets, stableTest,
       preflight: async ({ previous: active }) => {
         if (active !== current || (await check(active))?.ok !== true) return { ok: false };
-        testBaseline = await observeTest();
+        testBaseline = await observeTest({ originIp });
         return { ok: true };
       }, smoke: async () => {
         if ((await verifyAssets({ sharedAssets, assets, originIp }))?.ok !== true || (await check(target))?.ok !== true) return { ok: false };
-        return verifyTest(testBaseline);
+        return verifyTest(testBaseline, { originIp });
       }, rollbackSmoke: async () => {
         if ((await check(current))?.ok !== true) return { ok: false };
-        return verifyTest(testBaseline);
+        return verifyTest(testBaseline, { originIp });
       } });
   } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
 }
