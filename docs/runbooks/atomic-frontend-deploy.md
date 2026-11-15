@@ -111,7 +111,7 @@ original tree: `public_html.atomic-exchange` before the backup move and
 process is alive:
 
 ```bash
-sudo --preserve-env=OPS_VERIFY_TOKEN \
+sudo --preserve-env=OPS_VERIFY_TOKEN,DRIFT_ORIGIN_IP \
   node scripts/release-safety/migrate-atomic-production.mjs recover ignored API_FULL_SHA
 ```
 
