@@ -170,6 +170,73 @@ actual generator in a separately authorized reversible test. Preserve the
 pointer and backups whenever state is uncertain. The 15 November test does not
 authorize frontend migration or activation.
 
+#### Evaluating a bounded DirectAdmin scheduler pause
+
+The [DirectAdmin configuration reference](https://docs.directadmin.com/directadmin/general-usage/all-directadmin-conf-values.html#dataskq-run-interval)
+states that `dataskq_run_interval=0` disables the main DirectAdmin service's
+periodic task queue processor. The
+[configuration guide](https://docs.directadmin.com/directadmin/general-usage/configuring-da.html)
+documents `da config-set NAME VALUE`, which reloads or restarts DirectAdmin by
+default; `--no-reload` requires a separate reload. This setting does **not**
+disable a separately started `dataskq`, direct `taskq --run`, an independent
+Apache reload, service restart, or a queued task already being processed.
+It is a server-wide scheduler change, not an `illoc`-scoped change: queued
+operations for every hosting customer will be delayed. Restoring periodic
+processing can then execute unrelated queued operations and trigger a shared
+Apache and PHP-FPM reload. Never drain, replace, filter or delete queue entries
+to create a maintenance window.
+
+Read-only inspection on 15 November 2026 showed DirectAdmin 1.714, effective
+`dataskq_run_interval` `1m0s`, and **no explicit setting** in
+`directadmin.conf` (the default applies). `config-set --help` documented
+`--no-reload`, but the installed CLI listed no `config-unset` command. Exact
+restoration therefore requires a verified method that restores both the
+setting's absence and its effective value without overwriting concurrent
+configuration changes. The Apache systemd `ExecReload` invokes `httpd -k
+graceful`; the DirectAdmin service reload sends `HUP`. DirectAdmin's cron file
+also schedules server-wide tally and reset tasks. The targeted inspection
+found no active `dataskq` process, no matching system timer, and no matching
+cron command that directly runs `dataskq` or reloads Apache; it is a
+point-in-time observation, not proof that other reload sources cannot run.
+
+**No scheduler-pause procedure is authorized or implemented by this PR.**
+The proposed use of `config-set dataskq_run_interval 0` must not be executed
+as a migration workaround. An independent, persistent crash/reboot recovery
+mechanism would first need to be installed and proven: if the deployment
+process dies after an invalid generated config is installed, merely restoring
+the interval could load invalid config, while merely leaving it disabled
+indefinitely blocks other customers' queued work. The recovery mechanism must
+restore the exact original per-domain source and regenerate only `illoc`,
+validate the actual full Apache configuration before allowing any reload,
+and restore the exact scheduler configuration without touching unrelated queue
+entries. It must handle interruption and reboot at every step, fail closed on
+conflicting edits, and be validated against installed DirectAdmin 1.714.
+Independently controlled or already-running reload sources must also be
+excluded for the entire mutation and recovery interval. An observer must
+verify the effective Apache generation, required site routes and both PHP-FPM
+services, not merely the queue or on-disk files.
+
+Before any separate authorization, an operator can refresh these read-only
+facts without changing the scheduler or queue:
+
+```bash
+sudo /usr/local/directadmin/directadmin version
+sudo /usr/local/directadmin/directadmin config-get dataskq_run_interval
+sudo /usr/local/directadmin/directadmin config-set --help
+sudo grep -nE '^[[:space:]]*dataskq_run_interval[[:space:]]*=' \
+  /usr/local/directadmin/conf/directadmin.conf || true
+systemctl show directadmin -p ExecReload -p Restart -p ActiveState
+systemctl show httpd -p ExecReload -p ActiveState
+systemctl list-timers --all --no-pager
+systemctl list-jobs --no-pager
+ps -eo pid,ppid,comm,args | grep -E '[d]ataskq|[d]irectadmin taskq'
+sudo stat /usr/local/directadmin/data/task.queue
+```
+
+An absent task queue file is normal. These commands do not establish exclusive
+control, and the last command can report absence; neither condition permits a
+scheduler pause or migration.
+
 This is a test of the installed generator, **not** frontend migration or
 activation. It adds only a unique Apache comment to the existing main-domain
 custom source. Do not start unless the operator has independently verified
