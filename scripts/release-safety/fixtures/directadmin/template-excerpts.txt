@@ -1,0 +1,34 @@
+# Relevant excerpts of installed DirectAdmin 1.714 templates, not a generator.
+# virtual_host2.conf
+<VirtualHost |IP|:|PORT_80| |MULTI_IP|>
+|CUSTOM|
+|?CGI=ScriptAlias /cgi-bin/ "`DOCROOT`/cgi-bin/"|
+	ServerName www.|HOST_DOMAIN|
+	ServerAlias www.|HOST_DOMAIN| |HOST_DOMAIN|
+	DocumentRoot "|DOCROOT|"
+	<Directory "|DOCROOT|">
+
+# virtual_host2_secure.conf
+|?CGI=ScriptAlias /cgi-bin/ `HOME`/domains/`DOMAIN`/public_html/cgi-bin/|
+<VirtualHost |IP|:|PORT_443| |MULTI_IP|>
+|CUSTOM|
+	ServerName www.|HOST_DOMAIN|
+	ServerAlias www.|HOST_DOMAIN| |HOST_DOMAIN|
+	DocumentRoot "|DOCROOT|"
+	<Directory "|DOCROOT|">
+
+# virtual_host2_sub.conf
+<VirtualHost |IP|:|PORT_80| |MULTI_IP|>
+|CUSTOM|
+|?CGI=ScriptAlias /cgi-bin/ "`DOCROOT`/cgi-bin/"|
+	ServerName |SUB|.|HOST_DOMAIN|
+	DocumentRoot "|DOCROOT|"
+	<Directory "|DOCROOT|">
+
+# virtual_host2_secure_sub.conf
+<VirtualHost |IP|:|PORT_443| |MULTI_IP|>
+|CUSTOM|
+|?CGI=ScriptAlias /cgi-bin/ "`DOCROOT`/cgi-bin/"|
+	ServerName |SUB|.|HOST_DOMAIN|
+	DocumentRoot "|DOCROOT|"
+	<Directory "|DOCROOT|">

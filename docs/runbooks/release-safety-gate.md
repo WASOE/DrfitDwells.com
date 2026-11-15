@@ -71,19 +71,232 @@ The host runs Apache 2.4.66 on AlmaLinux 9.7 with `SymLinksIfOwnerMatch`;
 Apache's user can traverse `/home/illoc`. A real transition must establish
 matching symlink and target owners and recheck all permissions and labels.
 
-The development branch contains `production-artifact.yml`, which builds a
-production-key artifact only after an exact `master` SHA dispatch, and
-`stage-production.mjs`, which verifies the artifact and the matching GitHub
-release-safety evidence before staging. The workflow is not usable until it is
-present on `master`, its production public Stripe key variable is configured,
-and an exact-SHA workflow run has succeeded. The historical rollback workflow
-is pinned to source `9baa749f76afd88f1fe3122414ce9c8ef8217f45`; it is not
-a verified production artifact until its trusted master run succeeds and its
-artifact and evidence have been independently verified. Do not use the
-staging or activation commands as a production procedure until that
-independent rollback and deployment prerequisites are resolved.
+`production-artifact.yml` builds a production-key artifact after an exact
+`master` SHA dispatch; `stage-production.mjs` verifies the artifact and matching
+GitHub release-safety evidence before staging. Reverify the artifact and its
+evidence before use. The historical rollback workflow is pinned to source
+`9baa749f76afd88f1fe3122414ce9c8ef8217f45`; its source build is not a
+recovery of missing historical production bytes.
 
 ### First migration and activation (not yet authorized)
+
+**DirectAdmin verification gate:** The behavior-preserving generator test
+below has been completed, but it does not validate migration or rollback.
+Do not execute either against production until the remaining execution gate
+described below is resolved and tested under separate authorization. Tests
+using a fixture renderer do not establish how the installed generator expands
+tokens or when Apache loads its output. Record the original persistent custom
+configuration and generated account configuration, including checksums,
+ownership, mode and ACLs; verify restoration from those backups before the test.
+Compare the generated main HTTP/HTTPS and test-subdomain vhosts, including
+forwarded headers and CGI, `/api`, `/uploads` and `/legal`. Verify HTTP behavior
+for those routes and representative unrelated sites before and after each
+account-scoped regeneration; test Apache syntax before any manual reload.
+Never write the generated account `httpd.conf` directly, rewrite all users,
+or replace or drain the shared DirectAdmin task queue. Determine whether the
+installed `taskq --run` performs or schedules an Apache reload before the
+authorized test; do not assume syntax can be checked first if it reloads.
+On a failure, restore
+the original persistent source, regenerate only `illoc`, verify the original
+effective configuration and HTTP behavior, and stop.
+
+The commands below are a proposed sequence, not executable production
+authorization: this revision deliberately disables `apply`, `recover`, and
+`rollback` with the real command runner. The observed queued reload behavior
+must be accommodated and verified before these commands can be used.
+
+For the future generator gate, record these read-only facts on the host before
+making any changes:
+
+```bash
+DOMAIN_CONFIG=/usr/local/directadmin/data/users/illoc/domains/driftdwells.com.cust_httpd
+SSL_CONFIG=/usr/local/directadmin/data/users/illoc/domains/driftdwells.com.cust_httpd_ssl
+GENERATED=/usr/local/directadmin/data/users/illoc/httpd.conf
+sudo sha256sum "$DOMAIN_CONFIG" "$SSL_CONFIG" "$GENERATED"
+sudo stat -c '%n %U:%G %a' "$DOMAIN_CONFIG" "$SSL_CONFIG" "$GENERATED"
+sudo getfacl -p "$DOMAIN_CONFIG" "$SSL_CONFIG" "$GENERATED"
+sudo /usr/sbin/httpd -t
+sudo /usr/local/directadmin/directadmin taskq --help
+```
+
+In the observed configuration the HTTPS vhosts use the HTTP custom source and
+its `http`/`80` forwarded headers. The separate SSL custom file differs; do not
+silently replace those effective headers when testing regeneration. Preserve
+both source files and the generated file as independent, metadata-preserving
+backups and verify their hashes. The `taskq --run` scope and reload behavior,
+the exact generated vhost changes, and complete restoration must be verified
+before the first real migration.
+
+#### Reversible DirectAdmin generator test (separate authorization required)
+
+**Observed on 15 November 2026:** On DirectAdmin 1.714, two account-scoped
+comment rewrites and one restore rewrite preserved the source and regenerated
+account configuration. Each invocation appended
+`action=httpd&value=reload` to the shared task queue. The scheduler later
+coalesced these entries and reloaded Apache and PHP-FPM 8.1 and 8.3. Syntax,
+the original source/generated hashes, 37 other account configuration hashes,
+and the recorded origin HTTP responses matched after restoration and the
+queued reload. The observed test-site HTTPS `/` returned 404 and `/legal/`
+returned 403 both before and after the test; these were not treated as healthy
+routes.
+
+**Execution remains disabled.** The transition code now requires separate
+pre-load validation and effective-reload verification callbacks, journals
+reload-pending and restoration phases, and retains the release pointer even
+after a verified rollback. A failed or timed-out verification records
+`recovery-required` and leaves recovery assets intact. Fixture callbacks are
+simulations, not a production implementation or evidence that Apache reloaded.
+The CLI deliberately provides no way to satisfy these callbacks or bypass the
+gate. The retained pointer is not garbage-collectable merely because the
+generated file has changed: old Apache workers may still use it. If that
+pointer is missing after configuration installation may have begun, recovery
+stops without changing or regenerating configuration and records
+`recovery-required`; an operator must investigate the effective Apache state.
+
+The outstanding blocker is pre-load validation of the **actual** DirectAdmin
+generated configuration. `taskq --run` writes the live generated file and
+queues a shared-service reload, so a syntax test after that command cannot
+guarantee the file was validated before Apache loaded it. No supported,
+account-isolated staging or reload sequencing mechanism has been verified.
+Before enabling execution, implement and demonstrate such a mechanism without
+altering unrelated queue entries or other accounts. Also implement a real
+bounded reload observer that distinguishes the active and restored Apache
+configurations (including graceful old workers) and verifies HTTP and HTTPS
+for apex/www and test, assets, `/api`, `/uploads`, `/legal`, representative
+unrelated sites, and PHP-FPM 8.1 and 8.3 health. A queue entry, generated-file
+hash, successful syntax test, or elapsed time alone is not proof of an
+effective reload. Verify interruption and rollback at every transition on the
+actual generator in a separately authorized reversible test. Preserve the
+pointer and backups whenever state is uncertain. The 15 November test does not
+authorize frontend migration or activation.
+
+#### Evaluating a bounded DirectAdmin scheduler pause
+
+The [DirectAdmin configuration reference](https://docs.directadmin.com/directadmin/general-usage/all-directadmin-conf-values.html#dataskq-run-interval)
+states that `dataskq_run_interval=0` disables the main DirectAdmin service's
+periodic task queue processor. The
+[configuration guide](https://docs.directadmin.com/directadmin/general-usage/configuring-da.html)
+documents `da config-set NAME VALUE`, which reloads or restarts DirectAdmin by
+default; `--no-reload` requires a separate reload. This setting does **not**
+disable a separately started `dataskq`, direct `taskq --run`, an independent
+Apache reload, service restart, or a queued task already being processed.
+It is a server-wide scheduler change, not an `illoc`-scoped change: queued
+operations for every hosting customer will be delayed. Restoring periodic
+processing can then execute unrelated queued operations and trigger a shared
+Apache and PHP-FPM reload. Never drain, replace, filter or delete queue entries
+to create a maintenance window.
+
+Read-only inspection on 15 November 2026 showed DirectAdmin 1.714, effective
+`dataskq_run_interval` `1m0s`, and **no explicit setting** in
+`directadmin.conf` (the default applies). `config-set --help` documented
+`--no-reload`, but the installed CLI listed no `config-unset` command. Exact
+restoration therefore requires a verified method that restores both the
+setting's absence and its effective value without overwriting concurrent
+configuration changes. The Apache systemd `ExecReload` invokes `httpd -k
+graceful`; the DirectAdmin service reload sends `HUP`. DirectAdmin's cron file
+also schedules server-wide tally and reset tasks. The targeted inspection
+found no active `dataskq` process, no matching system timer, and no matching
+cron command that directly runs `dataskq` or reloads Apache; it is a
+point-in-time observation, not proof that other reload sources cannot run.
+
+**No scheduler-pause procedure is authorized or implemented by this PR.**
+The proposed use of `config-set dataskq_run_interval 0` must not be executed
+as a migration workaround. An independent, persistent crash/reboot recovery
+mechanism would first need to be installed and proven: if the deployment
+process dies after an invalid generated config is installed, merely restoring
+the interval could load invalid config, while merely leaving it disabled
+indefinitely blocks other customers' queued work. The recovery mechanism must
+restore the exact original per-domain source and regenerate only `illoc`,
+validate the actual full Apache configuration before allowing any reload,
+and restore the exact scheduler configuration without touching unrelated queue
+entries. It must handle interruption and reboot at every step, fail closed on
+conflicting edits, and be validated against installed DirectAdmin 1.714.
+Independently controlled or already-running reload sources must also be
+excluded for the entire mutation and recovery interval. An observer must
+verify the effective Apache generation, required site routes and both PHP-FPM
+services, not merely the queue or on-disk files.
+
+Before any separate authorization, an operator can refresh these read-only
+facts without changing the scheduler or queue:
+
+```bash
+sudo /usr/local/directadmin/directadmin version
+sudo /usr/local/directadmin/directadmin config-get dataskq_run_interval
+sudo /usr/local/directadmin/directadmin config-set --help
+sudo grep -nE '^[[:space:]]*dataskq_run_interval[[:space:]]*=' \
+  /usr/local/directadmin/conf/directadmin.conf || true
+systemctl show directadmin -p ExecReload -p Restart -p ActiveState
+systemctl show httpd -p ExecReload -p ActiveState
+systemctl list-timers --all --no-pager
+systemctl list-jobs --no-pager
+ps -eo pid,ppid,comm,args | grep -E '[d]ataskq|[d]irectadmin taskq'
+sudo stat /usr/local/directadmin/data/task.queue
+```
+
+An absent task queue file is normal. These commands do not establish exclusive
+control, and the last command can report absence; neither condition permits a
+scheduler pause or migration.
+
+This is a test of the installed generator, **not** frontend migration or
+activation. It adds only a unique Apache comment to the existing main-domain
+custom source. Do not start unless the operator has independently verified
+that `taskq --run` processes only the requested task without consuming the
+shared queue, and whether it reloads Apache. If that cannot be established
+without risk to other accounts, stop; do not use the shared task queue as a
+workaround. Confirm the test window, that no other process can edit these
+files or regenerate `illoc`, and that a privileged operator can restore them.
+
+1. Capture the effective HTTP and HTTPS vhosts for apex/www and test, Apache
+   syntax, current task-queue state, checksums of other users' generated vhost
+   files, and HTTP results for the main and test sites, `/api`, `/uploads`,
+   `/legal`, and representative other customers' sites. Record existing
+   non-200 responses as baselines, not as passing assertions. Confirm ownership,
+   modes, ACLs, filesystem traversal permissions and SELinux state for the
+   configuration and release paths.
+2. In a new root-owned directory outside the webroot, save independent copies
+   of both custom files and generated `httpd.conf` using `cp -a --preserve=all`.
+   Save and independently verify SHA-256, owner, group, mode and `getfacl -p`
+   for originals and backups. Test the restore procedure on copies; never
+   restore generated `httpd.conf` by writing it directly. Keep the originals
+   and backups available throughout the test.
+3. Recheck source hashes and metadata against the baseline. Add a unique
+   comment line to **only** `driftdwells.com.cust_httpd`, using a same-directory
+   metadata-preserving temporary copy and atomic rename. Do not change
+   `.cust_httpd_ssl`, headers, DOCROOT, aliases or any other directive.
+   Record the modified source hash. Do not overwrite another operator's edit.
+4. Execute the following single task directly, not through the shared queue:
+
+   ```bash
+   sudo /usr/local/directadmin/directadmin taskq \
+     '--run=action=rewrite&value=httpd&user=illoc'
+   ```
+
+   Check its result, queue state, `sudo /usr/sbin/httpd -t`, source hash,
+   metadata and generated comment. Compare all non-comment directives and
+   other users' vhost hashes with the baseline. Verify the recorded HTTP
+   results, including HTTPS, API, uploads, legal and test-site routing. Repeat
+   the same account-scoped task once and repeat all comparisons to prove
+   persistence. A simulated renderer is not evidence for this step.
+5. Restore the original custom source from its verified backup through a
+   same-directory metadata-preserving temporary copy and atomic rename, after
+   confirming the current source hash is the recorded test hash. Run the same
+   account-scoped task once more. Verify both custom files, generated config,
+   metadata and ACLs against the baseline; rerun syntax, queue, unrelated-vhost
+   and HTTP checks. If any check fails, restore the original persistent source
+   and regenerate only `illoc`, verify recovery, and stop. If source ownership
+   or hashes changed unexpectedly, stop rather than overwrite those changes.
+   Do not directly overwrite the generated config or reload Apache manually
+   before a successful syntax check.
+
+Record command output, source and backup hashes, test marker, before/after
+comparisons, observed reload behavior and any recovery evidence in the
+change record. Successful completion is a prerequisite for reviewing and
+enabling this implementation, not authorization for the migration itself.
+
+The production API cutover's PM2 save was deferred. Until separately
+authorized and verified, a host reboot or PM2 resurrection may start the older
+saved API release, which does not provide wishlist endpoints. Do not start the
+corporate gift worker or run `pm2 save` as part of this verification gate.
 
 Do not run these commands until the PR is approved and merged, the artifact
 workflow and its exact production candidate have passed, the actual hosting
@@ -100,37 +313,38 @@ the current API release, booking/payment capabilities and wishlist API before
 activating a wishlist build. Confirm the effective persistent Apache config,
 matching owner of symlink and release for `SymLinksIfOwnerMatch`, Apache
 traverse/read permissions, ACLs and SELinux labels for every new path, and
-exclusive publisher control of the shared-asset store. Confirm a tested
-site-scoped reload command; Apache is shared. Quiesce webroot writers throughout
+exclusive publisher control of the shared-asset store. Verify DirectAdmin's
+account-scoped rewrite and reload effects; Apache is shared. Quiesce webroot writers throughout
 the first snapshot. An independently stored copy of the sealed backup and
 manifest must be verified before activation.
 
 After creating and securing the release, state and shared-asset directories
 without changing the live document root, set these values to the verified host
-paths. The executable and reload arguments are examples and **must** match
-the verified host:
+paths. The executable paths are examples and **must** match the verified host:
 
 ```bash
 BASE=/home/illoc/releases/frontend
 WEBROOT=/home/illoc/domains/driftdwells.com/public_html
 SITE_CONFIG=/usr/local/directadmin/data/users/illoc/httpd.conf
+CUSTOM_CONFIG=/usr/local/directadmin/data/users/illoc/domains/driftdwells.com.cust_httpd
 APACHE_CONFIG=/etc/httpd/conf/httpd.conf
 ASSET_MANIFEST="$BASE/observed-assets.json"
 
 node --input-type=module -e 'import fs from "node:fs"; import { createInventory } from "./scripts/release-safety/frontend-inventory.mjs"; const [root,out]=process.argv.slice(1); const files=createInventory(root,"observed-production","observed-production").files.filter(x=>x.path.startsWith("assets/")); fs.writeFileSync(out,JSON.stringify(files),{flag:"wx",mode:0o600});' "$WEBROOT" "$ASSET_MANIFEST"
 
 node scripts/release-safety/vhost-migration-cli.mjs plan \
-  --site-config "$SITE_CONFIG" --apache-config "$APACHE_CONFIG" --document-root "$WEBROOT" \
+  --site-config "$SITE_CONFIG" --custom-config "$CUSTOM_CONFIG" --directadmin-user illoc \
+  --apache-config "$APACHE_CONFIG" --document-root "$WEBROOT" \
   --shared-assets "$BASE/assets" --assets-manifest "$ASSET_MANIFEST" \
   --release-root "$BASE/releases" --pointer "$BASE/current" --state-dir "$BASE/migration-state"
 
 node scripts/release-safety/vhost-migration-cli.mjs apply --apply \
-  --confirm-webroot-quiesced --confirm-config-persistence --confirm-shared-assets-policy \
-  --site-config "$SITE_CONFIG" --apache-config "$APACHE_CONFIG" --document-root "$WEBROOT" \
+  --confirm-webroot-quiesced --confirm-account-scoped-regeneration --confirm-shared-assets-policy \
+  --site-config "$SITE_CONFIG" --custom-config "$CUSTOM_CONFIG" --directadmin-user illoc \
+  --apache-config "$APACHE_CONFIG" --document-root "$WEBROOT" \
   --shared-assets "$BASE/assets" --assets-manifest "$ASSET_MANIFEST" \
   --release-root "$BASE/releases" --pointer "$BASE/current" --state-dir "$BASE/migration-state" \
-  --httpd /usr/sbin/httpd --copy-command /usr/bin/cp \
-  --reload-command /usr/sbin/httpd --reload-arg -k --reload-arg graceful \
+  --httpd /usr/sbin/httpd --directadmin /usr/local/directadmin/directadmin --copy-command /usr/bin/cp \
   --probe-url https://driftdwells.com/search --probe-url https://driftdwells.com/checkout
 ```
 
