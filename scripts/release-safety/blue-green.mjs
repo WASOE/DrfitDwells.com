@@ -3,9 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { verifyInventory } from './frontend-inventory.mjs';
-
-// Isolated prototype only: production provenance, vhost migration and host
-// smoke checks are not yet wired to this module.
+import { publishSharedAssets, verifySharedAssets } from './shared-assets.mjs';
 
 function syncDirectory(dir) {
   const fd = fs.openSync(dir, 'r');
@@ -66,15 +64,6 @@ function removeJournal(state) {
   syncDirectory(state);
 }
 
-function retainPreviousAssets(previousInventory, nextInventory) {
-  const next = new Map(nextInventory.files.map(file => [file.path, file.sha256]));
-  for (const file of previousInventory.files) {
-    if (file.path.startsWith('assets/') && next.get(file.path) !== file.sha256) {
-      throw new Error(`Previous asset missing or changed: ${file.path}`);
-    }
-  }
-}
-
 /**
  * Copy to an unpublished directory first. The caller must validate artifact
  * provenance independently; an inventory alone is not an authenticity proof.
@@ -120,11 +109,21 @@ export async function stageRelease({ source, releases, state, inventory, verifyP
 
 /**
  * The caller must supply deployment-specific, independently verified preflight
- * and live smoke checks. This module does not configure Apache.
+ * and live smoke checks. Apache must map /assets/ to a dedicated, append-only
+ * sharedAssets directory (see apacheSharedAssetsDirectives). Before changing
+ * the pointer, verifyAssetServing must fetch EVERY supplied asset through the
+ * real site, check status, size and SHA-256 without redirects or caches, and
+ * independently verify the actual vhost mapping even when bytes happen to
+ * match the current release. Return {ok:true} only if all checks pass. The
+ * store and its ancestors
+ * must be protected from all writers except this locked publisher; no asset
+ * deletion/GC is allowed while any browser may still reference it.
+ * This module does not install or validate the deployment's Apache config.
  */
-export async function activateRelease({ releases, pointer, state, candidate, inventory, previousInventory, preflight, smoke, rollbackSmoke }) {
-  if (typeof preflight !== 'function' || typeof smoke !== 'function' || typeof rollbackSmoke !== 'function') {
-    throw new Error('Preflight, smoke and rollback smoke checks are required');
+export async function activateRelease({ releases, pointer, state, candidate, inventory, previousInventory, sharedAssets, verifyAssetServing, preflight, smoke, rollbackSmoke }) {
+  if (typeof preflight !== 'function' || typeof smoke !== 'function' || typeof rollbackSmoke !== 'function' ||
+      typeof verifyAssetServing !== 'function' || typeof sharedAssets !== 'string') {
+    throw new Error('Shared assets, asset serving verification, preflight, smoke and rollback smoke checks are required');
   }
   const release = requireRelease(releases, candidate);
   verifyInventory(release, inventory);
@@ -136,9 +135,23 @@ export async function activateRelease({ releases, pointer, state, candidate, inv
     if (previous === release) throw new Error('Release is already active');
     verifyInventory(previous, previousInventory);
     if (previousInventory.configuration !== 'production') throw new Error('A production rollback artifact is required');
-    retainPreviousAssets(previousInventory, inventory);
+    const shared = fs.realpathSync(sharedAssets);
+    const overlaps = other => shared === other || shared.startsWith(`${other}${path.sep}`) ||
+      other.startsWith(`${shared}${path.sep}`);
+    if (shared !== path.resolve(sharedAssets) || overlaps(fs.realpathSync(releases)) ||
+        overlaps(fs.realpathSync(state)) || overlaps(path.resolve(pointer))) {
+      throw new Error('Shared assets must be a real, separate directory');
+    }
+    const assets = publishSharedAssets(shared, [
+      { root: previous, inventory: previousInventory },
+      { root: release, inventory }
+    ]);
     const ready = await preflight({ candidate: release, previous });
     if (ready?.ok !== true) throw new Error('Preflight did not pass');
+    if ((await verifyAssetServing({ sharedAssets: shared, assets }))?.ok !== true) {
+      throw new Error('Shared asset serving verification did not pass');
+    }
+    verifySharedAssets(shared, assets);
     verifyInventory(release, inventory);
     verifyInventory(previous, previousInventory);
     if (readPointer(pointer, releases) !== previous) throw new Error('Active pointer changed during preflight');
@@ -167,16 +180,23 @@ export async function activateRelease({ releases, pointer, state, candidate, inv
  * After an interrupted activation, acquire the same lock only after an operator
  * establishes that no publisher is running and removes a stale lock.
  */
-export function recoverInterruptedActivation({ releases, pointer, state }) {
+export async function recoverInterruptedActivation({ releases, pointer, state, previousInventory, rollbackSmoke }) {
+  if (typeof rollbackSmoke !== 'function' || previousInventory?.configuration !== 'production') {
+    throw new Error('Verified rollback inventory and smoke check are required');
+  }
   const unlock = lock(state);
   try {
     const journal = JSON.parse(fs.readFileSync(journalPath(state), 'utf8'));
     if (journal.version !== 1 || journal.pointer !== path.resolve(pointer)) throw new Error('Invalid activation journal');
     const previous = requireRelease(releases, journal.previous);
     const candidate = requireRelease(releases, journal.candidate);
+    verifyInventory(previous, previousInventory);
     const current = readPointer(pointer, releases);
     if (current !== previous && current !== candidate) throw new Error('Recovery refused: pointer changed unexpectedly');
     if (current !== previous) switchPointer(pointer, previous);
+    if ((await rollbackSmoke({ previous, candidate }))?.ok !== true || readPointer(pointer, releases) !== previous) {
+      throw new Error('Recovery smoke failed; journal retained');
+    }
     removeJournal(state);
     return { active: previous };
   } finally { unlock(); }

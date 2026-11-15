@@ -4,9 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createInventory } from './frontend-inventory.mjs';
 import { activateRelease } from './blue-green.mjs';
+import { apacheSharedAssetsDirectives } from './shared-assets.mjs';
 
 test('AlmaLinux httpd serves an isolated switch, proxied uploads and independent test vhost', {
   skip: process.env.RUN_ALMA_HTTPD_TEST !== '1' ? 'set RUN_ALMA_HTTPD_TEST=1 with the local test image' : false
@@ -22,13 +24,17 @@ test('AlmaLinux httpd serves an isolated switch, proxied uploads and independent
   const releases = path.join(root, 'releases');
   const state = path.join(root, 'state');
   const pointer = path.join(root, 'current');
+  const sharedAssets = path.join(root, 'assets');
   fs.mkdirSync(releases);
   fs.mkdirSync(state);
+  fs.mkdirSync(sharedAssets);
   for (const name of ['old', 'new']) {
     const dir = path.join(releases, name);
     fs.mkdirSync(path.join(dir, 'bg', 'wishlist'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'index.html'), name);
     fs.writeFileSync(path.join(dir, 'bg', 'wishlist', 'index.html'), `${name}-nested`);
+    fs.mkdirSync(path.join(dir, 'assets'));
+    fs.writeFileSync(path.join(dir, 'assets', `${name}.js`), `${name}-asset`);
     fs.copyFileSync(new URL('../../client/public/.htaccess', import.meta.url), path.join(dir, '.htaccess'));
   }
   const previous = path.join(releases, 'old');
@@ -36,6 +42,8 @@ test('AlmaLinux httpd serves an isolated switch, proxied uploads and independent
   fs.symlinkSync('releases/old', pointer);
   fs.mkdirSync(path.join(root, 'original', 'test'), { recursive: true });
   fs.writeFileSync(path.join(root, 'original', 'test', 'index.html'), 'test-site');
+  fs.mkdirSync(path.join(root, 'original', 'legal'));
+  fs.writeFileSync(path.join(root, 'original', 'legal', 'index.html'), 'legal');
   fs.mkdirSync(path.join(root, 'backend', 'uploads'), { recursive: true });
   fs.writeFileSync(path.join(root, 'backend', 'uploads', 'sample.txt'), 'upload');
   fs.writeFileSync(path.join(root, 'httpd.conf'), `
@@ -59,6 +67,8 @@ DirectoryIndex index.html
   ServerName driftdwells.com
   ServerAlias www.driftdwells.com
   DocumentRoot "${root}/current"
+  Alias /legal/ "${root}/original/legal/"
+  ${apacheSharedAssetsDirectives(sharedAssets)}
   ProxyPass /uploads http://127.0.0.1:8081/uploads
   ProxyPassReverse /uploads http://127.0.0.1:8081/uploads
   ProxyPass /api http://127.0.0.1:8081/api
@@ -105,15 +115,29 @@ DirectoryIndex index.html
   assert.equal((await get('/bg/wishlist/')).text, 'old-nested');
   assert.equal((await get('/uploads/sample.txt')).text, 'upload');
   assert.equal((await get('/', 'test.driftdwells.com')).text, 'test-site');
-  const args = { releases, pointer, state, candidate,
+  const args = { releases, pointer, state, candidate, sharedAssets,
     inventory: createInventory(candidate, 'a'.repeat(40), 'production'),
     previousInventory: createInventory(previous, 'b'.repeat(40), 'production'),
+    verifyAssetServing: async ({ assets }) => {
+      for (const asset of assets) {
+        const response = await get(`/${asset.path}`);
+        assert.equal(response.status, 200);
+        assert.equal(Buffer.byteLength(response.text), asset.size);
+        assert.equal(crypto.createHash('sha256').update(response.text).digest('hex'), asset.sha256);
+      }
+      return { ok: true };
+    },
     preflight: async () => ({ ok: true }), rollbackSmoke: async () => ({ ok: true }) };
   await assert.rejects(activateRelease({ ...args, smoke: async () => {
     assert.equal((await get('/bg/wishlist/')).text, 'new-nested');
     assert.equal((await get('/uploads/sample.txt')).text, 'upload');
+    assert.equal((await get('/legal/')).text, 'legal');
+    assert.equal((await get('/assets/old.js')).text, 'old-asset');
+    assert.equal((await get('/assets/new.js')).text, 'new-asset');
     assert.equal((await get('/', 'test.driftdwells.com')).text, 'test-site');
     return { ok: false };
   } }), /previous release restored/);
   assert.equal((await get('/bg/wishlist/')).text, 'old-nested');
+  assert.equal((await get('/assets/new.js')).text, 'new-asset');
+  assert.equal((await get('/legal/')).text, 'legal');
 });

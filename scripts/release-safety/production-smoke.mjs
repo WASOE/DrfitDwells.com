@@ -13,6 +13,13 @@ export function scriptFromRelease(dist) {
   return asset;
 }
 
+export function hasWishlist(dist) {
+  const en = fs.existsSync(path.join(dist, 'wishlist/index.html'));
+  const bg = fs.existsSync(path.join(dist, 'bg/wishlist/index.html'));
+  if (en !== bg) throw new Error('Release contains only one localized wishlist page');
+  return en;
+}
+
 async function get(base, route, { fetchImpl, token, timeoutMs }) {
   let url = new URL(route, base);
   for (let redirects = 0; redirects < 4; redirects++) {
@@ -28,6 +35,9 @@ async function get(base, route, { fetchImpl, token, timeoutMs }) {
       const location = response.headers.get('location');
       if (!location) throw new Error(`Missing redirect location for ${route}`);
       url = new URL(location, url);
+      if (token && url.pathname.replace(/\/$/, '') !== new URL(route, base).pathname.replace(/\/$/, '')) {
+        throw new Error(`Unsafe authenticated redirect for ${route}`);
+      }
       continue;
     }
     if (!response.ok || url.pathname.replace(/\/$/, '') !== new URL(route, base).pathname.replace(/\/$/, '')) {
@@ -42,7 +52,7 @@ async function get(base, route, { fetchImpl, token, timeoutMs }) {
  * Read-only production checks. No bookings, payment intents or lead records
  * are created. A successful response proves capabilities, not a payment.
  */
-export async function smokeProduction({ origin = 'https://driftdwells.com', token, releaseAsset, fetchImpl = fetch, timeoutMs = 10000 } = {}) {
+export async function smokeProduction({ origin = 'https://driftdwells.com', token, releaseAsset, wishlist = true, expectedApiRelease, fetchImpl = fetch, timeoutMs = 10000 } = {}) {
   const base = new URL(origin);
   if (base.protocol !== 'https:' || !SITE_HOSTS.has(base.hostname) || base.port || base.username ||
       base.password || base.pathname !== '/' || base.search || base.hash) {
@@ -50,8 +60,11 @@ export async function smokeProduction({ origin = 'https://driftdwells.com', toke
   }
   if (typeof token !== 'string' || !token.trim()) throw new Error('An existing authorized Ops token is required');
   if (!/^\/assets\/[A-Za-z0-9._-]+\.js$/.test(releaseAsset || '')) throw new Error('A release-specific script path is required');
+  if (expectedApiRelease && !/^[a-f0-9]{40}$/.test(expectedApiRelease)) throw new Error('Expected API release must be a full lowercase SHA');
   const options = { fetchImpl, timeoutMs };
-  for (const route of ['/', '/search', '/checkout', '/ops', '/wishlist', '/bg/wishlist']) {
+  const routes = ['/', '/search', '/checkout', '/ops'];
+  if (wishlist) routes.push('/wishlist', '/bg/wishlist');
+  for (const route of routes) {
     const response = await get(base, route, options);
     if (!String(response.headers.get('content-type')).includes('text/html')) throw new Error(`Not HTML: ${route}`);
     const html = await response.text();
@@ -60,7 +73,8 @@ export async function smokeProduction({ origin = 'https://driftdwells.com', toke
     if (route.endsWith('/wishlist') && !html.includes('wishlist-hero')) throw new Error(`Wishlist prerender missing: ${route}`);
   }
   const checks = [
-    ['/api/health', x => x.status === 'OK' && x.database === 'connected'],
+    ['/api/health', x => x.status === 'OK' && x.database === 'connected' &&
+      (!expectedApiRelease || x.applicationRelease === expectedApiRelease)],
     ['/api/bookings/config', x => x.success === true],
     ['/api/bookings/checkout-capabilities', x => x.success === true && x.contractVersion === 2 &&
       x.paymentContractVersion === 'checkout-payment-v2-finalize-1' && x.checkoutSessionV2 === true &&
@@ -68,6 +82,8 @@ export async function smokeProduction({ origin = 'https://driftdwells.com', toke
     ['/api/ops/session', x => x.success === true && x.data?.authenticated === true],
     ['/api/ops/readiness/summary', x => x.success === true && Boolean(x.data?.readinessByModule)]
   ];
+  if (wishlist) checks.push(['/api/ops/corporate-gift-leads', x =>
+    x.success === true && Array.isArray(x.data?.items) && Number.isSafeInteger(x.data?.total)]);
   for (const [route, valid] of checks) {
     const response = await get(base, route, { ...options, token: route.startsWith('/api/ops/') ? token : undefined });
     if (!valid(await response.json())) throw new Error(`Smoke response invalid: ${route}`);
@@ -79,7 +95,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     if (process.argv.length !== 3) throw new Error('Usage: production-smoke.mjs <verified-release-directory>');
     const releaseAsset = scriptFromRelease(process.argv[2]);
-    console.log(JSON.stringify(await smokeProduction({ token: process.env.OPS_VERIFY_TOKEN, releaseAsset })));
+    console.log(JSON.stringify(await smokeProduction({ token: process.env.OPS_VERIFY_TOKEN, releaseAsset, wishlist: hasWishlist(process.argv[2]) })));
   } catch (error) {
     console.error(`[production-smoke] ${error.message}`);
     process.exitCode = 1;
