@@ -19,8 +19,9 @@ migration. The server's existing DocumentRoot remains public_html.
   them to the root app shell; confirm this again on the real host.
 - Preserve the verified original live site. Existing wishlist route files,
   if any, are copied with full metadata to a private rollback journal.
-- Only NEW hashed assets in /assets are allowed. Existing asset names
-  must have identical bytes. Unexpected unversioned assets are refused.
+- Only NEW hashed assets in /assets and two explicitly allowlisted wishlist
+  photos under /media/home can be introduced. Existing paths must have
+  identical bytes, never overwritten. All other unversioned assets are refused.
 - New bundle entry can coexist with old root entry only after a browser
   check, including an already-installed service worker.
 - Do not publish if the new pages require absent non-/assets static files.
