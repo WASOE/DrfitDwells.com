@@ -20,8 +20,8 @@ function usage() {
 
 All host paths and commands are explicit. Planning is read-only. This migration accepts
 only account illoc and regenerates it using taskq --run=action=rewrite&value=httpd&user=illoc;
-it never writes the generated Apache site config. Apply/recovery are disabled until real
-DirectAdmin taskq queue isolation and Apache reload side effects have been verified.
+it never writes the generated Apache site config. Apply/recovery are disabled until safe
+pre-load validation and effective reload/recovery verification are implemented and verified.
 HTTPS probes for /search and /checkout on the same origin are required.`;
 }
 
@@ -138,7 +138,7 @@ async function main(argv) {
   const options = parse(argv);
   if (options.action === 'recover' || options.action === 'rollback') {
     if (!DIRECTADMIN_REGENERATION_VERIFIED) {
-      throw new Error('DirectAdmin recovery/rollback is disabled until real taskq regeneration, queue isolation, and Apache reload side effects are verified');
+      throw new Error('DirectAdmin recovery/rollback is disabled until pre-load validation and effective reload/recovery verification are implemented and verified');
     }
     if (!options.stateRoot) throw new Error('--state-dir is required');
     return recoverSiteVhostMigration({
@@ -148,7 +148,7 @@ async function main(argv) {
   if (options.action === 'apply') {
     if (!options.apply) throw new Error('Applying a vhost migration requires the explicit --apply flag');
     if (!DIRECTADMIN_REGENERATION_VERIFIED) {
-      throw new Error('DirectAdmin apply is disabled until real taskq regeneration, queue isolation, and Apache reload side effects are verified');
+      throw new Error('DirectAdmin apply is disabled until pre-load validation and effective reload/recovery verification are implemented and verified');
     }
   }
   const required = [

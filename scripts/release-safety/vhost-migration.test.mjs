@@ -245,6 +245,8 @@ function migrationArgs(f, probe, run) {
     confirmSharedAssetsPolicy: true,
     assets: f.assets,
     preflightProbe: async () => ({ ok: true }),
+    validateProposedConfig: async () => ({ ok: true }),
+    verifyReload: async () => ({ ok: true }),
     probe,
     verifyAssetServing: async ({ sharedAssets, assets, siteConfig, siteConfigSha256, mapping }) => ({
       ok: sharedAssets === f.sharedAssets && JSON.stringify(assets) === JSON.stringify(f.assets) &&
@@ -352,11 +354,13 @@ test('migration snapshots the complete webroot, changes only the site vhosts and
   assert.equal((fs.statSync(path.join(f.stateRoot, 'backup', 'generated-site.conf')).mode & 0o222), 0);
   assert.equal((fs.statSync(path.join(f.stateRoot, 'backup', 'persistent-cust_httpd.conf')).mode & 0o222), 0);
 
-  const rollback = recoverSiteVhostMigration({ stateRoot: f.stateRoot, run, rollback: true });
+  const rollback = await recoverSiteVhostMigration({
+    stateRoot: f.stateRoot, run, rollback: true, verifyReload: async () => ({ ok: true })
+  });
   assert.equal(rollback.status, 'rolled-back');
   assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
   assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource);
-  assert.equal(fs.existsSync(f.pointer), false);
+  assert.equal(fs.existsSync(f.pointer), true);
   assert.equal(fs.readFileSync(path.join(f.documentRoot, 'index.html'), 'utf8'), 'original-index');
   assert.equal(fs.readFileSync(path.join(f.documentRoot, 'uploads/year/month/customer.dat'), 'utf8'), 'customer-upload');
   assert.equal(fs.readFileSync(path.join(f.sharedAssets, 'retained.js'), 'utf8'), 'first migration shared asset');
@@ -368,7 +372,7 @@ test('recovery refuses a concurrently edited persistent customization', async t 
   const { run } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
   await migrateSiteVhost(migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run));
   fs.appendFileSync(f.customConfig, '\n# independent operator change\n');
-  assert.throws(() => recoverSiteVhostMigration({ stateRoot: f.stateRoot, run, rollback: true }),
+  await assert.rejects(recoverSiteVhostMigration({ stateRoot: f.stateRoot, run, rollback: true }),
     /Persistent DirectAdmin config|persistent DirectAdmin config/);
   assert.match(fs.readFileSync(f.customConfig, 'utf8'), /independent operator change/);
   assert.equal(fs.existsSync(f.pointer), true);
@@ -380,7 +384,7 @@ test('syntax-test failure restores the original config and leaves the document r
   const { run, commands } = commandRunner({ failHttpdAt: 2, siteConfig: f.siteConfig, render: f.render });
   await assert.rejects(migrateSiteVhost(migrationArgs(f, async () => ({ ok: true }), run)), /Apache syntax test failed/);
   assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
-  assert.equal(fs.existsSync(f.pointer), false);
+  assert.equal(fs.existsSync(f.pointer), true);
   assert.equal(fs.readFileSync(path.join(f.documentRoot, 'uploads/year/month/customer.dat'), 'utf8'), 'customer-upload');
   assert.equal(JSON.parse(fs.readFileSync(path.join(f.stateRoot, 'vhost-migration.json'), 'utf8')).status, 'recovered');
   assert.equal(commands.filter(item => item.command === '/usr/sbin/httpd' && !item.args.includes('DUMP_INCLUDES')).length, 3);
@@ -416,6 +420,99 @@ test('shared-assets policy confirmation and serving verification callback are ma
   }
 });
 
+test('pre-load validation failure never installs or regenerates DirectAdmin configuration', async t => {
+  const f = fixture();
+  t.after(() => removeFixture(f.tmp));
+  const { run, commands } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
+  const args = migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run);
+  args.validateProposedConfig = async ({ expectedConfig }) => {
+    assert.match(expectedConfig, /DocumentRoot/);
+    assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource);
+    return { ok: false };
+  };
+  await assert.rejects(migrateSiteVhost(args), /not safely validated before loading/);
+  assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource);
+  assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
+  assert.equal(commands.some(item => item.command === '/usr/local/directadmin/directadmin'), false);
+  assert.equal(fs.existsSync(f.pointer), true);
+});
+
+test('unconfirmed and timed-out reloads retain the pointer and require recovery', async t => {
+  for (const fail of ['negative', 'timeout']) {
+    const f = fixture();
+    t.after(() => removeFixture(f.tmp));
+    const { run } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
+    const args = migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run);
+    args.reloadTimeoutMs = 10;
+    args.verifyReload = async () => fail === 'negative' ? { ok: false } : new Promise(() => {});
+    await assert.rejects(migrateSiteVhost(args), /automatic recovery is incomplete/);
+    const journal = JSON.parse(fs.readFileSync(path.join(f.stateRoot, 'vhost-migration.json'), 'utf8'));
+    assert.equal(journal.status, 'recovery-required');
+    assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource);
+    assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
+    assert.equal(fs.readlinkSync(f.pointer), journal.release);
+    const phases = [];
+    const result = await recoverSiteVhostMigration({
+      stateRoot: f.stateRoot, run, verifyReload: async ({ phase }) => {
+        phases.push(phase);
+        assert.equal(fs.readlinkSync(f.pointer), journal.release);
+        return { ok: true };
+      }
+    });
+    assert.equal(result.status, 'recovered');
+    assert.deepEqual(phases, ['rollback']);
+    assert.equal(fs.readlinkSync(f.pointer), journal.release);
+  }
+});
+
+test('reload verification sees distinct migration and restore phases', async t => {
+  const f = fixture();
+  t.after(() => removeFixture(f.tmp));
+  const { run } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
+  const args = migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run);
+  const phases = [];
+  args.verifyReload = async ({ phase, pointer, release }) => {
+    phases.push(phase);
+    assert.equal(fs.readlinkSync(pointer), release);
+    assert.equal(fs.readFileSync(f.customConfig, 'utf8') === f.customSource, phase === 'rollback');
+    return { ok: true };
+  };
+  await migrateSiteVhost(args);
+  await recoverSiteVhostMigration({ stateRoot: f.stateRoot, run, rollback: true, verifyReload: args.verifyReload });
+  assert.deepEqual(phases, ['migration', 'rollback']);
+});
+
+test('rollback without an effective reload observer fails before changing configuration', async t => {
+  const f = fixture();
+  t.after(() => removeFixture(f.tmp));
+  const { run, commands } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
+  await migrateSiteVhost(migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run));
+  const before = fs.readFileSync(f.customConfig, 'utf8');
+  const rewrites = commands.filter(item => item.command === '/usr/local/directadmin/directadmin').length;
+  await assert.rejects(recoverSiteVhostMigration({ stateRoot: f.stateRoot, run, rollback: true }),
+    /reload and live-site verification are required/);
+  assert.equal(fs.readFileSync(f.customConfig, 'utf8'), before);
+  assert.equal(commands.filter(item => item.command === '/usr/local/directadmin/directadmin').length, rewrites);
+  assert.equal(fs.existsSync(f.pointer), true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(f.stateRoot, 'vhost-migration.json'), 'utf8')).status,
+    'recovery-required');
+});
+
+test('migration reload timeout remains recovery-required even after verified restoration', async t => {
+  const f = fixture();
+  t.after(() => removeFixture(f.tmp));
+  const { run } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
+  const args = migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run);
+  args.reloadTimeoutMs = 10;
+  args.verifyReload = async ({ phase }) => phase === 'migration'
+    ? new Promise(() => {}) : { ok: true };
+  await assert.rejects(migrateSiteVhost(args), /verification timed out/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(f.stateRoot, 'vhost-migration.json'), 'utf8')).status,
+    'recovery-required');
+  assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource);
+  assert.equal(fs.existsSync(f.pointer), true);
+});
+
 test('regeneration and live-probe failures both restore the prior vhost', async t => {
   for (const [failure, expected] of [
     [{ failRewriteOnce: true }, /Account-scoped DirectAdmin HTTP vhost regeneration failed/],
@@ -432,7 +529,7 @@ test('regeneration and live-probe failures both restore the prior vhost', async 
         : async () => ({ ok: false });
     await assert.rejects(migrateSiteVhost(migrationArgs(f, probe, run)), expected);
     assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
-    assert.equal(fs.existsSync(f.pointer), false);
+    assert.equal(fs.existsSync(f.pointer), true);
     assert.equal(fs.readFileSync(path.join(f.documentRoot, 'index.html'), 'utf8'), 'original-index');
   }
 });
@@ -449,7 +546,7 @@ test('shared-assets serving callback failure restores generated config and leave
   };
   await assert.rejects(migrateSiteVhost(args), /Shared-assets vhost and HTTP verification/);
   assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
-  assert.equal(fs.existsSync(f.pointer), false);
+  assert.equal(fs.existsSync(f.pointer), true);
   assert.equal(fs.readFileSync(path.join(f.sharedAssets, 'retained.js'), 'utf8'), 'first migration shared asset');
   assert.equal(fs.statSync(path.join(f.sharedAssets, 'retained.js')).mode & 0o222, 0);
 });
@@ -467,7 +564,7 @@ test('interrupted active migration is recoverable and altered backups fail close
   fs.chmodSync(backupFile, 0o644);
   fs.writeFileSync(backupFile, 'tampered-backup');
   fs.chmodSync(backupFile, 0o444);
-  assert.throws(() => recoverSiteVhostMigration({ stateRoot: f.stateRoot, run }), /integrity check failed/);
+  await assert.rejects(recoverSiteVhostMigration({ stateRoot: f.stateRoot, run }), /integrity check failed/);
   assert.equal(fs.readFileSync(f.siteConfig, 'utf8').includes(f.pointer), true);
   assert.equal(fs.readFileSync(path.join(f.documentRoot, 'index.html'), 'utf8'), 'original-index');
 });
@@ -491,12 +588,14 @@ test('recovery removes only journal-owned config and probe transaction temporari
   fs.chmodSync(journal.release, releaseMode | 0o200);
   fs.writeFileSync(journal.probePath, token, { mode: 0o444 });
   fs.chmodSync(journal.release, releaseMode);
-  const result = recoverSiteVhostMigration({ stateRoot: f.stateRoot, run });
+  const result = await recoverSiteVhostMigration({
+    stateRoot: f.stateRoot, run, verifyReload: async () => ({ ok: true })
+  });
   assert.equal(result.status, 'recovered');
   assert.equal(fs.existsSync(configTempPath), false);
   assert.equal(fs.existsSync(journal.probePath), false);
   assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
-  assert.equal(fs.existsSync(f.pointer), false);
+  assert.equal(fs.existsSync(f.pointer), true);
 });
 
 test('migration refuses symlinks and nonempty state directories without overwriting them', async t => {
@@ -564,13 +663,13 @@ test('real DirectAdmin apply and recovery stay disabled before host-side work', 
   t.after(() => removeFixture(f.tmp));
   const args = migrationArgs(f, async () => ({ ok: true, pointerVerified: true }));
   delete args.run;
-  await assert.rejects(migrateSiteVhost(args), /disabled until real taskq regeneration/);
-  assert.throws(() => recoverSiteVhostMigration({ stateRoot: f.stateRoot }),
-    /disabled until real taskq regeneration/);
+  await assert.rejects(migrateSiteVhost(args), /disabled until pre-load validation/);
+  await assert.rejects(recoverSiteVhostMigration({ stateRoot: f.stateRoot }),
+    /disabled until pre-load validation/);
   for (const action of ['recover', 'rollback']) {
     const result = spawnSync(process.execPath, [cli, action, '--state-dir', f.stateRoot], { encoding: 'utf8' });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /disabled until real taskq regeneration/);
+    assert.match(result.stderr, /disabled until pre-load validation/);
   }
   assert.equal(fs.existsSync(f.stateRoot), false);
   assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource);

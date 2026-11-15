@@ -16,7 +16,7 @@ function assertDirectAdminRegenerationAvailable(run, siteConfig) {
   if (!DIRECTADMIN_REGENERATION_VERIFIED &&
       (run === runCommand || siteConfig === actualAccount ||
        (typeof siteConfig === 'string' && fs.existsSync(siteConfig) && fs.realpathSync(siteConfig) === actualAccount))) {
-    throw new Error('DirectAdmin apply/recovery is disabled until real taskq regeneration, queue isolation, and Apache reload side effects are verified');
+    throw new Error('DirectAdmin apply/recovery is disabled until pre-load validation and effective reload/recovery verification are implemented and verified');
   }
 }
 
@@ -185,6 +185,31 @@ function updateJournal(stateRoot, journal, status, detail = null) {
   if (detail) next.detail = detail;
   saveJournal(stateRoot, next);
   Object.assign(journal, next);
+}
+
+async function confirmReload(verifyReload, context, timeoutMs) {
+  if (typeof verifyReload !== 'function') {
+    throw new Error('Effective Apache reload and live-site verification are required');
+  }
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) {
+    throw new Error('Reload verification timeout must be between 1 and 300000 milliseconds');
+  }
+  let timer;
+  try {
+    const result = await Promise.race([
+      verifyReload(context),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error('Effective Apache reload verification timed out');
+          error.code = 'RELOAD_VERIFICATION_TIMEOUT';
+          reject(error);
+        }, timeoutMs);
+      })
+    ]);
+    if (result?.ok !== true) throw new Error(`Effective Apache ${context.phase} reload and live-site verification are unconfirmed`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function lockState(stateRoot) {
@@ -624,17 +649,33 @@ function persistentConfigBytes(journal, entry) {
   return saved.data;
 }
 
-function rollbackJournal(stateRoot, journal, run, { explicit = false } = {}) {
+async function rollbackJournal(stateRoot, journal, run, { explicit = false, verifyReload, reloadTimeoutMs = 30_000 } = {}) {
   const originalConfig = configTextFromBackup(journal);
   removeConfigTemps(journal);
   readRegularFile(journal.siteConfig, 'Generated Apache site config');
   const pointerExists = checkPointer(journal.pointer, journal.release);
+  if (['prepared', 'probe-created', 'pointer-created'].includes(journal.status)) {
+    verifyPersistentConfigs(journal, 'original');
+    verifyGeneratedConfig(originalConfig, journal.siteConfig, 'Unchanged original site config verification failed', {
+      uid: journal.siteConfigUid, gid: journal.siteConfigGid, mode: journal.siteConfigMode
+    });
+    removeProbeMarker(journal);
+    updateJournal(stateRoot, journal, explicit ? 'rolled-back' : 'recovered',
+      'No persistent configuration change began; release pointer, if present, was retained.');
+    return { status: journal.status, documentRoot: journal.documentRoot, config: journal.siteConfig,
+      persistentConfigs: journal.persistentConfigs.map(entry => entry.path), directadminUser: journal.directadminUser };
+  }
+  if (typeof verifyReload !== 'function') {
+    throw new Error('Effective Apache rollback reload and live-site verification are required before recovery');
+  }
   const restoreEntries = journal.persistentConfigs.map(entry => ({
     entry, bytes: persistentConfigBytes(journal, entry)
   }));
+  updateJournal(stateRoot, journal, 'restore-started');
   for (const { entry, bytes } of restoreEntries) restorePersistentConfig(entry, bytes, {
     copyCommand: journal.copyCommand, run
   });
+  updateJournal(stateRoot, journal, 'restore-installed');
   runDirectAdminRewrite(run, journal.directadmin, journal.directadminUser,
     'Account-scoped DirectAdmin rewrite after restoring persistent configs');
   verifyPersistentConfigs(journal, 'original');
@@ -643,14 +684,19 @@ function rollbackJournal(stateRoot, journal, run, { explicit = false } = {}) {
   verifyGeneratedConfig(originalConfig, journal.siteConfig, 'Regenerated original site config verification failed', {
     uid: journal.siteConfigUid, gid: journal.siteConfigGid, mode: journal.siteConfigMode
   });
+  updateJournal(stateRoot, journal, 'restore-reload-pending');
+  await confirmReload(verifyReload, { phase: 'rollback', pointer: journal.pointer, release: journal.release,
+    siteConfig: journal.siteConfig }, reloadTimeoutMs);
+  verifyPersistentConfigs(journal, 'original');
+  verifyGeneratedConfig(originalConfig, journal.siteConfig, 'Original site config changed during reload verification', {
+    uid: journal.siteConfigUid, gid: journal.siteConfigGid, mode: journal.siteConfigMode
+  });
   removeProbeMarker(journal);
-  if (pointerExists) {
-    if (!checkPointer(journal.pointer, journal.release)) throw new Error('Recovery refused: release pointer changed before removal');
-    fs.unlinkSync(journal.pointer);
-    syncDirectory(path.dirname(journal.pointer));
+  if (pointerExists && !checkPointer(journal.pointer, journal.release)) {
+    throw new Error('Recovery refused: release pointer disappeared during reload verification');
   }
   updateJournal(stateRoot, journal, explicit ? 'rolled-back' : 'recovered',
-    'Persistent DirectAdmin configs restored and regenerated for the recorded account; generated Apache config was never written directly.');
+    'Persistent config restored and effective reload verified; release pointer retained for existing Apache workers and recovery.');
   return { status: journal.status, documentRoot: journal.documentRoot, config: journal.siteConfig,
     persistentConfigs: journal.persistentConfigs.map(entry => entry.path), directadminUser: journal.directadminUser };
 }
@@ -659,7 +705,9 @@ function validateJournal(stateRoot, journal) {
   if (journal?.version !== 2 || !/^[0-9a-f-]{36}$/.test(journal.migrationId) ||
       !HASH.test(journal.originalConfigHash) || !HASH.test(journal.migratedConfigHash) ||
       !HASH.test(journal.backupManifestHash) || !HASH.test(journal.probeTokenHash) ||
-      !['prepared', 'probe-created', 'pointer-created', 'config-installed', 'syntax-passed', 'active', 'recovery-required', 'rolled-back', 'recovered'].includes(journal.status)) {
+      !['prepared', 'probe-created', 'pointer-created', 'installing-config', 'config-installed', 'syntax-passed',
+        'reload-pending', 'active', 'restore-started', 'restore-installed', 'restore-reload-pending',
+        'recovery-required', 'rolled-back', 'recovered'].includes(journal.status)) {
     throw new Error('Invalid vhost migration journal');
   }
   for (const [value, label] of [
@@ -1009,7 +1057,8 @@ export async function migrateSiteVhost({
   customConfig, directadmin, directadminUser,
   httpd, httpdArgs = [], copyCommand,
   confirmWebrootQuiesced, confirmDirectAdminAccount, confirmSharedAssetsPolicy,
-  verifyAssetServing, assets, preflightProbe, probe, run = runCommand
+  verifyAssetServing, validateProposedConfig, verifyReload, reloadTimeoutMs = 30_000,
+  assets, preflightProbe, probe, run = runCommand
 }) {
   assertDirectAdminRegenerationAvailable(run, siteConfig);
   if (confirmWebrootQuiesced !== true) {
@@ -1026,6 +1075,9 @@ export async function migrateSiteVhost({
   }
   if (typeof preflightProbe !== 'function' || typeof probe !== 'function') {
     throw new Error('Baseline and post-migration live HTTP probes are required');
+  }
+  if (typeof validateProposedConfig !== 'function' || typeof verifyReload !== 'function') {
+    throw new Error('Pre-load generated-config validation and effective reload verification are required');
   }
   for (const [command, label] of [[httpd, 'Apache binary'], [directadmin, 'DirectAdmin binary'], [copyCommand, 'Copy command']]) {
     if (typeof command !== 'string' || !path.isAbsolute(command)) throw new Error(`${label} must be an explicit absolute executable path`);
@@ -1190,6 +1242,12 @@ export async function migrateSiteVhost({
     }
     syncDirectory(path.dirname(pointer));
     updateJournal(stateRoot, journal, 'pointer-created');
+    if ((await validateProposedConfig({
+      phase: 'migration', expectedConfig: transformed, siteConfig, apacheConfig, pointer
+    }))?.ok !== true) {
+      throw new Error('Proposed generated Apache configuration was not safely validated before loading');
+    }
+    updateJournal(stateRoot, journal, 'installing-config');
     for (const entry of journal.persistentConfigs) {
       const prepared = preparedPaths.persistentConfigs.find(item => item.path === entry.path);
       if (!prepared) throw new Error(`Missing prepared DirectAdmin config: ${entry.path}`);
@@ -1204,6 +1262,14 @@ export async function migrateSiteVhost({
     verifyApacheConfig(run, httpd, httpdArgs, apacheConfig, siteConfig, 'Post-regeneration Apache verification');
     verifyGeneratedConfig(Buffer.from(transformed), siteConfig,
       'DirectAdmin regenerated config is outside the expected scoped migration', {
+        uid: journal.siteConfigUid, gid: journal.siteConfigGid, mode: journal.siteConfigMode
+      });
+    updateJournal(stateRoot, journal, 'reload-pending');
+    await confirmReload(verifyReload, { phase: 'migration', pointer, release, siteConfig }, reloadTimeoutMs);
+    if (!checkPointer(pointer, release)) throw new Error('Release pointer disappeared during reload verification');
+    verifyPersistentConfigs(journal, 'migrated');
+    verifyGeneratedConfig(Buffer.from(transformed), siteConfig,
+      'Generated Apache config changed during reload verification', {
         uid: journal.siteConfigUid, gid: journal.siteConfigGid, mode: journal.siteConfigMode
       });
     const mapping = assertSiteSharedAssetsMapping(
@@ -1238,7 +1304,11 @@ export async function migrateSiteVhost({
   } catch (error) {
     if (journal) {
       try {
-        rollbackJournal(stateRoot, journal, run);
+        await rollbackJournal(stateRoot, journal, run, { verifyReload, reloadTimeoutMs });
+        if (error.code === 'RELOAD_VERIFICATION_TIMEOUT') {
+          updateJournal(stateRoot, journal, 'recovery-required',
+            'Migration reload verification timed out; restored configuration requires independent recovery confirmation.');
+        }
       } catch (recoveryError) {
         let journalError = '';
         try {
@@ -1259,7 +1329,9 @@ export async function migrateSiteVhost({
  * Restore the original vhost config after a failed or successful migration.
  * The full original document root is retained, never renamed or removed.
  */
-export function recoverSiteVhostMigration({ stateRoot, run = runCommand, rollback = false }) {
+export async function recoverSiteVhostMigration({
+  stateRoot, run = runCommand, rollback = false, verifyReload, reloadTimeoutMs = 30_000
+}) {
   assertDirectAdminRegenerationAvailable(run);
   validatePath(stateRoot, 'State directory');
   if (path.dirname(stateRoot) === stateRoot) throw new Error('State directory cannot be a filesystem root');
@@ -1278,7 +1350,16 @@ export function recoverSiteVhostMigration({ stateRoot, run = runCommand, rollbac
     if (journal.status === 'active' && !rollback) {
       throw new Error('An active migration requires the explicit rollback operation');
     }
-    return rollbackJournal(stateRoot, journal, run, { explicit: rollback });
+    try {
+      return await rollbackJournal(stateRoot, journal, run, { explicit: rollback, verifyReload, reloadTimeoutMs });
+    } catch (error) {
+      try {
+        updateJournal(stateRoot, journal, 'recovery-required', error.message);
+      } catch (writeError) {
+        throw new Error(`Recovery failed: ${error.message}; recording recovery-required status also failed: ${writeError.message}`, { cause: error });
+      }
+      throw error;
+    }
   } finally {
     unlock();
   }

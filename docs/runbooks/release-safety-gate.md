@@ -80,11 +80,12 @@ recovery of missing historical production bytes.
 
 ### First migration and activation (not yet authorized)
 
-**DirectAdmin verification gate:** Do not execute migration or regeneration
-against production until the updated implementation has been tested with the
-installed DirectAdmin generator in a separately authorized, reversible,
-account-scoped test. Tests using a fixture renderer do not establish how the
-installed generator expands tokens. Record the original persistent custom
+**DirectAdmin verification gate:** The behavior-preserving generator test
+below has been completed, but it does not validate migration or rollback.
+Do not execute either against production until the remaining execution gate
+described below is resolved and tested under separate authorization. Tests
+using a fixture renderer do not establish how the installed generator expands
+tokens or when Apache loads its output. Record the original persistent custom
 configuration and generated account configuration, including checksums,
 ownership, mode and ACLs; verify restoration from those backups before the test.
 Compare the generated main HTTP/HTTPS and test-subdomain vhosts, including
@@ -101,9 +102,8 @@ effective configuration and HTTP behavior, and stop.
 
 The commands below are a proposed sequence, not executable production
 authorization: this revision deliberately disables `apply`, `recover`, and
-`rollback` with the real command runner. After the separately authorized
-generator test establishes the correct queue/reload behavior, the implementation
-and this gate must be updated and reviewed before these commands can be used.
+`rollback` with the real command runner. The observed queued reload behavior
+must be accommodated and verified before these commands can be used.
 
 For the future generator gate, record these read-only facts on the host before
 making any changes:
@@ -140,15 +140,32 @@ queued reload. The observed test-site HTTPS `/` returned 404 and `/legal/`
 returned 403 both before and after the test; these were not treated as healthy
 routes.
 
-**Execution remains disabled.** The current migration assumes regeneration
-has taken effect synchronously, but the actual reload is deferred. Its syntax
-check can race the scheduled reload, and recovery can remove the release
-pointer before Apache has loaded the restored configuration. Do not simply
-enable the gate: the implementation must first safely coordinate the queued
-reload, syntax validation, live verification and recovery without consuming or
-modifying other users' queue entries, and demonstrate this against the real
-host under separate authorization. The 15 November test does not authorize
-frontend migration or activation.
+**Execution remains disabled.** The transition code now requires separate
+pre-load validation and effective-reload verification callbacks, journals
+reload-pending and restoration phases, and retains the release pointer even
+after a verified rollback. A failed or timed-out verification records
+`recovery-required` and leaves recovery assets intact. Fixture callbacks are
+simulations, not a production implementation or evidence that Apache reloaded.
+The CLI deliberately provides no way to satisfy these callbacks or bypass the
+gate. The retained pointer is not garbage-collectable merely because the
+generated file has changed: old Apache workers may still use it.
+
+The outstanding blocker is pre-load validation of the **actual** DirectAdmin
+generated configuration. `taskq --run` writes the live generated file and
+queues a shared-service reload, so a syntax test after that command cannot
+guarantee the file was validated before Apache loaded it. No supported,
+account-isolated staging or reload sequencing mechanism has been verified.
+Before enabling execution, implement and demonstrate such a mechanism without
+altering unrelated queue entries or other accounts. Also implement a real
+bounded reload observer that distinguishes the active and restored Apache
+configurations (including graceful old workers) and verifies HTTP and HTTPS
+for apex/www and test, assets, `/api`, `/uploads`, `/legal`, representative
+unrelated sites, and PHP-FPM 8.1 and 8.3 health. A queue entry, generated-file
+hash, successful syntax test, or elapsed time alone is not proof of an
+effective reload. Verify interruption and rollback at every transition on the
+actual generator in a separately authorized reversible test. Preserve the
+pointer and backups whenever state is uncertain. The 15 November test does not
+authorize frontend migration or activation.
 
 This is a test of the installed generator, **not** frontend migration or
 activation. It adds only a unique Apache comment to the existing main-domain
