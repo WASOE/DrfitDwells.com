@@ -1,23 +1,52 @@
 import fs from 'node:fs';
+import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SITE_HOSTS = new Set(['driftdwells.com', 'www.driftdwells.com']);
 const TEST_HOST = 'test.driftdwells.com';
 
-export async function observeTestSubdomain({ fetchImpl = fetch, timeoutMs = 10000 } = {}) {
+function originTestRequest(protocol, originIp, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const transport = protocol === 'https:' ? https : http;
+    const request = transport.get({
+      protocol, hostname: originIp, port: protocol === 'https:' ? 443 : 80,
+      servername: protocol === 'https:' ? TEST_HOST : undefined,
+      path: '/', headers: { Host: TEST_HOST }, timeout: timeoutMs
+    }, response => {
+      response.resume();
+      response.on('end', () => resolve({ status: response.statusCode,
+        location: response.headers.location || null,
+        contentType: response.headers['content-type'] || null }));
+      response.on('error', reject);
+    });
+    request.on('timeout', () => request.destroy(new Error('Test-subdomain origin probe timed out')));
+    request.on('error', reject);
+  });
+}
+
+export async function observeTestSubdomain({ fetchImpl = fetch, timeoutMs = 10000, originIp, originRequest = originTestRequest } = {}) {
+  if (originIp !== undefined && net.isIP(originIp) === 0) throw new Error('A valid test-subdomain origin IP is required');
   const observations = [];
   for (const protocol of ['http:', 'https:']) {
     const url = new URL(`${protocol}//${TEST_HOST}/`);
-    const response = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
-    const location = response.headers.get('location');
+    let observed;
+    if (originIp) observed = await originRequest(protocol, originIp, timeoutMs);
+    else {
+      const response = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
+      observed = { status: response.status, location: response.headers.get('location'),
+        contentType: response.headers.get('content-type') || null };
+      await response.body?.cancel?.();
+    }
+    const location = observed.location;
     if (location) {
       const target = new URL(location, url);
       if (!['http:', 'https:'].includes(target.protocol) || target.hostname !== TEST_HOST || target.username || target.password || target.port) throw new Error('Unsafe test-subdomain redirect');
     }
-    observations.push({ protocol, status: response.status, location: location || null,
-      contentType: response.headers.get('content-type') || null });
-    await response.body?.cancel?.();
+    observations.push({ protocol, status: observed.status, location: location || null,
+      contentType: observed.contentType });
   }
   return observations;
 }

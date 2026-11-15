@@ -94,7 +94,9 @@ restart PM2 processes.
    before switching and through the certificate-validated production origin
    only after switching; any failure atomically restores the original root.
    The command also compares actual HTTP and HTTPS test-subdomain behavior with
-   the immediately preceding baseline.
+   the immediately preceding baseline. It probes the verified origin IP with
+   `test.driftdwells.com` as HTTP Host and TLS SNI, so an intentionally absent
+   public DNS record neither bypasses this check nor blocks it.
 
 6. Verify the journal phase is `complete`, `public_html` resolves through
    `frontend/current` to the exact commit, and the original nonempty tree is at
@@ -109,7 +111,7 @@ original tree: `public_html.atomic-exchange` before the backup move and
 process is alive:
 
 ```bash
-sudo --preserve-env=OPS_VERIFY_TOKEN \
+sudo --preserve-env=OPS_VERIFY_TOKEN,DRIFT_ORIGIN_IP \
   node scripts/release-safety/migrate-atomic-production.mjs recover ignored API_FULL_SHA
 ```
 

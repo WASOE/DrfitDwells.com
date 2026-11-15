@@ -14,10 +14,10 @@ async function main() {
   if (!['apply', 'recover'].includes(operation) || extra.length || !/^[a-f0-9]{40}$/.test(apiCommit || '') || (operation === 'apply' && !/^[a-f0-9]{40}$/.test(commit || ''))) {
     throw new Error('Usage: migrate-atomic-production.mjs apply <staged-frontend-sha> <api-sha> | recover ignored <api-sha>');
   }
-  const testBaseline = await observeTestSubdomain();
+  const testBaseline = await observeTestSubdomain({ originIp: process.env.DRIFT_ORIGIN_IP });
   const common = { state: `${BASE}/state`, smoke: async ({ active, rollback }) => {
     const site = await smokeProduction({ token: process.env.OPS_VERIFY_TOKEN, releaseAsset: scriptFromRelease(active), wishlist: hasWishlist(active), expectedApiRelease: apiCommit });
-    if (site?.ok !== true || (await verifyTestSubdomainBaseline(testBaseline))?.ok !== true) return { ok: false };
+    if (site?.ok !== true || (await verifyTestSubdomainBaseline(testBaseline, { originIp: process.env.DRIFT_ORIGIN_IP }))?.ok !== true) return { ok: false };
     if (!rollback) {
       const releaseInventory = JSON.parse(fs.readFileSync(path.join(active, '.frontend-inventory.json'), 'utf8'));
       return verifySymlinkProductionAssets({ sharedAssets: `${BASE}/shared-assets`, assets: releaseInventory.files.filter(file => file.path.startsWith('assets/')), originIp: process.env.DRIFT_ORIGIN_IP });
