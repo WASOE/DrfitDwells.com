@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 const { API_PRODUCTION_FLAGS, WORKER_PRODUCTION_FLAGS } = require('./arrivalEmailGuard.cjs');
 const {
   API_RUNTIME_FLAGS,
@@ -15,6 +16,11 @@ const {
   attachArrivalRuntimeEvidence,
   validateTopology,
   verifyFiles,
+  compositeManifest,
+  verifyRelease,
+  effectiveEnvironment,
+  assertArrivalConfiguration,
+  productionStartEnvironment,
   verifyOwnershipRelease,
   effectiveMongoUri,
   assertRebookEnablementReady,
@@ -117,6 +123,74 @@ function fixture(extraWorkers = []) {
 test('valid isolated probes preserve required dedicated workers', () => {
   assert.equal(REQUIRED_WORKER_ROLES.length, 6);
   assert.equal(validateTopology(fixture()).length, 6);
+});
+
+test('current arrival configuration uses effective PM2 overrides, including empty values', () => {
+  const file = { ...API_PRODUCTION_FLAGS, ARRIVAL_EMAIL_V2: '0', ARRIVAL_AUTOMATION_V2: '0' };
+  const pm2 = { ARRIVAL_EMAIL_V2: '1', ARRIVAL_AUTOMATION_V2: '1' };
+  assert.doesNotThrow(() => assertArrivalConfiguration('current', file, pm2));
+  assert.equal(effectiveEnvironment(file, pm2).ARRIVAL_EMAIL_V2, '1');
+  assert.throws(() => assertArrivalConfiguration('current', file, { ...pm2, ARRIVAL_EMAIL_V2: '' }), /ARRIVAL_EMAIL_V2/);
+  assert.throws(() => assertArrivalConfiguration('current', file, { ...pm2, MESSAGE_DISPATCHER_ENABLED: '1' }), /MESSAGE_DISPATCHER_ENABLED/);
+  assert.throws(() => assertArrivalConfiguration('current', file, {}), /ARRIVAL_EMAIL_V2/);
+});
+
+test('candidate and rollback arrival configuration must be safe in the file, regardless of PM2', () => {
+  for (const role of ['candidate', 'rollback']) {
+    assert.doesNotThrow(() => assertArrivalConfiguration(role, API_PRODUCTION_FLAGS, { ARRIVAL_EMAIL_V2: '0' }));
+    assert.throws(() => assertArrivalConfiguration(role, { ...API_PRODUCTION_FLAGS, ARRIVAL_EMAIL_V2: '0' }, API_PRODUCTION_FLAGS), /ARRIVAL_EMAIL_V2/);
+    assert.throws(() => assertArrivalConfiguration(role, { ...API_PRODUCTION_FLAGS, MESSAGE_DISPATCHER_ENABLED: '1' }, API_PRODUCTION_FLAGS), /MESSAGE_DISPATCHER_ENABLED/);
+  }
+});
+
+test('production starts use protected release configuration rather than probe overrides', () => {
+  for (const role of ['candidate', 'rollback']) {
+    const item = {
+      sha: 'a'.repeat(40),
+      fileEnv: { ...API_PRODUCTION_FLAGS, APP_URL: 'https://driftdwells.com', SAMPLE: 'file' },
+      env: { ...API_PRODUCTION_FLAGS, ARRIVAL_EMAIL_V2: '0', SAMPLE: 'probe', OPS_VERIFY_TOKEN: 'probe-token' }
+    };
+    const env = productionStartEnvironment(item, role, {});
+    assert.equal(env.SAMPLE, 'file');
+    assert.equal(env.ARRIVAL_EMAIL_V2, '1');
+    assert.equal(env.OPS_VERIFY_TOKEN, undefined);
+    assert.equal(env.REBOOK_ENABLED, 'false');
+    for (const flag of DISABLED_API_FLAGS) assert.equal(env[flag], '0');
+    assert.throws(() => productionStartEnvironment({ ...item, fileEnv: { ...item.fileEnv, ARRIVAL_EMAIL_V2: '0' } }, role, {}), /ARRIVAL_EMAIL_V2/);
+  }
+});
+
+test('production release directory names do not collide with arrival worker identity', () => {
+  const f = fixture();
+  const root = '/home/illoc/releases/arrival-automation-worker-2a47276c38486db90ae57782ab09f02d1135b452/server/scripts';
+  const confirmation = f.apps.find(app => app.name === 'driftdwells-confirmation-worker');
+  const arrival = f.apps.find(app => app.name === 'driftdwells-arrival-automation-worker');
+  confirmation.pm2_env.pm_exec_path = `${root}/runBookingConfirmationDeliveryWorker.js`;
+  arrival.pm2_env.pm_exec_path = `${root}/runArrivalAutomationWorker.js`;
+  delete arrival.arrivalHealth;
+  const now = Date.now();
+  attachArrivalRuntimeEvidence(f.apps, {
+    logText: JSON.stringify({ source: 'arrival-automation-worker', phase: 'health', running: true,
+      lastTickAt: new Date(now).toISOString(), lastTickError: null }),
+    counts: { dueCount: 0, overdueCount: 0, failedCount: 0 }, now
+  });
+  assert.equal(confirmation.arrivalHealth, undefined);
+  assert.equal(assertWorkerTopology(f.apps).length, 6);
+  f.apps.push({
+    name: 'driftdwells-arrival-automation-worker-copy', pid: 9876,
+    pm2_env: { pm_id: 999, status: 'online', pm_exec_path: '/another/release/runArrivalAutomationWorker.js', ...WORKER_PRODUCTION_FLAGS },
+    arrivalHealth: freshArrivalHealth()
+  });
+  assert.throws(() => assertWorkerTopology(f.apps), /missing or duplicated: arrival/);
+});
+
+test('only the attested current release may use its exact legacy PM2 name', () => {
+  const f = fixture();
+  f.apps[0].name = 'driftdwells-production-2a47276c3848act17';
+  assert.throws(() => validateTopology(f), /name is not unique/);
+  assert.equal(validateTopology({ ...f, currentAttestation: '2a47276-pr43' }).length, 6);
+  f.apps[0].name += 'extra';
+  assert.throws(() => validateTopology({ ...f, currentAttestation: '2a47276-pr43' }), /name is not unique/);
 });
 
 test('additional healthy workers are allowed when required roles remain unique', () => {
@@ -367,6 +441,19 @@ test('successful cutover saves only after endpoint, stability and worker gates',
   ]);
   assert.deepEqual(calls.filter(call => call[0] === 'stop').map(call => call[1]), [40, 41, 31]);
 });
+test('deferred finalization leaves PM2 unsaved after successful API verification', async () => {
+  const { io, calls } = fakeIO();
+  const result = await cutover(io, { ...context, deferSave: true });
+  assert.equal(result.pm2Saved, false);
+  assert.equal(result.productionId, 50);
+  assert.ok(calls.some(call => call[0] === 'checkWorkers'));
+  assert.ok(!calls.some(call => call[0] === 'save'));
+});
+test('deferred finalization still saves a verified emergency rollback', async () => {
+  const { io, calls } = fakeIO('monitor');
+  await assert.rejects(cutover(io, { ...context, deferSave: true }), /verified rollback restored/);
+  assert.equal(calls.at(-1)[0], 'save');
+});
 for (const failure of ['preflight', 'checkpoint']) {
   test(`${failure} failure cannot stop production or save`, async () => {
     const { io, calls } = fakeIO(failure);
@@ -443,6 +530,49 @@ test('release verification rejects modified content, wrong SHA, missing shared a
     fs.writeFileSync(path.join(dir, 'server/server.js'), ddl);
     const ddlFiles = files.map(file => file.path !== 'server/server.js' ? file : {
       ...file, hash: crypto.createHash('sha1').update(`blob ${ddl.length}\0${ddl}`).digest('hex')
+    });
+
+    test('one-time current attestation verifies the original manifest and precisely three hotfix blobs', () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drift-composite-'));
+      const repo = path.resolve(__dirname, '../..');
+      const base = '2a47276c38486db90ae57782ab09f02d1135b452';
+      const root = '/home/illoc/releases/arrival-automation-worker-2a47276c38486db90ae57782ab09f02d1135b452';
+      const hotfix = 'b2fab550f0423e5a02f97b2cc595b36e84d100a8';
+      const files = ['ecosystem.config.cjs', 'server/scripts/runArrivalAutomationWorker.js',
+        'server/services/messaging/arrival/arrivalWorkerClaimPolicy.js'];
+      const { packageRelease } = require('./package-api-release.cjs');
+      try {
+        const release = packageRelease(base, dir);
+        const raw = fs.readFileSync(release.manifest);
+        const item = { sha: base, attestation: '2a47276-pr43' };
+        const manifest = compositeManifest(raw, 'current', root, item);
+        assert.equal(manifest.files.length, 1002);
+        assert.equal(manifest.sha, base);
+        assert.throws(() => compositeManifest(raw, 'rollback', root, item), /scope mismatch/);
+        assert.throws(() => compositeManifest(raw, 'candidate', root, item), /scope mismatch/);
+        assert.throws(() => compositeManifest(raw, 'current', `${root}-copy`, item), /scope mismatch/);
+        assert.throws(() => compositeManifest(raw, 'current', root, { ...item, sha: hotfix }), /scope mismatch/);
+        assert.throws(() => compositeManifest(Buffer.concat([raw, Buffer.from(' ')]), 'current', root, item), /fingerprint mismatch/);
+        execFileSync('tar', ['-xzf', release.archive, '-C', dir]);
+        for (const file of files) {
+          fs.writeFileSync(path.join(dir, file), execFileSync('git', ['show', `${hotfix}:${file}`], { cwd: repo }));
+        }
+        assert.equal(verifyFiles(dir, manifest, base), true);
+        assert.throws(() => verifyFiles(dir, JSON.parse(raw), base), /differs/);
+        for (const file of files) {
+          const name = path.join(dir, file);
+          const hotfixContent = fs.readFileSync(name);
+          fs.writeFileSync(name, execFileSync('git', ['show', `${base}:${file}`], { cwd: repo }));
+          assert.throws(() => verifyFiles(dir, manifest, base), /differs/);
+          fs.writeFileSync(name, hotfixContent);
+        }
+        const other = manifest.files.find(file => file.path === 'server/server.js').path;
+        fs.appendFileSync(path.join(dir, other), '\nchanged');
+        assert.throws(() => verifyFiles(dir, manifest, base), /differs/);
+        assert.throws(() => verifyRelease(dir, { ...item, manifest: release.manifest }, 'candidate'), /scope mismatch/);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     });
     assert.throws(() => verifyFiles(dir, { sha, files: ddlFiles }, sha), /Startup index/);
     for (const call of ['startSplitPaymentCollectionWorker();', 'startBookingConfirmationDeliveryWorkerIfEnabled();',

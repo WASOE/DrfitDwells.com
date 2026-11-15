@@ -248,14 +248,19 @@ shared `driftdwells` name or restart/reload all PM2 processes.
 4. Run `node deploy-api-guarded.cjs <plan>` for read-only preflight. It requires
    exactly the three specified API processes, all required dedicated worker
    roles online with distinct exec paths (additional healthy workers are
-   allowed), single PID-owned listeners, matching SHA/file hashes/script/cwd
+   allowed); role matching uses PM2 names and executable basenames, not release
+   directory names. It also checks single PID-owned listeners, matching SHA/file hashes/script/cwd
    (including `/proc` cwd), production environments, disabled API runtimes,
    loopback probes and authenticated endpoint checks. Required worker roles are
-   confirmation, hold-expiry, split-payment-collection, finalize, and
-   paid-checkout-reconciler. Probes must have all nine flags off; the live API
+   confirmation, hold-expiry, split-payment-collection, finalize,
+   paid-checkout-reconciler and arrival. Probes must have all nine flags off; the live API
    must have the five API-runtime scheduler flags off and may inherit the four
    dedicated-worker flags from the shared `.env` only because release
    verification rejects any API entrypoint that starts those workers.
+   The current API's arrival flags are validated using its effective PM2
+   environment. Candidate and rollback arrival flags must be valid in their
+   protected configuration files; production starts use those files, not probe
+   overrides.
    Unverifiable listener ownership, conflicting processes or any gate failure
    blocks cutover.
 5. Only with operational authorization, add `--cutover`. A fresh protected
@@ -276,9 +281,28 @@ shared `driftdwells` name or restart/reload all PM2 processes.
    endpoint and worker gates before its PM2 configuration can be saved.
    Failed recovery is surfaced as a hard blocker; no automatic reboot occurs.
 
+An explicitly configured `"deferSave": true` in the protected plan leaves a
+verified new API running without saving PM2, so the operator can verify other
+release components before saving. Complete those checks and save promptly; if
+they fail, restore a verified rollback instead. Emergency rollback within the
+guard is still saved only after its own verification succeeds.
+
 The guarded command deliberately requires a fresh plan and existing Ops
 authorization; it does not guess a production target, provision indexes,
 run migrations, modify payment states or change the dedicated workers.
+
+The one-time `current.attestation: "2a47276-pr43"` is restricted to the
+specific existing 2a47276 production directory and its original 1,002-file
+manifest. It verifies the original manifest SHA-256 and replaces only three
+expected blob hashes with the independently verified #43 hotfix hashes, in
+memory; the original manifest is never modified. The resulting provenance is
+the 2a47276 base plus the #43 hotfix, not the original commit alone. This
+exception is unavailable to candidate and rollback releases. The old
+ecosystem defaults were parked, so the composite current release is checked
+against the observed guest-wide worker and scheduler health instead; both
+candidate and rollback must still pass the committed production-default
+checks. A separately packaged and independently verified rollback remains
+mandatory. All other release and cutover checks remain in force.
 Keep `/home/illoc/.pm2/dump.pm2` private and verify the enabled
 `pm2-illoc.service` uses that PM2 home and `pm2 resurrect`. Do not test reboot
 recovery by rebooting production without separate approval.

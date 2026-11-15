@@ -1,0 +1,190 @@
+name: Production frontend artifact
+
+# Build-only. No deployment credentials, environment mutation, or live payments.
+# Current builds require the dispatch SHA. One pinned historical rollback build
+# is isolated below. vars is intentional: this is public.
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact dispatch SHA, or the explicitly pinned historical rollback SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  production-artifact:
+    name: Build and verify immutable production frontend
+    if: github.repository == 'WASOE/DrfitDwells.com' && github.ref == 'refs/heads/master' && inputs.commit == github.sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      REQUESTED_COMMIT: ${{ inputs.commit }}
+      VITE_FRONTEND_RELEASE: ${{ github.sha }}
+      VITE_STRIPE_PUBLISHABLE_KEY: ${{ vars.VITE_STRIPE_PUBLISHABLE_KEY }}
+      VITE_CHECKOUT_SESSION_V2: '1'
+      VITE_FINALIZE_INTENT_PERSIST: '1'
+      VITE_FINALIZE_INTENT_REQUIRED_FOR_PI: '1'
+      PRERENDER_REQUIRE_BROWSER: '1'
+    steps:
+      - name: Require exact dispatched commit and public production key
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_COMMIT" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::commit must be a full lowercase SHA"; exit 1; }
+          [[ "$REQUESTED_COMMIT" == "$GITHUB_SHA" ]] || { echo "::error::commit must equal the dispatched master SHA"; exit 1; }
+          [[ "$VITE_STRIPE_PUBLISHABLE_KEY" =~ ^pk_live_[A-Za-z0-9]+$ ]] || { echo "::error::Set repository variable VITE_STRIPE_PUBLISHABLE_KEY to the production public key"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Verify checkout identity
+        run: test "$(git rev-parse HEAD)" = "$REQUESTED_COMMIT"
+      - name: Install Apache 2.4 and archive tools
+        run: sudo apt-get update && sudo apt-get install -y apache2 openssl python3
+      - run: npm ci
+      - run: npm ci
+        working-directory: client
+      - name: Focused artifact tests
+        run: node --test scripts/release-safety/production-artifact*.test.mjs scripts/release-safety/frontend-inventory.test.mjs
+      - name: Install the prerender and mocked-gate browser
+        run: npx playwright install --with-deps chromium
+      - name: Locate Chrome for prerender
+        run: |
+          CHROME=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -path '*chrome-linux*' | head -1)
+          test -n "$CHROME"
+          echo "PRERENDER_BROWSER_PATH=$CHROME" >> "$GITHUB_ENV"
+      - name: Fetch public cabin originals required by the build
+        run: node scripts/release-safety/fetch-public-media.mjs
+      - name: Build with production public key and real checkout flags
+        working-directory: client
+        run: npm run build
+      - name: Package complete dist including hidden files and round-trip exact bytes
+        run: |
+          node scripts/release-safety/production-artifact.mjs create client/dist production-package "$REQUESTED_COMMIT"
+          mv client/dist "$RUNNER_TEMP/production-build-original"
+          node scripts/release-safety/production-artifact.mjs verify production-package client/dist "$REQUESTED_COMMIT"
+      - name: Apache routing, redirect regression, assets, service worker and compiled payment contract
+        run: node scripts/release-safety/run-gate.mjs
+      - name: Mocked booking browser gate (no live payment initialization)
+        run: node scripts/release-safety/run-browser-gate.mjs
+      - name: Bind passing evidence and verify tested tree was not modified
+        run: |
+          node scripts/release-safety/frontend-inventory.mjs verify client/dist production-package/frontend-inventory.json
+          node scripts/release-safety/production-artifact.mjs verify production-package "$RUNNER_TEMP/production-final-check" "$REQUESTED_COMMIT"
+          cp apache-evidence.json browser-evidence.json production-package/
+          node --input-type=module -e 'import { assertEvidence } from "./scripts/release-safety/production-artifact-verify.mjs"; assertEvidence("production-package", process.env.REQUESTED_COMMIT, process.env.GITHUB_RUN_ID);'
+      - name: Upload immutable tested production artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-frontend-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            production-package/production-frontend.tar
+            production-package/production-frontend.tar.sha256
+            production-package/frontend-inventory.json
+            production-package/apache-evidence.json
+            production-package/browser-evidence.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
+
+  historical-rollback:
+    name: Build and verify pinned historical rollback frontend
+    if: github.repository == 'WASOE/DrfitDwells.com' && github.ref == 'refs/heads/master' && inputs.commit == '9baa749f76afd88f1fe3122414ce9c8ef8217f45' && inputs.commit != github.sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      REQUESTED_COMMIT: 9baa749f76afd88f1fe3122414ce9c8ef8217f45
+      VITE_FRONTEND_RELEASE: 9baa749f76afd88f1fe3122414ce9c8ef8217f45
+      VITE_STRIPE_PUBLISHABLE_KEY: ${{ vars.VITE_STRIPE_PUBLISHABLE_KEY }}
+      VITE_CHECKOUT_SESSION_V2: '1'
+      VITE_FINALIZE_INTENT_PERSIST: '1'
+      VITE_FINALIZE_INTENT_REQUIRED_FOR_PI: '1'
+      PRERENDER_REQUIRE_BROWSER: '1'
+    steps:
+      - name: Require production public key
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VITE_STRIPE_PUBLISHABLE_KEY" =~ ^pk_live_[A-Za-z0-9]+$ ]] || { echo "::error::Set repository variable VITE_STRIPE_PUBLISHABLE_KEY to the production public key"; exit 1; }
+      - name: Checkout pinned historical source
+        uses: actions/checkout@v4
+        with:
+          ref: 9baa749f76afd88f1fe3122414ce9c8ef8217f45
+          path: source
+          persist-credentials: false
+      - name: Checkout pinned verification tools
+        uses: actions/checkout@v4
+        with:
+          ref: 12f98be265630bb902221d44dec4ced93fec93aa
+          path: trusted
+          persist-credentials: false
+      - name: Verify both checkout identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "$REQUESTED_COMMIT"
+          test "$(git -C trusted rev-parse HEAD)" = 12f98be265630bb902221d44dec4ced93fec93aa
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - name: Install Apache 2.4 and archive tools
+        run: sudo apt-get update && sudo apt-get install -y apache2 openssl python3
+      - run: npm ci
+        working-directory: source
+      - run: npm ci
+        working-directory: source/client
+      - name: Install the prerender and mocked-gate browser
+        working-directory: source
+        run: npx playwright install --with-deps chromium
+      - name: Locate Chrome for prerender
+        run: |
+          CHROME=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -path '*chrome-linux*' | head -1)
+          test -n "$CHROME"
+          echo "PRERENDER_BROWSER_PATH=$CHROME" >> "$GITHUB_ENV"
+      - name: Fetch public cabin originals required by the historical build
+        working-directory: source
+        run: node scripts/release-safety/fetch-public-media.mjs
+      - name: Build pinned source with the production public key
+        working-directory: source/client
+        run: npm run build
+      - name: Package and round-trip with pinned verification tools
+        working-directory: source
+        run: |
+          node ../trusted/scripts/release-safety/production-artifact.mjs create client/dist production-package "$REQUESTED_COMMIT"
+          mv client/dist "$RUNNER_TEMP/production-build-original"
+          node ../trusted/scripts/release-safety/production-artifact.mjs verify production-package client/dist "$REQUESTED_COMMIT"
+      - name: Run historical Apache and mocked browser gates on packaged bytes
+        working-directory: source
+        run: |
+          node scripts/release-safety/run-gate.mjs
+          node scripts/release-safety/run-browser-gate.mjs
+      - name: Verify evidence and tested bytes
+        working-directory: source
+        run: |
+          node ../trusted/scripts/release-safety/frontend-inventory.mjs verify client/dist production-package/frontend-inventory.json
+          node ../trusted/scripts/release-safety/production-artifact.mjs verify production-package "$RUNNER_TEMP/production-final-check" "$REQUESTED_COMMIT"
+          cp apache-evidence.json browser-evidence.json production-package/
+          node --input-type=module -e 'import { assertEvidence } from "../trusted/scripts/release-safety/production-artifact-verify.mjs"; assertEvidence("production-package", process.env.REQUESTED_COMMIT, process.env.GITHUB_RUN_ID);'
+      - name: Upload immutable tested rollback artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-rollback-9baa749f76afd88f1fe3122414ce9c8ef8217f45-${{ github.run_attempt }}
+          path: |
+            source/production-package/production-frontend.tar
+            source/production-package/production-frontend.tar.sha256
+            source/production-package/frontend-inventory.json
+            source/production-package/apache-evidence.json
+            source/production-package/browser-evidence.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30

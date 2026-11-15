@@ -140,6 +140,15 @@ if (!webrootEnv && !remoteEnv) {
   );
 }
 
+// In-place publication cannot recover atomically from a process or host
+// interruption. Refuse production until a complete transactional switch exists.
+if (webrootEnv && !dryRun) {
+  const resolved = fs.existsSync(webrootEnv) ? fs.realpathSync(webrootEnv) : path.resolve(webrootEnv);
+  if (resolved === '/home/illoc/domains/driftdwells.com/public_html') {
+    fail('Production frontend publication is blocked until atomic release switching and complete rollback are available.');
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Validate dist
 // ---------------------------------------------------------------------------

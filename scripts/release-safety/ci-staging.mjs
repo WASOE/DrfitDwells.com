@@ -107,12 +107,13 @@ async function startStripeMock() {
     phase(`stripe-mock state=${state || 'unknown'}`);
     if (state === 'running') {
       const stop = () => spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
-      for (let attempt = 1; attempt <= 5; attempt += 1) {
+      for (let attempt = 1; attempt <= 40; attempt += 1) {
         if (await stripeMockAnswers()) {
           phase('stripe-mock answered on 127.0.0.1:12111');
           return stop;
         }
         phase(`stripe-mock not answering (${attempt})`);
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
       phase('docker stripe-mock never answered; removing it');
       stop();

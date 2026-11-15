@@ -3,13 +3,87 @@ name: Release safety
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [master, wasoe-corporate-gift-wishlist]
 
 permissions:
   contents: read
   actions: write
 
 jobs:
+  historical-rollback-build:
+    name: Historical rollback build verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      VITE_FRONTEND_RELEASE: 9baa749f76afd88f1fe3122414ce9c8ef8217f45
+      VITE_STRIPE_PUBLISHABLE_KEY: pk_live_releasegatefixture
+      VITE_CHECKOUT_SESSION_V2: '1'
+      VITE_FINALIZE_INTENT_PERSIST: '1'
+      VITE_FINALIZE_INTENT_REQUIRED_FOR_PI: '1'
+      PRERENDER_REQUIRE_BROWSER: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tools
+      - uses: actions/checkout@v4
+        with:
+          ref: 9baa749f76afd88f1fe3122414ce9c8ef8217f45
+          path: source
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - name: Install Apache
+        run: sudo apt-get update && sudo apt-get install -y apache2 openssl python3
+      - run: npm ci
+        working-directory: source
+      - run: npm ci
+        working-directory: source/client
+      - name: Install Chromium
+        working-directory: source
+        run: npx playwright install --with-deps chromium
+      - name: Locate Chromium
+        run: |
+          CHROME=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -path '*chrome-linux*' | head -1)
+          test -n "$CHROME"
+          echo "PRERENDER_BROWSER_PATH=$CHROME" >> "$GITHUB_ENV"
+      - run: node scripts/release-safety/fetch-public-media.mjs
+        working-directory: source
+      - run: npm run build
+        working-directory: source/client
+      - name: Package and verify historical build with fixture key
+        working-directory: source
+        run: |
+          test "$(git rev-parse HEAD)" = "$VITE_FRONTEND_RELEASE"
+          node ../tools/scripts/release-safety/production-artifact.mjs create client/dist production-package "$VITE_FRONTEND_RELEASE"
+          mv client/dist "$RUNNER_TEMP/historical-original"
+          node ../tools/scripts/release-safety/production-artifact.mjs verify production-package client/dist "$VITE_FRONTEND_RELEASE"
+          node scripts/release-safety/run-gate.mjs
+          node scripts/release-safety/run-browser-gate.mjs
+          node ../tools/scripts/release-safety/frontend-inventory.mjs verify client/dist production-package/frontend-inventory.json
+
+  alma-frontend-migration:
+    name: AlmaLinux frontend migration and rollback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build isolated AlmaLinux httpd fixture
+        run: |
+          docker build -t drift-wishlist-httpd-validation:local - <<'EOF'
+          FROM almalinux:9
+          RUN dnf -y -q install httpd && dnf clean all
+          CMD ["/usr/sbin/httpd", "-DFOREGROUND"]
+          EOF
+      - name: Test migration, interruption, asset retention and rollback
+        env:
+          RUN_ALMA_HTTPD_TEST: '1'
+        run: node --test scripts/release-safety/blue-green-alma.test.mjs scripts/release-safety/vhost-migration-alma.test.mjs
+
   artifact-and-browser:
     name: Apache, browser, and payment contract
     runs-on: ubuntu-24.04
@@ -49,6 +123,24 @@ jobs:
         run: node scripts/release-safety/run-gate.mjs
       - name: Mocked booking browser gate
         run: node scripts/release-safety/run-browser-gate.mjs
+      - name: Package and verify the tested frontend
+        run: |
+          node --test scripts/release-safety/frontend-inventory.test.mjs scripts/release-safety/blue-green.test.mjs scripts/release-safety/production-smoke.test.mjs scripts/release-safety/production-assets.test.mjs scripts/release-safety/activate-production.test.mjs scripts/release-safety/vhost-migration.test.mjs scripts/release-safety/production-artifact.test.mjs scripts/release-safety/stage-production.test.mjs
+          node scripts/release-safety/frontend-inventory.mjs create client/dist frontend-inventory.json "$GITHUB_SHA" test
+          tar -C client/dist -cf frontend-validation.tar .
+          mkdir "$RUNNER_TEMP/frontend-artifact-check"
+          tar -C "$RUNNER_TEMP/frontend-artifact-check" -xf frontend-validation.tar
+          node scripts/release-safety/frontend-inventory.mjs verify "$RUNNER_TEMP/frontend-artifact-check" frontend-inventory.json
+          sha256sum frontend-validation.tar > frontend-validation.tar.sha256
+      - name: Upload tested frontend artifact (test Stripe key)
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-validation-test-key
+          path: |
+            frontend-validation.tar
+            frontend-validation.tar.sha256
+            frontend-inventory.json
+          if-no-files-found: error
       - name: Upload Apache and browser evidence
         uses: actions/upload-artifact@v4
         with:
