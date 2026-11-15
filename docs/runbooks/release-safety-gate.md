@@ -127,6 +127,64 @@ backups and verify their hashes. The `taskq --run` scope and reload behavior,
 the exact generated vhost changes, and complete restoration must be verified
 before the first real migration.
 
+#### Reversible DirectAdmin generator test (separate authorization required)
+
+This is a test of the installed generator, **not** frontend migration or
+activation. It adds only a unique Apache comment to the existing main-domain
+custom source. Do not start unless the operator has independently verified
+that `taskq --run` processes only the requested task without consuming the
+shared queue, and whether it reloads Apache. If that cannot be established
+without risk to other accounts, stop; do not use the shared task queue as a
+workaround. Confirm the test window, that no other process can edit these
+files or regenerate `illoc`, and that a privileged operator can restore them.
+
+1. Capture the effective HTTP and HTTPS vhosts for apex/www and test, Apache
+   syntax, current task-queue state, checksums of other users' generated vhost
+   files, and HTTP results for the main and test sites, `/api`, `/uploads`,
+   `/legal`, and representative other customers' sites. Record existing
+   non-200 responses as baselines, not as passing assertions. Confirm ownership,
+   modes, ACLs, filesystem traversal permissions and SELinux state for the
+   configuration and release paths.
+2. In a new root-owned directory outside the webroot, save independent copies
+   of both custom files and generated `httpd.conf` using `cp -a --preserve=all`.
+   Save and independently verify SHA-256, owner, group, mode and `getfacl -p`
+   for originals and backups. Test the restore procedure on copies; never
+   restore generated `httpd.conf` by writing it directly. Keep the originals
+   and backups available throughout the test.
+3. Recheck source hashes and metadata against the baseline. Add a unique
+   comment line to **only** `driftdwells.com.cust_httpd`, using a same-directory
+   metadata-preserving temporary copy and atomic rename. Do not change
+   `.cust_httpd_ssl`, headers, DOCROOT, aliases or any other directive.
+   Record the modified source hash. Do not overwrite another operator's edit.
+4. Execute the following single task directly, not through the shared queue:
+
+   ```bash
+   sudo /usr/local/directadmin/directadmin taskq \
+     '--run=action=rewrite&value=httpd&user=illoc'
+   ```
+
+   Check its result, queue state, `sudo /usr/sbin/httpd -t`, source hash,
+   metadata and generated comment. Compare all non-comment directives and
+   other users' vhost hashes with the baseline. Verify the recorded HTTP
+   results, including HTTPS, API, uploads, legal and test-site routing. Repeat
+   the same account-scoped task once and repeat all comparisons to prove
+   persistence. A simulated renderer is not evidence for this step.
+5. Restore the original custom source from its verified backup through a
+   same-directory metadata-preserving temporary copy and atomic rename, after
+   confirming the current source hash is the recorded test hash. Run the same
+   account-scoped task once more. Verify both custom files, generated config,
+   metadata and ACLs against the baseline; rerun syntax, queue, unrelated-vhost
+   and HTTP checks. If any check fails, restore the original persistent source
+   and regenerate only `illoc`, verify recovery, and stop. If source ownership
+   or hashes changed unexpectedly, stop rather than overwrite those changes.
+   Do not directly overwrite the generated config or reload Apache manually
+   before a successful syntax check.
+
+Record command output, source and backup hashes, test marker, before/after
+comparisons, observed reload behavior and any recovery evidence in the
+change record. Successful completion is a prerequisite for reviewing and
+enabling this implementation, not authorization for the migration itself.
+
 The production API cutover's PM2 save was deferred. Until separately
 authorized and verified, a host reboot or PM2 resurrection may start the older
 saved API release, which does not provide wishlist endpoints. Do not start the
