@@ -815,6 +815,11 @@ export async function migrateSiteVhost({
     updateJournal(stateRoot, journal, 'probe-created');
     compareManifest(pathManifest(documentRoot), originalTree, 'Document root stability before activation');
     fs.symlinkSync(release, pointer);
+    fs.lchownSync(pointer, originalRootStat.uid, originalRootStat.gid);
+    const pointerStat = fs.lstatSync(pointer);
+    if (pointerStat.uid !== originalRootStat.uid || pointerStat.gid !== originalRootStat.gid) {
+      throw new Error('Release pointer ownership does not match the release for SymLinksIfOwnerMatch');
+    }
     syncDirectory(path.dirname(pointer));
     updateJournal(stateRoot, journal, 'pointer-created');
     installConfig({

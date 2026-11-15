@@ -273,6 +273,8 @@ Include "${siteConfig}"
     verifyAssetServing
   });
   assert.equal(migrated.status, 'active');
+  assert.equal(fs.lstatSync(pointer).uid, fs.statSync(migrated.documentRoot).uid);
+  assert.equal(fs.lstatSync(pointer).gid, fs.statSync(migrated.documentRoot).gid);
   assert.equal(fs.existsSync(path.join(sharedAssets, 'app.js')), true, 'first migration must publish the shared asset');
   assert.equal(fs.readFileSync(path.join(sharedAssets, 'app.js'), 'utf8'), 'first migration asset bytes');
   assert.equal(fs.statSync(path.join(sharedAssets, 'app.js')).mode & 0o222, 0);

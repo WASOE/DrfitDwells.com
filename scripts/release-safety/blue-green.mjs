@@ -39,6 +39,12 @@ function switchPointer(pointer, target) {
   const tmp = `${pointer}.${crypto.randomUUID()}.tmp`;
   fs.symlinkSync(target, tmp);
   try {
+    const owner = fs.statSync(target);
+    fs.lchownSync(tmp, owner.uid, owner.gid);
+    const linkOwner = fs.lstatSync(tmp);
+    if (linkOwner.uid !== owner.uid || linkOwner.gid !== owner.gid) {
+      throw new Error('Release pointer ownership does not match the target');
+    }
     fs.renameSync(tmp, pointer);
     syncDirectory(path.dirname(pointer));
   } finally {
