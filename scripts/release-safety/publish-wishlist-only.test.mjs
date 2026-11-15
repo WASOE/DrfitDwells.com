@@ -80,7 +80,7 @@ test('failed origin smoke automatically restores original route files', async t 
 test('hash collision aborts before any write', async t => withSite(t, async env => {
   write(env.webroot, env.entry, 'different bytes under identical hashed name');
   assert.throws(() => inspectWishlistRelease(env), /Shared file collisions/);
-  await assert.rejects(publishWishlistRelease({ ...env, smoke: async () => true }), /Shared asset collisions/);
+  await assert.rejects(publishWishlistRelease({ ...env, smoke: async () => true }), /Shared file collisions/);
   assert.equal(fs.existsSync(env.state), false);
 }));
 test('symlinked live route parent is rejected before any write', async t => withSite(t, async env => {
