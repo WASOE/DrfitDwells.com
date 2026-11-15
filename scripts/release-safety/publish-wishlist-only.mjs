@@ -23,6 +23,8 @@ const RUN_ID = '43695815193';
 const API_COMMIT = '01d64f8f4b1f6503c92f3e849a4aa04e99476687';
 const PROD_ROOT = '/home/illoc/domains/driftdwells.com/public_html';
 const ROUTES = ['wishlist/index.html', 'bg/wishlist/index.html'];
+// Exact additional media referenced by both verified wishlist page builds.
+const WISHLIST_MEDIA = ['media/home/wishlist-lux-cabin-christmas.jpeg', 'media/home/valley-aframes-close.jpg'];
 const JOURNAL = 'wishlist-publish-journal.json';
 const HASHED_ASSET = /^assets\/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\.(?:js|css|woff2?|ttf|svg|png|jpe?g|webp|avif|gif|json)$/;
 
@@ -179,7 +181,6 @@ export function inspectWishlistRelease({ source, inventory, webroot }) {
       throw new Error('Refusing to introduce an unversioned shared asset: ' + item.path);
     } else assets.push({ path: item.path, sha256: item.sha256, size: item.size });
   }
-  if (collisions.length) throw new Error('Shared asset collisions: ' + collisions.slice(0, 10).join(', '));
   const pages = ROUTES.map(relative => {
     const entry = expectedRouteHtml(source, relative, inventory);
     const target = safePath(webroot, relative);
@@ -187,6 +188,22 @@ export function inspectWishlistRelease({ source, inventory, webroot }) {
     return { ...entry, prior: current ? sha256(target) : null,
       owner: current ? { uid: current.uid, gid: current.gid, mode: current.mode & 0o777 } : null };
   });
+  for (const media of WISHLIST_MEDIA) {
+    for (const page of pages) {
+      const html = fs.readFileSync(path.join(source, page.relative), 'utf8');
+      if (!html.includes('"/' + media + '"')) throw new Error('Approved wishlist image not referenced: ' + media);
+    }
+    const item = inventory.files.find(file => file.path === media);
+    if (!item) throw new Error('Verified source lacks wishlist photo: ' + media);
+    const target = safePath(webroot, media);
+    const current = regularOrAbsent(target);
+    if (current) {
+      if (sha256(target) !== item.sha256) collisions.push(media);
+    } else {
+      assets.push({ path: media, sha256: item.sha256, size: item.size });
+    }
+  }
+  if (collisions.length) throw new Error('Shared file collisions: ' + collisions.slice(0, 10).join(', '));
   return { commit: COMMIT, runId: RUN_ID, webroot, pages, assets, unchanged };
 }
 function assertUnchanged(webroot, unchanged) {
