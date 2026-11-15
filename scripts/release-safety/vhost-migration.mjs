@@ -668,6 +668,9 @@ async function rollbackJournal(stateRoot, journal, run, { explicit = false, veri
   if (typeof verifyReload !== 'function') {
     throw new Error('Effective Apache rollback reload and live-site verification are required before recovery');
   }
+  if (!pointerExists) {
+    throw new Error('Recovery refused: release pointer is missing while Apache may still require it');
+  }
   const restoreEntries = journal.persistentConfigs.map(entry => ({
     entry, bytes: persistentConfigBytes(journal, entry)
   }));
@@ -1291,6 +1294,7 @@ export async function migrateSiteVhost({
       });
     verifySharedAssets(sharedAssets, preparedPaths.assets);
     verifyPersistentConfigs(journal, 'migrated');
+    if (!checkPointer(pointer, release)) throw new Error('Release pointer disappeared during live verification');
     removeProbeMarker(journal);
     compareManifest(pathManifest(release), expectedSealedTree, 'Published release after probe-marker cleanup');
     if ((fs.statSync(release).mode & 0o7777) !== journal.sealedRootMode) {

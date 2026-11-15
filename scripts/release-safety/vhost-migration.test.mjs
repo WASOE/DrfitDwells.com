@@ -513,6 +513,68 @@ test('migration reload timeout remains recovery-required even after verified res
   assert.equal(fs.existsSync(f.pointer), true);
 });
 
+test('missing release pointer stops recovery before restoring or regenerating config', async t => {
+  const f = fixture();
+  t.after(() => removeFixture(f.tmp));
+  const { run, commands } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
+  await migrateSiteVhost(migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run));
+  const configBefore = fs.readFileSync(f.customConfig, 'utf8');
+  const callsBefore = commands.length;
+  fs.unlinkSync(f.pointer);
+  await assert.rejects(recoverSiteVhostMigration({
+    stateRoot: f.stateRoot, run, rollback: true, verifyReload: async () => ({ ok: true })
+  }), /release pointer is missing/);
+  assert.equal(fs.readFileSync(f.customConfig, 'utf8'), configBefore);
+  assert.equal(commands.length, callsBefore);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(f.stateRoot, 'vhost-migration.json'), 'utf8')).status,
+    'recovery-required');
+});
+
+test('recovery resumes safely from each journaled transition', async t => {
+  const cases = [
+    ['prepared', 'original'], ['probe-created', 'original'], ['pointer-created', 'original'],
+    ['installing-config', 'original'], ['installing-config', 'migrated'],
+    ['config-installed', 'migrated'], ['syntax-passed', 'migrated'],
+    ['reload-pending', 'migrated'], ['active', 'migrated'],
+    ['restore-started', 'migrated'], ['restore-installed', 'original'],
+    ['restore-reload-pending', 'original'], ['recovery-required', 'original']
+  ];
+  for (const [status, configVersion] of cases) {
+    const f = fixture();
+    t.after(() => removeFixture(f.tmp));
+    const { run, commands } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
+    await migrateSiteVhost(migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run));
+    const file = path.join(f.stateRoot, 'vhost-migration.json');
+    const journal = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (configVersion === 'original') {
+      fs.writeFileSync(f.customConfig, f.customSource);
+      fs.writeFileSync(f.siteConfig, f.siteConfigContents);
+    }
+    journal.status = status;
+    fs.writeFileSync(file, JSON.stringify(journal));
+    const rewrites = commands.filter(item => item.command === '/usr/local/directadmin/directadmin').length;
+    let reloads = 0;
+    const result = await recoverSiteVhostMigration({
+      stateRoot: f.stateRoot, run, rollback: status === 'active',
+      verifyReload: async ({ phase, pointer, release }) => {
+        assert.equal(phase, 'rollback', status);
+        assert.equal(fs.readlinkSync(pointer), release, status);
+        assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents, status);
+        reloads++;
+        return { ok: true };
+      }
+    });
+    const preInstall = ['prepared', 'probe-created', 'pointer-created'].includes(status);
+    assert.equal(result.status, status === 'active' ? 'rolled-back' : 'recovered', status);
+    assert.equal(reloads, preInstall ? 0 : 1, status);
+    assert.equal(commands.filter(item => item.command === '/usr/local/directadmin/directadmin').length,
+      rewrites + (preInstall ? 0 : 1), status);
+    assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource, status);
+    assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents, status);
+    assert.equal(fs.readlinkSync(f.pointer), journal.release, status);
+  }
+});
+
 test('regeneration and live-probe failures both restore the prior vhost', async t => {
   for (const [failure, expected] of [
     [{ failRewriteOnce: true }, /Account-scoped DirectAdmin HTTP vhost regeneration failed/],

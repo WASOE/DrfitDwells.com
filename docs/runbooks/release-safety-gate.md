@@ -148,7 +148,10 @@ after a verified rollback. A failed or timed-out verification records
 simulations, not a production implementation or evidence that Apache reloaded.
 The CLI deliberately provides no way to satisfy these callbacks or bypass the
 gate. The retained pointer is not garbage-collectable merely because the
-generated file has changed: old Apache workers may still use it.
+generated file has changed: old Apache workers may still use it. If that
+pointer is missing after configuration installation may have begun, recovery
+stops without changing or regenerating configuration and records
+`recovery-required`; an operator must investigate the effective Apache state.
 
 The outstanding blocker is pre-load validation of the **actual** DirectAdmin
 generated configuration. `taskq --run` writes the live generated file and
