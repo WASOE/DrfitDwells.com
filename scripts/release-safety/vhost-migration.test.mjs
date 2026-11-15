@@ -139,6 +139,7 @@ function fixture() {
   fs.mkdirSync(configDir, { recursive: true });
   fs.mkdirSync(documentRoot, { recursive: true });
   fs.mkdirSync(fixtureSharedAssets, { recursive: true });
+  fs.chmodSync(fixtureSharedAssets, 0o755);
   fs.mkdirSync(releasesRoot, { recursive: true });
   fs.mkdirSync(path.dirname(pointer), { recursive: true });
   fs.mkdirSync(path.dirname(stateRoot), { recursive: true });

@@ -29,6 +29,7 @@ function fixture(t) {
   fs.mkdirSync(releases);
   fs.mkdirSync(state);
   fs.mkdirSync(sharedAssets);
+  fs.chmodSync(sharedAssets, 0o755);
   for (const name of ['old', 'new']) {
     const dir = path.join(releases, name);
     fs.mkdirSync(path.join(dir, 'bg', 'wishlist'), { recursive: true });
@@ -199,11 +200,28 @@ test('refuses symlinked asset directories and a conflict with an older retained 
   fs.symlinkSync(f.previous, path.join(f.sharedAssets, 'nested'));
   await assert.rejects(activateRelease(f), /directory must be real/);
   fs.unlinkSync(path.join(f.sharedAssets, 'nested'));
-  fs.mkdirSync(path.join(f.sharedAssets, 'nested'));
+  fs.mkdirSync(path.join(f.sharedAssets, 'nested'), { mode: 0o755 });
   fs.writeFileSync(path.join(f.sharedAssets, 'nested', 'bundle-abc.js'), 'older-release');
   fs.chmodSync(path.join(f.sharedAssets, 'nested', 'bundle-abc.js'), 0o444);
   await assert.rejects(activateRelease(f), /hash conflict/);
   assert.equal(fs.readFileSync(path.join(f.sharedAssets, 'nested', 'bundle-abc.js'), 'utf8'), 'older-release');
+  assert.equal(fs.realpathSync(f.pointer), f.previous);
+});
+
+test('rejects shared asset root and nested directories writable by group or others', async t => {
+  const f = fixture(t);
+  for (const dir of [f.previous, f.candidate]) {
+    fs.mkdirSync(path.join(dir, 'assets', 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'assets', 'nested', 'bundle.js'), 'same');
+  }
+  f.previousInventory = createInventory(f.previous, 'b'.repeat(40), 'production');
+  f.inventory = createInventory(f.candidate, 'a'.repeat(40), 'production');
+  fs.chmodSync(f.sharedAssets, 0o777);
+  await assert.rejects(activateRelease(f), /group- or world-writable/);
+  fs.chmodSync(f.sharedAssets, 0o755);
+  fs.mkdirSync(path.join(f.sharedAssets, 'nested'), { mode: 0o755 });
+  fs.chmodSync(path.join(f.sharedAssets, 'nested'), 0o775);
+  await assert.rejects(activateRelease(f), /group- or world-writable/);
   assert.equal(fs.realpathSync(f.pointer), f.previous);
 });
 

@@ -12,9 +12,11 @@ function hash(file) {
 }
 
 function directory(dir) {
-  if (!fs.lstatSync(dir).isDirectory() || fs.realpathSync(dir) !== dir) {
+  const stat = fs.lstatSync(dir);
+  if (!stat.isDirectory() || fs.realpathSync(dir) !== dir) {
     throw new Error(`Asset directory must be real and have no symlink components: ${dir}`);
   }
+  if (stat.mode & 0o022) throw new Error(`Asset directory must not be group- or world-writable: ${dir}`);
 }
 
 export function apacheSharedAssetsDirectives(sharedAssets) {

@@ -28,6 +28,7 @@ test('AlmaLinux httpd serves an isolated switch, proxied uploads and independent
   fs.mkdirSync(releases);
   fs.mkdirSync(state);
   fs.mkdirSync(sharedAssets);
+  fs.chmodSync(sharedAssets, 0o755);
   for (const name of ['old', 'new']) {
     const dir = path.join(releases, name);
     fs.mkdirSync(path.join(dir, 'bg', 'wishlist'), { recursive: true });

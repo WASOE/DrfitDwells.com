@@ -22,6 +22,7 @@ function fixture(t) {
   const state = path.join(root, 'state');
   const sharedAssets = path.join(root, 'assets');
   for (const dir of [releases, state, sharedAssets]) fs.mkdirSync(dir);
+  fs.chmodSync(sharedAssets, 0o755);
   const oldSha = 'a'.repeat(40);
   const newSha = 'b'.repeat(40);
   const previous = path.join(releases, oldSha);
