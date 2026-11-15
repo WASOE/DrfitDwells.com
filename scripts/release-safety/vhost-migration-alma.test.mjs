@@ -296,7 +296,8 @@ Include "${siteConfig}"
     expectedApiRelease: 'b'.repeat(40), key: 'pk_live_fixture', token: 'fixture',
     releases: releaseRoot, state: activationState, pointer, sharedAssets, migrationState: state,
     originIp: '127.0.0.1',
-    download: ({ destination }) => {
+    download: ({ destination, commit }) => {
+      assert.equal(commit, candidateSha, 'observed snapshot must not be downloaded or labeled as a commit');
       fs.cpSync(candidateSource, destination, { recursive: true });
       return { ok: true, inventory: candidateInventory };
     },
@@ -311,6 +312,12 @@ Include "${siteConfig}"
       return { ok: response.status === 200 && response.body.toString() === expected };
     }
   };
+  const savedIndex = path.join(migrated.documentRoot, 'index.html');
+  fs.chmodSync(savedIndex, 0o644);
+  fs.writeFileSync(savedIndex, 'tampered snapshot');
+  await assert.rejects(activateVerifiedProduction(activation), /Observed migration rollback integrity/);
+  fs.writeFileSync(savedIndex, originalIndex);
+  fs.chmodSync(savedIndex, 0o444);
   await assert.rejects(activateVerifiedProduction({ ...activation, smoke: async ({ releaseAsset }) =>
     releaseAsset === '/assets/new.js' ? { ok: false } : activation.smoke({ releaseAsset })
   }), /previous release restored/);

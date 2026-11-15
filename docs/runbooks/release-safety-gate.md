@@ -52,12 +52,10 @@ switch an existing symlink, retain hashed assets separately, and journal
 activation. The activation entry point downloads and verifies both artifacts,
 checks the site and shared assets, and restores the previous pointer on smoke
 failure. **This is not yet a production-ready migration procedure.** In
-particular, the first migration points to `vhost-migration-<uuid>`, whereas
-`activate-production.mjs` requires the active pointer to identify the
-independently verified `<previousCommit>` release. No supported operation
-currently joins these steps; do not relabel the observed snapshot as a commit
-or bypass the check. The independently verified pre-wishlist rollback
-artifact and complete sequence still need verification. Removing write permissions does not make an owner-controlled directory
+particular, the first activation may use only the separately checked migration
+snapshot labeled `observed-production`; it is not a Git commit or a recovered
+historical release. The historical production artifact and complete sequence
+still need verification with real production configuration. Removing write permissions does not make an owner-controlled directory
 immutable. The optional `RUN_ALMA_HTTPD_TEST=1 node --test
 scripts/release-safety/blue-green-alma.test.mjs` test exercises an isolated
 AlmaLinux httpd container with selected observed vhost rules, including a
@@ -83,7 +81,86 @@ is pinned to source `9baa749f76afd88f1fe3122414ce9c8ef8217f45`; it is not
 a verified production artifact until its trusted master run succeeds and its
 artifact and evidence have been independently verified. Do not use the
 staging or activation commands as a production procedure until that
-independent rollback gap and the first-migration handoff are resolved.
+independent rollback and deployment prerequisites are resolved.
+
+### First migration and activation (not yet authorized)
+
+Do not run these commands until the PR is approved and merged, the artifact
+workflow and its exact production candidate have passed, the actual hosting
+configuration and privileges have been confirmed, and production migration is
+separately authorized. The old webroot is never renamed or removed. The
+snapshot is an observed copy of the live tree, not proof of any source commit
+or restoration of missing historical bytes.
+
+Prerequisites: a repository-scoped GitHub Actions/Contents read credential;
+`VITE_STRIPE_PUBLISHABLE_KEY` set to the actual **public** production key;
+`OPS_VERIFY_TOKEN` with Finance access; and `DRIFT_ORIGIN_IP` set to the
+verified origin IP. Do not put credentials in the command line or logs. Verify
+the current API release, booking/payment capabilities and wishlist API before
+activating a wishlist build. Confirm the effective persistent Apache config,
+matching owner of symlink and release for `SymLinksIfOwnerMatch`, Apache
+traverse/read permissions, ACLs and SELinux labels for every new path, and
+exclusive publisher control of the shared-asset store. Confirm a tested
+site-scoped reload command; Apache is shared. Quiesce webroot writers throughout
+the first snapshot. An independently stored copy of the sealed backup and
+manifest must be verified before activation.
+
+After creating and securing the release, state and shared-asset directories
+without changing the live document root, set these values to the verified host
+paths. The executable and reload arguments are examples and **must** match
+the verified host:
+
+```bash
+BASE=/home/illoc/releases/frontend
+WEBROOT=/home/illoc/domains/driftdwells.com/public_html
+SITE_CONFIG=/usr/local/directadmin/data/users/illoc/httpd.conf
+APACHE_CONFIG=/etc/httpd/conf/httpd.conf
+ASSET_MANIFEST="$BASE/observed-assets.json"
+
+node --input-type=module -e 'import fs from "node:fs"; import { createInventory } from "./scripts/release-safety/frontend-inventory.mjs"; const [root,out]=process.argv.slice(1); const files=createInventory(root,"observed-production","observed-production").files.filter(x=>x.path.startsWith("assets/")); fs.writeFileSync(out,JSON.stringify(files),{flag:"wx",mode:0o600});' "$WEBROOT" "$ASSET_MANIFEST"
+
+node scripts/release-safety/vhost-migration-cli.mjs plan \
+  --site-config "$SITE_CONFIG" --apache-config "$APACHE_CONFIG" --document-root "$WEBROOT" \
+  --shared-assets "$BASE/assets" --assets-manifest "$ASSET_MANIFEST" \
+  --release-root "$BASE/releases" --pointer "$BASE/current" --state-dir "$BASE/migration-state"
+
+node scripts/release-safety/vhost-migration-cli.mjs apply --apply \
+  --confirm-webroot-quiesced --confirm-config-persistence --confirm-shared-assets-policy \
+  --site-config "$SITE_CONFIG" --apache-config "$APACHE_CONFIG" --document-root "$WEBROOT" \
+  --shared-assets "$BASE/assets" --assets-manifest "$ASSET_MANIFEST" \
+  --release-root "$BASE/releases" --pointer "$BASE/current" --state-dir "$BASE/migration-state" \
+  --httpd /usr/sbin/httpd --copy-command /usr/bin/cp \
+  --reload-command /usr/sbin/httpd --reload-arg -k --reload-arg graceful \
+  --probe-url https://driftdwells.com/search --probe-url https://driftdwells.com/checkout
+```
+
+Verify and independently retain `$BASE/migration-state/backup` before the
+first activation. The migration journal, sealed snapshot, original backup,
+shared assets and active vhost are checked again by the first activation:
+
+```bash
+node scripts/release-safety/activate-production.mjs \
+  "$CANDIDATE_RUN_ID" "$CANDIDATE_SHA" observed observed-production "$API_SHA"
+```
+
+An unsuccessful activation restores the prior pointer and runs rollback smoke
+checks. If interrupted, establish that no publisher is running, remove only
+its stale `$BASE/state/activation.lock`, then run:
+
+```bash
+node scripts/release-safety/activate-production.mjs recover observed observed-production "$API_SHA"
+```
+
+To reverse the initial vhost migration after restoring the observed pointer:
+
+```bash
+node scripts/release-safety/vhost-migration-cli.mjs rollback --state-dir "$BASE/migration-state"
+```
+
+For later releases supply the independently verified previous run ID and full
+commit SHA instead of `observed observed-production`. Do not use the observed
+exception to relabel later releases. If verification or rollback smoke fails,
+leave the journal intact and stop.
 
 `npm run deploy:frontend:safe` always refuses to publish unless `RELEASE_SAFETY_REPORT` matches the release SHA and a completed successful GitHub Actions run. The run must contain both artifacts:
 
