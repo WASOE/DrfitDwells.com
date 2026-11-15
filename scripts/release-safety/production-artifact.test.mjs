@@ -11,7 +11,8 @@ import {
 } from './production-artifact.mjs';
 import {
   REPOSITORY, WORKFLOW, artifactName, assertTrustedRun, selectArtifact,
-  assertEvidence, downloadProductionArtifact, unpackDownload, RELEASE_WORKFLOW
+  assertEvidence, downloadProductionArtifact, unpackDownload, RELEASE_WORKFLOW,
+  HISTORICAL_ROLLBACK, HISTORICAL_WORKFLOW_SHA256, rollbackArtifactName, assertHistoricalWorkflow
 } from './production-artifact-verify.mjs';
 
 const COMMIT = 'a'.repeat(40);
@@ -24,7 +25,7 @@ const trustedRun = () => ({
   conclusion: 'success', path: WORKFLOW, workflow_id: workflow.id, run_attempt: 1
 });
 
-function fixture(t) {
+function fixture(t, commit = COMMIT) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-production-test-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const root = path.join(directory, 'dist');
@@ -39,15 +40,15 @@ function fixture(t) {
     const markers = ["guestInfo", "legalAcceptance", "acceptedTermsAndCancellation"];
     function contract(){return {paymentContractVersion:"checkout-payment-v2-finalize-1",
       checkoutSessionV2:true,finalizeIntentPersist:true,finalizeIntentRequiredForPi:true,
-      frontendRelease:"${COMMIT}"}}
+      frontendRelease:"${commit}"}}
   `);
   const pkg = path.join(directory, 'package');
   const out = path.join(directory, 'output');
   return { directory, root, pkg, out };
 }
 
-function addEvidence(pkg) {
-  const common = { sha: COMMIT, workflowRunId: String(RUN_ID) };
+function addEvidence(pkg, commit = COMMIT) {
+  const common = { sha: commit, workflowRunId: String(RUN_ID) };
   fs.writeFileSync(path.join(pkg, 'apache-evidence.json'), JSON.stringify({
     ...common, search: { ok: true }, checkout: { ok: true },
     faultyRule: { searchRedirectedHome: true, checkoutRedirectedHome: true }
@@ -66,21 +67,21 @@ with zipfile.ZipFile(sys.argv[2], 'w', compression=zipfile.ZIP_DEFLATED) as z:
 `, pkg, zip, JSON.stringify(names)]);
 }
 
-function artifactRecord(zip) {
-  return { id: 321, name: artifactName(COMMIT, 1), expired: false,
+function artifactRecord(zip, headSha = COMMIT, name = artifactName(COMMIT, 1)) {
+  return { id: 321, name, expired: false,
     size_in_bytes: fs.statSync(zip).size, digest: `sha256:${sha256(zip)}`,
-    workflow_run: { id: RUN_ID, head_sha: COMMIT, head_branch: 'master' } };
+    workflow_run: { id: RUN_ID, head_sha: headSha, head_branch: 'master' } };
 }
 
 function fakeApi(zip, { run = trustedRun(), mutateArtifact = value => value, latest = run,
   releaseFields = {}, mutateStaging = value => value, missingRelease = false, missingStaging = false,
-  releaseLatest = null } = {}) {
+  releaseLatest = null, commit = COMMIT, historical = false, workflowContent = null } = {}) {
   const calls = [];
-  const releaseRun = { ...trustedRun(), id: 456, path: RELEASE_WORKFLOW, workflow_id: 46, event: 'push', ...releaseFields };
+  const releaseRun = { ...trustedRun(), id: 456, head_sha: commit, path: RELEASE_WORKFLOW, workflow_id: 46, event: 'push', ...releaseFields };
   let releaseArtifacts;
   function prepareReleaseArtifacts() {
     if (releaseArtifacts) return releaseArtifacts;
-    const evidence = buildPassingEvidence(COMMIT, releaseRun.id);
+    const evidence = buildPassingEvidence(commit, releaseRun.id);
     evidence.staging = mutateStaging(evidence.staging);
     const source = path.join(path.dirname(zip), 'release-evidence');
     fs.mkdirSync(source, { recursive: true });
@@ -94,13 +95,18 @@ function fakeApi(zip, { run = trustedRun(), mutateArtifact = value => value, lat
       const archive = path.join(path.dirname(zip), `${name}.zip`);
       zipPackage(source, archive, files);
       return { ...artifactRecord(archive), id: 600 + i, name, workflow_run: {
-        id: releaseRun.id, head_sha: COMMIT, head_branch: 'master'
+        id: releaseRun.id, head_sha: commit, head_branch: 'master'
       }, archive };
     });
     return releaseArtifacts;
   }
   const api = (endpoint, output) => {
     calls.push(endpoint);
+    if (endpoint.startsWith(`repos/${REPOSITORY}/contents/${WORKFLOW}?ref=`)) {
+      if (workflowContent) return workflowContent;
+      const bytes = fs.readFileSync(new URL('../../.github/workflows/production-artifact.yml', import.meta.url));
+      return { encoding: 'base64', content: bytes.toString('base64'), size: bytes.length, sha: 'a'.repeat(40) };
+    }
     if (endpoint.endsWith('/workflows/release-safety.yml')) return { id: 46, path: RELEASE_WORKFLOW, state: 'active' };
     if (endpoint.includes('/workflows/46/runs?')) return { workflow_runs: missingRelease ? [] : [releaseRun] };
     if (endpoint.endsWith('/runs/456')) {
@@ -114,7 +120,8 @@ function fakeApi(zip, { run = trustedRun(), mutateArtifact = value => value, lat
     if (releaseArtifact) { fs.copyFileSync(releaseArtifact.archive, output); return; }
     if (endpoint.endsWith('/zip')) { fs.copyFileSync(zip, output); return; }
     if (endpoint.endsWith('/artifacts?per_page=100')) {
-      return { total_count: 1, artifacts: [mutateArtifact(artifactRecord(zip))] };
+      return { total_count: 1, artifacts: [mutateArtifact(artifactRecord(zip, run.head_sha,
+        historical ? rollbackArtifactName(run.run_attempt) : artifactName(commit, run.run_attempt)))] };
     }
     if (endpoint.endsWith('/workflows/production-artifact.yml')) return workflow;
     if (endpoint.endsWith(`/runs/${RUN_ID}`)) return calls.filter(x => x.endsWith(`/runs/${RUN_ID}`)).length === 1 ? run : latest;
@@ -261,6 +268,54 @@ test('download verifies GitHub digest, complete inventory, exact contract and ev
   assert.ok(calls.every(x => x.startsWith(`repos/${REPOSITORY}/actions/`)));
 });
 
+test('pinned historical rollback verifies trusted workflow, independent release checks and package', t => {
+  const { root, pkg, out, directory } = fixture(t, HISTORICAL_ROLLBACK);
+  createPackage(root, pkg, HISTORICAL_ROLLBACK, KEY);
+  addEvidence(pkg, HISTORICAL_ROLLBACK);
+  const zip = path.join(directory, 'package.zip');
+  zipPackage(pkg, zip);
+  const { api, calls } = fakeApi(zip, { commit: HISTORICAL_ROLLBACK, historical: true });
+  const result = downloadProductionArtifact({ runId: RUN_ID, commit: HISTORICAL_ROLLBACK, key: KEY, destination: out, api });
+  assert.equal(result.provenanceMode, 'pinned-historical-rollback');
+  assert.equal(result.commit, HISTORICAL_ROLLBACK);
+  assert.equal(result.workflowCommit, COMMIT);
+  assert.equal(result.inventory.commit, HISTORICAL_ROLLBACK);
+  assert.equal(result.releaseChecks.workflowRunId, '456');
+  assert.equal(calls.filter(x => x.includes(`/contents/${WORKFLOW}?ref=${COMMIT}`)).length, 2);
+});
+
+for (const [label, options] of [
+  ['modified workflow', { workflowContent: { encoding: 'base64', content: Buffer.from('fake').toString('base64'), size: 4, sha: 'a'.repeat(40) } }],
+  ['malformed workflow response', { workflowContent: { encoding: 'none', content: '', size: 0 } }],
+  ['branch dispatch', { run: { ...trustedRun(), head_branch: 'feature' } }],
+  ['fork dispatch', { run: { ...trustedRun(), head_repository: { full_name: 'evil/fork' } } }],
+  ['wrong workflow', { run: { ...trustedRun(), path: RELEASE_WORKFLOW } }],
+  ['missing historical release evidence', { missingRelease: true }],
+  ['historical staging mismatch', { mutateStaging: value => ({ ...value, sha: COMMIT }) }],
+  ['wrong artifact run SHA', { mutateArtifact: value => ({ ...value, workflow_run: { id: RUN_ID, head_sha: HISTORICAL_ROLLBACK, head_branch: 'master' } }) }],
+  ['wrong artifact name', { mutateArtifact: value => ({ ...value, name: artifactName(HISTORICAL_ROLLBACK, 1) }) }],
+  ['changed attempt', { latest: { ...trustedRun(), run_attempt: 2 } }]
+]) {
+  test(`historical rollback rejects ${label}`, t => {
+    const { root, pkg, out, directory } = fixture(t, HISTORICAL_ROLLBACK);
+    createPackage(root, pkg, HISTORICAL_ROLLBACK, KEY);
+    addEvidence(pkg, HISTORICAL_ROLLBACK);
+    const zip = path.join(directory, 'package.zip');
+    zipPackage(pkg, zip);
+    const { api } = fakeApi(zip, { commit: HISTORICAL_ROLLBACK, historical: true, ...options });
+    assert.throws(() => downloadProductionArtifact({ runId: RUN_ID, commit: HISTORICAL_ROLLBACK, key: KEY, destination: out, api }));
+    assert.equal(fs.existsSync(out), false);
+  });
+}
+
+test('historical exception cannot authorize a different requested source', () => {
+  const bytes = fs.readFileSync(new URL('../../.github/workflows/production-artifact.yml', import.meta.url));
+  const content = { encoding: 'base64', content: bytes.toString('base64'), size: bytes.length, sha: 'a'.repeat(40) };
+  assert.throws(() => assertHistoricalWorkflow(trustedRun(), workflow, RUN_ID, 'c'.repeat(40), content), /not allowed/);
+  assert.throws(() => assertTrustedRun(trustedRun(), workflow, RUN_ID, 'c'.repeat(40)), /Untrusted/);
+  assert.equal(sha256(new URL('../../.github/workflows/production-artifact.yml', import.meta.url)), HISTORICAL_WORKFLOW_SHA256);
+});
+
 for (const [label, options] of [
   ['missing run', { missingRelease: true }],
   ['failed run', { releaseFields: { conclusion: 'failure' } }],
@@ -381,4 +436,10 @@ test('workflow keeps production artifact separate, exact-SHA bound and tests unp
   assert.ok(workflowSource.indexOf('verify production-package client/dist') < workflowSource.indexOf('run-gate.mjs'));
   assert.ok(workflowSource.indexOf('run-browser-gate.mjs') < workflowSource.indexOf('frontend-inventory.mjs verify'));
   assert.match(workflowSource, /VITE_FINALIZE_INTENT_REQUIRED_FOR_PI: '1'/);
+  assert.match(workflowSource, /inputs\.commit == github\.sha/);
+  assert.match(workflowSource, /ref: 9baa749f76afd88f1fe3122414ce9c8ef8217f45/);
+  assert.match(workflowSource, /ref: 12f98be265630bb902221d44dec4ced93fec93aa/);
+  assert.match(workflowSource, /git -C source rev-parse HEAD/);
+  assert.match(workflowSource, /git -C trusted rev-parse HEAD/);
+  assert.match(workflowSource, /production-rollback-9baa749f76afd88f1fe3122414ce9c8ef8217f45-/);
 });

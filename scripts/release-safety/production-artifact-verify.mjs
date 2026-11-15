@@ -4,12 +4,13 @@
  * node scripts/release-safety/production-artifact-verify.mjs <run-id> <full-sha> <new-output-directory>
  * Requires gh authentication with Actions read access, Python 3, and the expected
  * VITE_STRIPE_PUBLISHABLE_KEY. Trust is pinned below, never supplied by an artifact.
- * Only dispatches on master at the requested SHA are accepted. Dispatching an
- * older SHA from a newer master run is deliberately unsupported.
+ * Current releases require the dispatch SHA. One historical rollback SHA is
+ * allowed only through a byte-pinned workflow and pinned source/tools.
  * Also requires the latest release-safety.yml master push run for that SHA
  * to pass, including downloaded isolated staging responses and payment proof.
  */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
@@ -22,7 +23,10 @@ import {
 export const REPOSITORY = 'WASOE/DrfitDwells.com';
 export const WORKFLOW = '.github/workflows/production-artifact.yml';
 export const RELEASE_WORKFLOW = '.github/workflows/release-safety.yml';
+export const HISTORICAL_ROLLBACK = '9baa749f76afd88f1fe3122414ce9c8ef8217f45';
+export const HISTORICAL_WORKFLOW_SHA256 = '89e904d7869a3f1db0d54c6f494b5fe12b36404f95d33e64cb9d711e0d7f2a24';
 export const artifactName = (commit, attempt) => `production-frontend-${commit}-${attempt}`;
+export const rollbackArtifactName = attempt => `production-rollback-${HISTORICAL_ROLLBACK}-${attempt}`;
 
 function assertWorkflowRun(run, workflow, runId, commit, expectedPath, event) {
   requireCommit(commit);
@@ -39,6 +43,21 @@ function assertWorkflowRun(run, workflow, runId, commit, expectedPath, event) {
 
 export function assertTrustedRun(run, workflow, runId, commit) {
   assertWorkflowRun(run, workflow, runId, commit, WORKFLOW, 'workflow_dispatch');
+}
+
+export function assertHistoricalWorkflow(run, workflow, runId, commit, content) {
+  if (commit !== HISTORICAL_ROLLBACK || run.head_sha === commit) throw new Error('Historical rollback source is not allowed');
+  requireCommit(run.head_sha);
+  assertWorkflowRun(run, workflow, runId, run.head_sha, WORKFLOW, 'workflow_dispatch');
+  if (content?.encoding !== 'base64' || typeof content.content !== 'string' ||
+      !Number.isSafeInteger(content.size) || content.size < 1 || content.size > 1024 * 1024 ||
+      typeof content.sha !== 'string' || !/^[a-f0-9]{40}$/.test(content.sha)) {
+    throw new Error('Invalid historical workflow source');
+  }
+  const bytes = Buffer.from(content.content.replace(/\s/g, ''), 'base64');
+  if (bytes.length !== content.size || crypto.createHash('sha256').update(bytes).digest('hex') !== HISTORICAL_WORKFLOW_SHA256) {
+    throw new Error('Historical workflow source does not match the trusted pin');
+  }
 }
 
 export function selectArtifact(response, run, commit, name = artifactName(commit, run.run_attempt)) {
@@ -158,8 +177,19 @@ export function downloadProductionArtifact({ runId, commit, destination, key, ap
   const base = `repos/${REPOSITORY}/actions`;
   const run = api(`${base}/runs/${runId}`);
   const workflow = api(`${base}/workflows/production-artifact.yml`);
-  assertTrustedRun(run, workflow, runId, commit);
-  const artifact = selectArtifact(api(`${base}/runs/${runId}/artifacts?per_page=100`), run, commit);
+  const historical = commit === HISTORICAL_ROLLBACK && run.head_sha !== commit;
+  const assertRun = current => {
+    if (historical) {
+      requireCommit(run.head_sha);
+      assertWorkflowRun(current, workflow, runId, run.head_sha, WORKFLOW, 'workflow_dispatch');
+      if (current.head_sha !== run.head_sha) throw new Error('Historical workflow dispatch SHA changed');
+      const source = api(`repos/${REPOSITORY}/contents/${WORKFLOW}?ref=${run.head_sha}`);
+      assertHistoricalWorkflow(current, workflow, runId, commit, source);
+    } else assertTrustedRun(current, workflow, runId, commit);
+  };
+  assertRun(run);
+  const artifact = selectArtifact(api(`${base}/runs/${runId}/artifacts?per_page=100`), run, run.head_sha,
+    historical ? rollbackArtifactName(run.run_attempt) : artifactName(commit, run.run_attempt));
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-production-artifact-'));
   let createdOutput = false;
   try {
@@ -176,10 +206,12 @@ export function downloadProductionArtifact({ runId, commit, destination, key, ap
     createdOutput = true;
     // Success is returned only after a final check for concurrent reruns/deletion.
     const latest = api(`${base}/runs/${runId}`);
-    assertTrustedRun(latest, workflow, runId, commit);
+    assertRun(latest);
     if (latest.run_attempt !== run.run_attempt) throw new Error('Workflow run attempt changed during download');
     releaseChecks.recheck();
     return { ok: true, repository: REPOSITORY, workflow: WORKFLOW, commit,
+      provenanceMode: historical ? 'pinned-historical-rollback' : 'exact-dispatch',
+      workflowCommit: run.head_sha,
       releaseChecks: { workflow: RELEASE_WORKFLOW, workflowRunId: releaseChecks.runId,
         runAttempt: releaseChecks.runAttempt, artifacts: releaseChecks.artifacts },
       workflowRunId: String(runId), runAttempt: run.run_attempt,
