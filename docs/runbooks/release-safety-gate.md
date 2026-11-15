@@ -129,6 +129,27 @@ before the first real migration.
 
 #### Reversible DirectAdmin generator test (separate authorization required)
 
+**Observed on 15 November 2026:** On DirectAdmin 1.714, two account-scoped
+comment rewrites and one restore rewrite preserved the source and regenerated
+account configuration. Each invocation appended
+`action=httpd&value=reload` to the shared task queue. The scheduler later
+coalesced these entries and reloaded Apache and PHP-FPM 8.1 and 8.3. Syntax,
+the original source/generated hashes, 37 other account configuration hashes,
+and the recorded origin HTTP responses matched after restoration and the
+queued reload. The observed test-site HTTPS `/` returned 404 and `/legal/`
+returned 403 both before and after the test; these were not treated as healthy
+routes.
+
+**Execution remains disabled.** The current migration assumes regeneration
+has taken effect synchronously, but the actual reload is deferred. Its syntax
+check can race the scheduled reload, and recovery can remove the release
+pointer before Apache has loaded the restored configuration. Do not simply
+enable the gate: the implementation must first safely coordinate the queued
+reload, syntax validation, live verification and recovery without consuming or
+modifying other users' queue entries, and demonstrate this against the real
+host under separate authorization. The 15 November test does not authorize
+frontend migration or activation.
+
 This is a test of the installed generator, **not** frontend migration or
 activation. It adds only a unique Apache comment to the existing main-domain
 custom source. Do not start unless the operator has independently verified
