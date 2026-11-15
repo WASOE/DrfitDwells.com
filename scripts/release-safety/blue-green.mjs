@@ -126,19 +126,26 @@ export async function stageRelease({ source, releases, state, inventory, verifyP
  * deletion/GC is allowed while any browser may still reference it.
  * This module does not install or validate the deployment's Apache config.
  */
-export async function activateRelease({ releases, pointer, state, candidate, inventory, previousInventory, sharedAssets, verifyAssetServing, preflight, smoke, rollbackSmoke, verifyObservedRollback }) {
+export async function activateRelease({ releases, pointer, state, candidate, inventory, previousInventory, sharedAssets, verifyAssetServing, preflight, smoke, rollbackSmoke, verifyObservedRollback, verifyObservedCandidate }) {
   if (typeof preflight !== 'function' || typeof smoke !== 'function' || typeof rollbackSmoke !== 'function' ||
       typeof verifyAssetServing !== 'function' || typeof sharedAssets !== 'string') {
     throw new Error('Shared assets, asset serving verification, preflight, smoke and rollback smoke checks are required');
   }
   const release = requireRelease(releases, candidate);
   verifyInventory(release, inventory);
-  if (inventory.configuration !== 'production') throw new Error('A production artifact is required');
+  if (inventory.configuration !== 'production' &&
+      (inventory.configuration !== 'observed-production' || typeof verifyObservedCandidate !== 'function')) {
+    throw new Error('A production artifact or verified observed migration snapshot is required');
+  }
   const unlock = lock(state);
   try {
     if (fs.existsSync(journalPath(state))) throw new Error('Pending activation requires recovery');
     const previous = readPointer(pointer, releases);
     if (previous === release) throw new Error('Release is already active');
+    if (inventory.configuration === 'observed-production' &&
+        (await verifyObservedCandidate({ candidate: release }))?.ok !== true) {
+      throw new Error('Observed candidate verification failed');
+    }
     verifyInventory(previous, previousInventory);
     if (previousInventory.configuration !== 'production') {
       if (previousInventory.configuration !== 'observed-production' ||
@@ -166,6 +173,10 @@ export async function activateRelease({ releases, pointer, state, candidate, inv
     verifySharedAssets(shared, assets);
     verifyInventory(release, inventory);
     verifyInventory(previous, previousInventory);
+    if (inventory.configuration === 'observed-production' &&
+        (await verifyObservedCandidate({ candidate: release }))?.ok !== true) {
+      throw new Error('Observed candidate verification failed');
+    }
     if (readPointer(pointer, releases) !== previous) throw new Error('Active pointer changed during preflight');
     durableJson(journalPath(state), { version: 1, previous, candidate: release, pointer: path.resolve(pointer) });
     try {

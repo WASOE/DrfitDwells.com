@@ -154,9 +154,13 @@ node scripts/release-safety/activate-production.mjs recover observed observed-pr
 To reverse the initial vhost migration after restoring the observed pointer:
 
 ```bash
+node scripts/release-safety/activate-production.mjs rollback-observed "$CANDIDATE_RUN_ID" "$CANDIDATE_SHA" "$API_SHA"
 node scripts/release-safety/vhost-migration-cli.mjs rollback --state-dir "$BASE/migration-state"
 ```
 
+If `rollback-observed` is interrupted, recover its previous (candidate) release
+with `activate-production.mjs recover "$CANDIDATE_RUN_ID" "$CANDIDATE_SHA" "$API_SHA"`
+after verifying and removing the stale activation lock. Then retry rollback.
 For later releases supply the independently verified previous run ID and full
 commit SHA instead of `observed observed-production`. Do not use the observed
 exception to relabel later releases. If verification or rollback smoke fails,

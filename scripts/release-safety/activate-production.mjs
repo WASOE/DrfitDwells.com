@@ -112,15 +112,55 @@ export async function recoverVerifiedProduction({
   } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
 }
 
+export async function rollbackToObservedProduction({
+  runId, commit, expectedApiRelease, key, token, releases, state, pointer, sharedAssets,
+  originIp, migrationState, download = downloadProductionArtifact,
+  smoke = smokeProduction, verifyAssets = verifyProductionAssets
+}) {
+  for (const sha of [commit, expectedApiRelease]) {
+    if (!/^[a-f0-9]{40}$/.test(sha || '')) throw new Error('Full lowercase frontend and API SHAs are required');
+  }
+  if (!token?.trim() || !net.isIP(originIp || '') || !migrationState) {
+    throw new Error('Ops token, production origin IP and migration state are required');
+  }
+  const previous = path.join(fs.realpathSync(releases), commit);
+  if (!fs.lstatSync(pointer).isSymbolicLink() || fs.realpathSync(pointer) !== previous) {
+    throw new Error('Active pointer does not match the independently verified current release');
+  }
+  const journal = JSON.parse(fs.readFileSync(path.join(migrationState, 'vhost-migration.json'), 'utf8'));
+  const candidate = journal.release;
+  const checkObserved = ({ candidate: release }) => verifyObservedMigrationRollback({
+    stateRoot: migrationState, releases, pointer, previous: release
+  });
+  const observed = checkObserved({ candidate });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-observed-rollback-'));
+  try {
+    const artifact = download({ runId, commit, destination: path.join(tmp, 'current'), key });
+    if (artifact?.ok !== true || artifact.inventory?.commit !== commit) throw new Error('Current artifact verification failed');
+    const check = release => smoke({ token, releaseAsset: scriptFromRelease(release),
+      wishlist: hasWishlist(release), expectedApiRelease });
+    return await activateRelease({
+      releases, pointer, state, candidate, sharedAssets,
+      inventory: observed.inventory, previousInventory: artifact.inventory,
+      verifyObservedCandidate: checkObserved,
+      verifyAssetServing: args => verifyAssets({ ...args, originIp }),
+      preflight: async () => check(previous), smoke: async () => check(candidate),
+      rollbackSmoke: async () => check(previous)
+    });
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const recovery = process.argv[2] === 'recover';
-    const values = process.argv.slice(recovery ? 3 : 2);
-    if (values.length !== (recovery ? 3 : 5)) {
-      throw new Error('Usage: activate-production.mjs <run-id> <commit> <previous-run-id> <previous-commit|observed-production> <api-commit> OR activate-production.mjs recover <previous-run-id> <previous-commit|observed-production> <api-commit>');
+    const rollback = process.argv[2] === 'rollback-observed';
+    const values = process.argv.slice(recovery || rollback ? 3 : 2);
+    if (values.length !== (recovery || rollback ? 3 : 5)) {
+      throw new Error('Usage: activate-production.mjs <run-id> <commit> <previous-run-id> <previous-commit|observed-production> <api-commit> OR activate-production.mjs recover <previous-run-id> <previous-commit|observed-production> <api-commit> OR activate-production.mjs rollback-observed <current-run-id> <current-commit> <api-commit>');
     }
     const [runId, commit, previousRunId, previousCommit, expectedApiRelease] = recovery
-      ? [undefined, undefined, ...values] : values;
+      ? [undefined, undefined, ...values] : rollback
+        ? [values[0], values[1], undefined, undefined, values[2]] : values;
     const base = '/home/illoc/releases/frontend';
     const common = {
       previousRunId, previousCommit, expectedApiRelease,
@@ -128,7 +168,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       releases: `${base}/releases`, state: `${base}/state`, pointer: `${base}/current`, sharedAssets: `${base}/assets`,
       migrationState: `${base}/migration-state`
     };
-    const result = recovery ? await recoverVerifiedProduction(common) : await activateVerifiedProduction({ ...common, runId, commit });
+    const result = recovery ? await recoverVerifiedProduction(common) :
+      rollback ? await rollbackToObservedProduction({ ...common, runId, commit }) :
+        await activateVerifiedProduction({ ...common, runId, commit });
     console.log(JSON.stringify(result));
   } catch (error) {
     console.error(`[activate-production] ${error.message}`);

@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { assertSiteSharedAssetsMapping, migrateSiteVhost, recoverSiteVhostMigration } from './vhost-migration.mjs';
-import { activateVerifiedProduction, recoverVerifiedProduction } from './activate-production.mjs';
+import { activateVerifiedProduction, recoverVerifiedProduction, rollbackToObservedProduction } from './activate-production.mjs';
 import { createInventory } from './frontend-inventory.mjs';
 
 const enabled = process.env.RUN_ALMA_HTTPD_TEST === '1';
@@ -323,6 +323,10 @@ Include "${siteConfig}"
   await assert.rejects(activateVerifiedProduction({ ...activation, smoke: async ({ releaseAsset }) =>
     releaseAsset === '/assets/new.js' ? { ok: false } : activation.smoke({ releaseAsset })
   }), /previous release restored/);
+  await assertPreservedRoutes();
+  await activateVerifiedProduction(activation);
+  await assertPreservedRoutes({ site: candidateIndex });
+  await rollbackToObservedProduction(activation);
   await assertPreservedRoutes();
   await activateVerifiedProduction(activation);
   await assertPreservedRoutes({ site: candidateIndex });
