@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { apacheSharedAssetsDirectives } from './shared-assets.mjs';
-import { assertSiteAssetMapping, verifyProductionAssets } from './production-assets.mjs';
+import { assertSiteAssetMapping, verifyProductionAssets, verifySymlinkProductionAssets } from './production-assets.mjs';
 
 test('requires both exact site mappings and verifies served bytes', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-assets-http-'));
@@ -22,6 +22,7 @@ test('requires both exact site mappings and verifies served bytes', async t => {
   };
   const assets = [{ path: 'assets/old.js', size: 3, sha256: crypto.createHash('sha256').update('old').digest('hex') }];
   assert.deepEqual(await verifyProductionAssets({ sharedAssets: root, assets, originIp: '127.0.0.1', config, get }), { ok: true });
+  assert.deepEqual(await verifySymlinkProductionAssets({ sharedAssets: root, assets, originIp: '127.0.0.1', get }), { ok: true });
   await assert.rejects(verifyProductionAssets({ sharedAssets: root, assets: [{ ...assets[0], size: 8 }], originIp: '127.0.0.1', config, get }), /mismatch/);
   assert.deepEqual(fs.readdirSync(root), ['old.js']);
 });
