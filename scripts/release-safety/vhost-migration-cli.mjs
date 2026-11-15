@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  DIRECTADMIN_REGENERATION_VERIFIED,
   assertSiteSharedAssetsMapping,
   migrateSiteVhost,
   planSiteVhostMigration,
@@ -12,37 +13,42 @@ import {
 
 function usage() {
   return `Usage:
-  vhost-migration-cli.mjs plan --site-config PATH --apache-config PATH --document-root PATH --shared-assets PATH --assets-manifest JSON --release-root PATH --pointer PATH --state-dir NEW_PATH
-  vhost-migration-cli.mjs apply --apply --confirm-webroot-quiesced --confirm-config-persistence --confirm-shared-assets-policy --site-config PATH --apache-config PATH --document-root PATH --shared-assets PATH --assets-manifest JSON --release-root PATH --pointer PATH --state-dir NEW_PATH --httpd PATH [--httpd-arg ARG] --copy-command PATH --reload-command PATH --reload-arg ARG... --probe-url HTTPS_URL --probe-url HTTPS_URL
+  vhost-migration-cli.mjs plan --site-config PATH --custom-config PATH --directadmin-user illoc --apache-config PATH --document-root PATH --shared-assets PATH --assets-manifest JSON --release-root PATH --pointer PATH --state-dir NEW_PATH
+  vhost-migration-cli.mjs apply --apply --confirm-webroot-quiesced --confirm-account-scoped-regeneration --confirm-shared-assets-policy --site-config PATH --custom-config PATH --directadmin-user illoc --apache-config PATH --document-root PATH --shared-assets PATH --assets-manifest JSON --release-root PATH --pointer PATH --state-dir NEW_PATH --httpd PATH [--httpd-arg ARG] --directadmin PATH --copy-command PATH --probe-url HTTPS_URL --probe-url HTTPS_URL
   vhost-migration-cli.mjs recover --state-dir PATH
   vhost-migration-cli.mjs rollback --state-dir PATH
 
-All host paths and commands are explicit. Planning is read-only. Applying requires
---apply and HTTPS probes for /search and /checkout on the same origin.`;
+All host paths and commands are explicit. Planning is read-only. This migration accepts
+only account illoc and regenerates it using taskq --run=action=rewrite&value=httpd&user=illoc;
+it never writes the generated Apache site config. Apply/recovery are disabled until real
+DirectAdmin taskq queue isolation and Apache reload side effects have been verified.
+HTTPS probes for /search and /checkout on the same origin are required.`;
 }
 
 function parse(argv) {
   const [action, ...args] = argv;
-  const options = { action, httpdArgs: [], reloadArgs: [], probeUrls: [] };
+  const options = { action, httpdArgs: [], probeUrls: [] };
   const valueOptions = new Map([
     ['--site-config', 'siteConfig'], ['--apache-config', 'apacheConfig'],
+    ['--custom-config', 'customConfig'],
     ['--document-root', 'documentRoot'], ['--shared-assets', 'sharedAssets'], ['--release-root', 'releasesRoot'],
     ['--assets-manifest', 'assetsManifest'],
     ['--pointer', 'pointer'], ['--state-dir', 'stateRoot'], ['--httpd', 'httpd'],
-    ['--copy-command', 'copyCommand'], ['--reload-command', 'reloadCommand']
+    ['--directadmin', 'directadmin'], ['--directadmin-user', 'directadminUser'],
+    ['--copy-command', 'copyCommand']
   ]);
   for (let index = 0; index < args.length; index++) {
     const flag = args[index];
     if (flag === '--apply' || flag === '--confirm-webroot-quiesced' ||
-        flag === '--confirm-config-persistence' || flag === '--confirm-shared-assets-policy') {
+        flag === '--confirm-account-scoped-regeneration' || flag === '--confirm-shared-assets-policy') {
       if (flag === '--apply') options.apply = true;
       else if (flag === '--confirm-webroot-quiesced') options.confirmWebrootQuiesced = true;
-      else if (flag === '--confirm-config-persistence') options.confirmConfigPersistence = true;
+      else if (flag === '--confirm-account-scoped-regeneration') options.confirmDirectAdminAccount = true;
       else options.confirmSharedAssetsPolicy = true;
-    } else if (flag === '--httpd-arg' || flag === '--reload-arg' || flag === '--probe-url') {
+    } else if (flag === '--httpd-arg' || flag === '--probe-url') {
       const value = args[++index];
       if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`);
-      const key = flag === '--httpd-arg' ? 'httpdArgs' : flag === '--reload-arg' ? 'reloadArgs' : 'probeUrls';
+      const key = flag === '--httpd-arg' ? 'httpdArgs' : 'probeUrls';
       options[key].push(value);
     } else if (valueOptions.has(flag)) {
       const value = args[++index];
@@ -131,28 +137,39 @@ function liveProbe(urls) {
 async function main(argv) {
   const options = parse(argv);
   if (options.action === 'recover' || options.action === 'rollback') {
+    if (!DIRECTADMIN_REGENERATION_VERIFIED) {
+      throw new Error('DirectAdmin recovery/rollback is disabled until real taskq regeneration, queue isolation, and Apache reload side effects are verified');
+    }
     if (!options.stateRoot) throw new Error('--state-dir is required');
     return recoverSiteVhostMigration({
       stateRoot: options.stateRoot, rollback: options.action === 'rollback'
     });
   }
-  const required = ['siteConfig', 'apacheConfig', 'documentRoot', 'sharedAssets', 'assetsManifest', 'releasesRoot', 'pointer', 'stateRoot'];
+  if (options.action === 'apply') {
+    if (!options.apply) throw new Error('Applying a vhost migration requires the explicit --apply flag');
+    if (!DIRECTADMIN_REGENERATION_VERIFIED) {
+      throw new Error('DirectAdmin apply is disabled until real taskq regeneration, queue isolation, and Apache reload side effects are verified');
+    }
+  }
+  const required = [
+    'siteConfig', 'customConfig', 'directadminUser',
+    'apacheConfig', 'documentRoot', 'sharedAssets', 'assetsManifest', 'releasesRoot', 'pointer', 'stateRoot'
+  ];
   for (const key of required) if (!options[key]) throw new Error(`Missing ${key.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`);
   let assets;
   try { assets = JSON.parse(fs.readFileSync(options.assetsManifest, 'utf8')); }
-  catch (error) { throw new Error(`Unable to read shared-assets manifest: ${error.message}`); }
+  catch (error) { throw new Error(`Unable to read shared-assets manifest: ${error.message}`);   }
   if (options.action === 'plan') return planSiteVhostMigration({ ...options, assets });
-  if (!options.apply) throw new Error('Applying a vhost migration requires the explicit --apply flag');
   if (!options.confirmWebrootQuiesced) {
     throw new Error('Applying a vhost migration requires --confirm-webroot-quiesced after verifying no webroot writers are active');
   }
-  if (!options.confirmConfigPersistence) {
-    throw new Error('Applying a vhost migration requires --confirm-config-persistence after verifying the persistent Apache source');
+  if (!options.confirmDirectAdminAccount) {
+    throw new Error('Applying a vhost migration requires --confirm-account-scoped-regeneration after verifying the exact DirectAdmin account');
   }
   if (!options.confirmSharedAssetsPolicy) {
     throw new Error('Applying a vhost migration requires --confirm-shared-assets-policy after verifying exclusive append-only publisher ownership and Apache read-only access');
   }
-  for (const key of ['httpd', 'copyCommand', 'reloadCommand']) {
+  for (const key of ['httpd', 'directadmin', 'copyCommand']) {
     if (!options[key]) throw new Error(`--${key.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)} is required`);
   }
   const probes = liveProbe(options.probeUrls);

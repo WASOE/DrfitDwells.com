@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { apacheSharedAssetsDirectives } from './shared-assets.mjs';
+import { renderAccountConfig } from './fixtures/directadmin/renderer.mjs';
 import { prepareSiteVhostConfig } from './vhost-migration.mjs';
 import {
   assertSiteSharedAssetsMapping,
@@ -128,15 +129,16 @@ test('migration and activation verification require exact main-vhost identities'
 
 function fixture() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-vhost-migration-'));
-  const configDir = path.join(tmp, 'etc', 'httpd', 'users');
+  const configDir = path.join(tmp, 'etc', 'httpd', 'users', 'illoc');
   const documentRoot = path.join(tmp, 'domains', 'driftdwells.com', 'public_html');
   const fixtureSharedAssets = path.join(tmp, 'shared', 'assets');
   const releasesRoot = path.join(tmp, 'releases', 'frontend');
   const pointer = path.join(tmp, 'releases', 'current');
   const stateRoot = path.join(tmp, 'private', 'vhost-migration');
-  const siteConfig = path.join(configDir, 'site.conf');
+  const siteConfig = path.join(configDir, 'httpd.conf');
+  const customConfig = path.join(configDir, 'domains', 'driftdwells.com.cust_httpd');
   const apacheConfig = path.join(tmp, 'etc', 'httpd', 'httpd.conf');
-  fs.mkdirSync(configDir, { recursive: true });
+  fs.mkdirSync(path.dirname(customConfig), { recursive: true });
   fs.mkdirSync(documentRoot, { recursive: true });
   fs.mkdirSync(fixtureSharedAssets, { recursive: true });
   fs.chmodSync(fixtureSharedAssets, 0o755);
@@ -154,8 +156,15 @@ function fixture() {
   fs.writeFileSync(path.join(documentRoot, 'test', 'index.html'), 'test-site');
   fs.writeFileSync(path.join(documentRoot, 'legal', 'terms.html'), 'legal');
   fs.writeFileSync(path.join(documentRoot, 'unrelated.txt'), 'unrelated');
-  const siteConfigContents = `${site.map(block => block.replaceAll(root, documentRoot)
-    .replaceAll(sharedAssets, fixtureSharedAssets)).join('\n')}\n${other.replaceAll(root, documentRoot)}\n`;
+  const customSource = fs.readFileSync(new URL('./fixtures/directadmin/cust_httpd.conf', import.meta.url), 'utf8')
+    .replaceAll(root, documentRoot);
+  const testRoot = path.join(documentRoot, 'test');
+  const unrelated = `<VirtualHost *:80>\nServerName other.example\nDocumentRoot "${tmp}/other"\n</VirtualHost>`;
+  const render = () => renderAccountConfig(fs.readFileSync(customConfig, 'utf8'), {
+    root: documentRoot, testRoot, unrelated
+  });
+  fs.writeFileSync(customConfig, customSource);
+  const siteConfigContents = render();
   fs.writeFileSync(siteConfig, siteConfigContents);
   fs.writeFileSync(apacheConfig, 'Include users/site.conf\n');
   const assetBytes = fs.readFileSync(path.join(documentRoot, 'assets', 'retained.js'));
@@ -165,7 +174,7 @@ function fixture() {
   }];
   return {
     tmp, documentRoot, sharedAssets: fixtureSharedAssets, releasesRoot, pointer,
-    stateRoot, siteConfig, apacheConfig, siteConfigContents, assets
+    stateRoot, siteConfig, customConfig, customSource, render, apacheConfig, siteConfigContents, assets
   };
 }
 
@@ -187,25 +196,30 @@ function removeFixture(root) {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
-function commandRunner({ failHttpdAt = null, failReloadOnce = false, siteConfig } = {}) {
+function commandRunner({ failHttpdAt = null, failRewriteOnce = false, siteConfig, render } = {}) {
   const commands = [];
   let httpdCalls = 0;
-  let reloadFailures = failReloadOnce ? 1 : 0;
+  let rewriteFailures = failRewriteOnce ? 1 : 0;
   const run = (command, args) => {
     commands.push({ command, args });
     if (command === '/usr/bin/cp') {
       const result = spawnSync(command, args, { encoding: 'utf8' });
       return { status: result.status, stderr: result.stderr };
     }
+    if (command === '/usr/local/directadmin/directadmin') {
+      assert.deepEqual(args, ['taskq', '--run=action=rewrite&value=httpd&user=illoc']);
+      if (rewriteFailures) {
+        rewriteFailures--;
+        return { status: 1, stderr: 'fixture rewrite failure' };
+      }
+      fs.writeFileSync(siteConfig, render());
+      return { status: 0, stdout: '', stderr: '' };
+    }
     if (command === '/usr/sbin/httpd' && args.includes('DUMP_INCLUDES')) {
       return { status: 0, stdout: siteConfig || '', stderr: '' };
     }
     if (command === '/usr/sbin/httpd' && ++httpdCalls === failHttpdAt) {
       return { status: 1, stderr: 'fixture syntax failure' };
-    }
-    if (command === '/usr/bin/systemctl' && reloadFailures) {
-      reloadFailures--;
-      return { status: 1, stderr: 'fixture reload failure' };
     }
     return { status: 0, stderr: '' };
   };
@@ -215,6 +229,9 @@ function commandRunner({ failHttpdAt = null, failReloadOnce = false, siteConfig 
 function migrationArgs(f, probe, run) {
   return {
     siteConfig: f.siteConfig,
+    customConfig: f.customConfig,
+    directadmin: '/usr/local/directadmin/directadmin',
+    directadminUser: 'illoc',
     apacheConfig: f.apacheConfig,
     documentRoot: f.documentRoot,
     sharedAssets: f.sharedAssets,
@@ -223,10 +240,8 @@ function migrationArgs(f, probe, run) {
     stateRoot: f.stateRoot,
     httpd: '/usr/sbin/httpd',
     copyCommand: '/usr/bin/cp',
-    reloadCommand: '/usr/bin/systemctl',
-    reloadArgs: ['reload', 'httpd'],
     confirmWebrootQuiesced: true,
-    confirmConfigPersistence: true,
+    confirmDirectAdminAccount: true,
     confirmSharedAssetsPolicy: true,
     assets: f.assets,
     preflightProbe: async () => ({ ok: true }),
@@ -250,6 +265,7 @@ test('plan is read-only and accounts for every webroot file including uploads an
   const before = digest(f.siteConfig);
   const plan = planSiteVhostMigration({
     siteConfig: f.siteConfig, apacheConfig: f.apacheConfig, documentRoot: f.documentRoot,
+    customConfig: f.customConfig, directadminUser: 'illoc',
     sharedAssets: f.sharedAssets, assets: f.assets,
     releasesRoot: f.releasesRoot, pointer: f.pointer, stateRoot: f.stateRoot
   });
@@ -268,6 +284,7 @@ test('CLI plan uses explicit fixture paths and apply is opt-in', t => {
   t.after(() => removeFixture(f.tmp));
   const flags = [
     '--site-config', f.siteConfig, '--apache-config', f.apacheConfig,
+    '--custom-config', f.customConfig, '--directadmin-user', 'illoc',
     '--document-root', f.documentRoot, '--release-root', f.releasesRoot,
     '--shared-assets', f.sharedAssets,
     '--pointer', f.pointer, '--state-dir', f.stateRoot
@@ -288,7 +305,7 @@ test('CLI plan uses explicit fixture paths and apply is opt-in', t => {
 test('migration snapshots the complete webroot, changes only the site vhosts and can roll back', async t => {
   const f = fixture();
   t.after(() => removeFixture(f.tmp));
-  const { run, commands } = commandRunner({ siteConfig: f.siteConfig });
+  const { run, commands } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
   let servedAssetCount = 0;
   const args = migrationArgs(f, async ({ verificationPath, verificationToken }) => {
     assert.match(verificationPath, /^\/vhost-migration-[0-9a-f-]+-probe\.txt$/);
@@ -317,29 +334,50 @@ test('migration snapshots the complete webroot, changes only the site vhosts and
   assert.equal(fs.readFileSync(path.join(f.documentRoot, 'index.html'), 'utf8'), 'original-index');
   assert.equal(fs.readFileSync(path.join(f.documentRoot, 'uploads/year/month/customer.dat'), 'utf8'), 'customer-upload');
   const migratedConfig = fs.readFileSync(f.siteConfig, 'utf8');
+  const baselineBlocks = [...f.siteConfigContents.matchAll(/<VirtualHost\b[^>]*>[\s\S]*?<\/VirtualHost>/g)].map(match => match[0]);
+  const migratedBlocks = [...migratedConfig.matchAll(/<VirtualHost\b[^>]*>[\s\S]*?<\/VirtualHost>/g)].map(match => match[0]);
+  assert.deepEqual(migratedBlocks.slice(2), baselineBlocks.slice(2));
+  assert.match(fs.readFileSync(f.customConfig, 'utf8'), /\|\*if !SUB\|\n\|\?DOCROOT=/);
+  run('/usr/local/directadmin/directadmin', ['taskq', '--run=action=rewrite&value=httpd&user=illoc']);
+  assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), migratedConfig);
   assert.equal((migratedConfig.match(new RegExp(`DocumentRoot "${f.pointer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, 'g')) || []).length, 2);
   assert.match(migratedConfig, /test\.driftdwells\.com/);
-  assert.equal((migratedConfig.match(/ProxyPass \/uploads /g) || []).length, 3);
+  assert.equal((migratedConfig.match(/ProxyPass \/uploads /g) || []).length, 4);
   assert.equal((migratedConfig.match(/Alias \/assets\//g) || []).length, 2);
   assert.equal(migratedConfig.match(/Alias \/assets\/[^\n]+/g).every(line => line.includes(f.sharedAssets)), true);
   assert.ok(commands.some(item => item.command === '/usr/sbin/httpd' && item.args.includes('DUMP_INCLUDES')));
-  assert.ok(commands.some(item => item.command === '/usr/bin/systemctl' && item.args.join(' ') === 'reload httpd'));
+  assert.ok(commands.some(item => item.command === '/usr/local/directadmin/directadmin' &&
+    item.args.join(' ') === 'taskq --run=action=rewrite&value=httpd&user=illoc'));
   assert.equal((fs.statSync(path.join(f.stateRoot, 'backup', 'webroot')).mode & 0o222), 0);
-  assert.equal((fs.statSync(path.join(f.stateRoot, 'backup', 'site.conf')).mode & 0o222), 0);
+  assert.equal((fs.statSync(path.join(f.stateRoot, 'backup', 'generated-site.conf')).mode & 0o222), 0);
+  assert.equal((fs.statSync(path.join(f.stateRoot, 'backup', 'persistent-cust_httpd.conf')).mode & 0o222), 0);
 
   const rollback = recoverSiteVhostMigration({ stateRoot: f.stateRoot, run, rollback: true });
   assert.equal(rollback.status, 'rolled-back');
   assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
+  assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource);
   assert.equal(fs.existsSync(f.pointer), false);
   assert.equal(fs.readFileSync(path.join(f.documentRoot, 'index.html'), 'utf8'), 'original-index');
   assert.equal(fs.readFileSync(path.join(f.documentRoot, 'uploads/year/month/customer.dat'), 'utf8'), 'customer-upload');
   assert.equal(fs.readFileSync(path.join(f.sharedAssets, 'retained.js'), 'utf8'), 'first migration shared asset');
 });
 
+test('recovery refuses a concurrently edited persistent customization', async t => {
+  const f = fixture();
+  t.after(() => removeFixture(f.tmp));
+  const { run } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
+  await migrateSiteVhost(migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run));
+  fs.appendFileSync(f.customConfig, '\n# independent operator change\n');
+  assert.throws(() => recoverSiteVhostMigration({ stateRoot: f.stateRoot, run, rollback: true }),
+    /Persistent DirectAdmin config|persistent DirectAdmin config/);
+  assert.match(fs.readFileSync(f.customConfig, 'utf8'), /independent operator change/);
+  assert.equal(fs.existsSync(f.pointer), true);
+});
+
 test('syntax-test failure restores the original config and leaves the document root intact', async t => {
   const f = fixture();
   t.after(() => removeFixture(f.tmp));
-  const { run, commands } = commandRunner({ failHttpdAt: 2, siteConfig: f.siteConfig });
+  const { run, commands } = commandRunner({ failHttpdAt: 2, siteConfig: f.siteConfig, render: f.render });
   await assert.rejects(migrateSiteVhost(migrationArgs(f, async () => ({ ok: true }), run)), /Apache syntax test failed/);
   assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
   assert.equal(fs.existsSync(f.pointer), false);
@@ -352,7 +390,7 @@ test('baseline syntax or HTTP failure blocks before creating state or touching t
   for (const failSyntax of [true, false]) {
     const f = fixture();
     t.after(() => removeFixture(f.tmp));
-    const { run } = commandRunner({ failHttpdAt: failSyntax ? 1 : null, siteConfig: f.siteConfig });
+    const { run } = commandRunner({ failHttpdAt: failSyntax ? 1 : null, siteConfig: f.siteConfig, render: f.render });
     const args = migrationArgs(f, async () => ({ ok: true }), run);
     if (!failSyntax) args.preflightProbe = async () => ({ ok: false });
     await assert.rejects(migrateSiteVhost(args), failSyntax ? /Baseline Apache syntax test failed/ : /Baseline live HTTP probes/);
@@ -366,7 +404,7 @@ test('shared-assets policy confirmation and serving verification callback are ma
   for (const omitCallback of [true, false]) {
     const f = fixture();
     t.after(() => removeFixture(f.tmp));
-    const { run } = commandRunner({ siteConfig: f.siteConfig });
+    const { run } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
     const args = migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run);
     if (omitCallback) delete args.verifyAssetServing;
     else args.confirmSharedAssetsPolicy = false;
@@ -378,16 +416,16 @@ test('shared-assets policy confirmation and serving verification callback are ma
   }
 });
 
-test('reload and live-probe failures both restore the prior vhost', async t => {
+test('regeneration and live-probe failures both restore the prior vhost', async t => {
   for (const [failure, expected] of [
-    [{ failReloadOnce: true }, /Apache reload failed/],
+    [{ failRewriteOnce: true }, /Account-scoped DirectAdmin HTTP vhost regeneration failed/],
     [{}, /Live HTTP probe did not verify both site routes/],
     [{ wrongMarker: true }, /Live HTTP probe did not verify both site routes/]
   ]) {
     const f = fixture();
     t.after(() => removeFixture(f.tmp));
-    const { run } = commandRunner({ ...failure, siteConfig: f.siteConfig });
-    const probe = failure.failReloadOnce
+    const { run } = commandRunner({ ...failure, siteConfig: f.siteConfig, render: f.render });
+    const probe = failure.failRewriteOnce
       ? async () => ({ ok: true, pointerVerified: true })
       : failure.wrongMarker
         ? async () => ({ ok: true, pointerVerified: false })
@@ -402,7 +440,7 @@ test('reload and live-probe failures both restore the prior vhost', async t => {
 test('shared-assets serving callback failure restores generated config and leaves the store intact', async t => {
   const f = fixture();
   t.after(() => removeFixture(f.tmp));
-  const { run } = commandRunner({ siteConfig: f.siteConfig });
+  const { run } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
   const args = migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run);
   args.verifyAssetServing = async ({ sharedAssets, assets }) => {
     assert.equal(sharedAssets, f.sharedAssets);
@@ -419,7 +457,7 @@ test('shared-assets serving callback failure restores generated config and leave
 test('interrupted active migration is recoverable and altered backups fail closed', async t => {
   const f = fixture();
   t.after(() => removeFixture(f.tmp));
-  const { run } = commandRunner({ siteConfig: f.siteConfig });
+  const { run } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
   await migrateSiteVhost(migrationArgs(f, async () => ({ ok: true, pointerVerified: true }), run));
   const journalPath = path.join(f.stateRoot, 'vhost-migration.json');
   const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
@@ -437,7 +475,7 @@ test('interrupted active migration is recoverable and altered backups fail close
 test('recovery removes only journal-owned config and probe transaction temporaries', async t => {
   const f = fixture();
   t.after(() => removeFixture(f.tmp));
-  const { run } = commandRunner({ siteConfig: f.siteConfig });
+  const { run } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
   let token;
   await migrateSiteVhost(migrationArgs(f, async info => {
     token = info.verificationToken;
@@ -447,14 +485,15 @@ test('recovery removes only journal-owned config and probe transaction temporari
   const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
   journal.status = 'config-installed';
   fs.writeFileSync(journalPath, JSON.stringify(journal));
-  fs.writeFileSync(journal.configTempPath, 'incomplete atomic config write', { mode: 0o600 });
+  const configTempPath = journal.persistentConfigs[0].tempPath;
+  fs.writeFileSync(configTempPath, 'incomplete atomic config write', { mode: 0o600 });
   const releaseMode = fs.statSync(journal.release).mode & 0o7777;
   fs.chmodSync(journal.release, releaseMode | 0o200);
   fs.writeFileSync(journal.probePath, token, { mode: 0o444 });
   fs.chmodSync(journal.release, releaseMode);
   const result = recoverSiteVhostMigration({ stateRoot: f.stateRoot, run });
   assert.equal(result.status, 'recovered');
-  assert.equal(fs.existsSync(journal.configTempPath), false);
+  assert.equal(fs.existsSync(configTempPath), false);
   assert.equal(fs.existsSync(journal.probePath), false);
   assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
   assert.equal(fs.existsSync(f.pointer), false);
@@ -466,13 +505,14 @@ test('migration refuses symlinks and nonempty state directories without overwrit
   fs.symlinkSync(path.join(f.tmp, 'outside'), path.join(f.documentRoot, 'linked'));
   assert.throws(() => planSiteVhostMigration({
     siteConfig: f.siteConfig, apacheConfig: f.apacheConfig, documentRoot: f.documentRoot,
+    customConfig: f.customConfig, directadminUser: 'illoc',
     sharedAssets: f.sharedAssets, assets: f.assets,
     releasesRoot: f.releasesRoot, pointer: f.pointer, stateRoot: f.stateRoot
   }), /symlink/);
   fs.unlinkSync(path.join(f.documentRoot, 'linked'));
   fs.mkdirSync(f.stateRoot);
   fs.writeFileSync(path.join(f.stateRoot, 'unrelated'), 'do not overwrite');
-  const { run } = commandRunner({ siteConfig: f.siteConfig });
+  const { run } = commandRunner({ siteConfig: f.siteConfig, render: f.render });
   await assert.rejects(migrateSiteVhost(migrationArgs(f, async () => ({ ok: true }), run)), /State directory must be new/);
   assert.equal(fs.readFileSync(path.join(f.stateRoot, 'unrelated'), 'utf8'), 'do not overwrite');
 });
@@ -480,10 +520,12 @@ test('migration refuses symlinks and nonempty state directories without overwrit
 test('conflicting shared-assets mapping blocks before migration state is created', t => {
   const f = fixture();
   t.after(() => removeFixture(f.tmp));
-  const conflictingAlias = f.siteConfigContents.replaceAll(f.sharedAssets, `${f.sharedAssets}-wrong`);
+  const conflictingAlias = f.siteConfigContents.replace('ServerName www.driftdwells.com',
+    `Alias /assets/ "${f.sharedAssets}-wrong/"\nServerName www.driftdwells.com`);
   fs.writeFileSync(f.siteConfig, conflictingAlias);
   assert.throws(() => planSiteVhostMigration({
     siteConfig: f.siteConfig, apacheConfig: f.apacheConfig, documentRoot: f.documentRoot,
+    customConfig: f.customConfig, directadminUser: 'illoc',
     sharedAssets: f.sharedAssets, assets: f.assets,
     releasesRoot: f.releasesRoot, pointer: f.pointer, stateRoot: f.stateRoot
   }), /shared-assets Apache mapping/);
@@ -496,10 +538,39 @@ test('invalid shared assets fail closed before creating migration state', t => {
   t.after(() => removeFixture(f.tmp));
   const args = {
     siteConfig: f.siteConfig, apacheConfig: f.apacheConfig, documentRoot: f.documentRoot,
+    customConfig: f.customConfig, directadminUser: 'illoc',
     sharedAssets: f.sharedAssets, assets: [{ ...f.assets[0], sha256: '0'.repeat(64) }],
     releasesRoot: f.releasesRoot, pointer: f.pointer, stateRoot: f.stateRoot
   };
   assert.throws(() => planSiteVhostMigration(args), /manifest does not match document-root asset/);
   assert.equal(fs.existsSync(f.stateRoot), false);
   assert.equal(fs.existsSync(f.pointer), false);
+});
+
+test('only the authorized DirectAdmin account can be planned', t => {
+  const f = fixture();
+  t.after(() => removeFixture(f.tmp));
+  assert.throws(() => planSiteVhostMigration({
+    siteConfig: f.siteConfig, customConfig: f.customConfig, directadminUser: 'another-user',
+    apacheConfig: f.apacheConfig, documentRoot: f.documentRoot, sharedAssets: f.sharedAssets,
+    assets: f.assets, releasesRoot: f.releasesRoot, pointer: f.pointer, stateRoot: f.stateRoot
+  }), /only.*illoc/i);
+  assert.equal(fs.existsSync(f.stateRoot), false);
+  assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource);
+});
+
+test('rejects a customization path from another account or domain before any write', t => {
+  const f = fixture();
+  t.after(() => removeFixture(f.tmp));
+  for (const customConfig of [
+    path.join(f.tmp, 'etc/httpd/users/other/domains/driftdwells.com.cust_httpd'),
+    path.join(path.dirname(f.customConfig), 'other.example.cust_httpd')
+  ]) {
+    assert.throws(() => planSiteVhostMigration({
+      siteConfig: f.siteConfig, customConfig, directadminUser: 'illoc', apacheConfig: f.apacheConfig,
+      documentRoot: f.documentRoot, sharedAssets: f.sharedAssets, assets: f.assets,
+      releasesRoot: f.releasesRoot, pointer: f.pointer, stateRoot: f.stateRoot
+    }), /must identify the illoc account/);
+  }
+  assert.equal(fs.existsSync(f.stateRoot), false);
 });

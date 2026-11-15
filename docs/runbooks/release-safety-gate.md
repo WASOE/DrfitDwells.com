@@ -71,19 +71,66 @@ The host runs Apache 2.4.66 on AlmaLinux 9.7 with `SymLinksIfOwnerMatch`;
 Apache's user can traverse `/home/illoc`. A real transition must establish
 matching symlink and target owners and recheck all permissions and labels.
 
-The development branch contains `production-artifact.yml`, which builds a
-production-key artifact only after an exact `master` SHA dispatch, and
-`stage-production.mjs`, which verifies the artifact and the matching GitHub
-release-safety evidence before staging. The workflow is not usable until it is
-present on `master`, its production public Stripe key variable is configured,
-and an exact-SHA workflow run has succeeded. The historical rollback workflow
-is pinned to source `9baa749f76afd88f1fe3122414ce9c8ef8217f45`; it is not
-a verified production artifact until its trusted master run succeeds and its
-artifact and evidence have been independently verified. Do not use the
-staging or activation commands as a production procedure until that
-independent rollback and deployment prerequisites are resolved.
+`production-artifact.yml` builds a production-key artifact after an exact
+`master` SHA dispatch; `stage-production.mjs` verifies the artifact and matching
+GitHub release-safety evidence before staging. Reverify the artifact and its
+evidence before use. The historical rollback workflow is pinned to source
+`9baa749f76afd88f1fe3122414ce9c8ef8217f45`; its source build is not a
+recovery of missing historical production bytes.
 
 ### First migration and activation (not yet authorized)
+
+**DirectAdmin verification gate:** Do not execute migration or regeneration
+against production until the updated implementation has been tested with the
+installed DirectAdmin generator in a separately authorized, reversible,
+account-scoped test. Tests using a fixture renderer do not establish how the
+installed generator expands tokens. Record the original persistent custom
+configuration and generated account configuration, including checksums,
+ownership, mode and ACLs; verify restoration from those backups before the test.
+Compare the generated main HTTP/HTTPS and test-subdomain vhosts, including
+forwarded headers and CGI, `/api`, `/uploads` and `/legal`. Verify HTTP behavior
+for those routes and representative unrelated sites before and after each
+account-scoped regeneration; test Apache syntax before any manual reload.
+Never write the generated account `httpd.conf` directly, rewrite all users,
+or replace or drain the shared DirectAdmin task queue. Determine whether the
+installed `taskq --run` performs or schedules an Apache reload before the
+authorized test; do not assume syntax can be checked first if it reloads.
+On a failure, restore
+the original persistent source, regenerate only `illoc`, verify the original
+effective configuration and HTTP behavior, and stop.
+
+The commands below are a proposed sequence, not executable production
+authorization: this revision deliberately disables `apply`, `recover`, and
+`rollback` with the real command runner. After the separately authorized
+generator test establishes the correct queue/reload behavior, the implementation
+and this gate must be updated and reviewed before these commands can be used.
+
+For the future generator gate, record these read-only facts on the host before
+making any changes:
+
+```bash
+DOMAIN_CONFIG=/usr/local/directadmin/data/users/illoc/domains/driftdwells.com.cust_httpd
+SSL_CONFIG=/usr/local/directadmin/data/users/illoc/domains/driftdwells.com.cust_httpd_ssl
+GENERATED=/usr/local/directadmin/data/users/illoc/httpd.conf
+sudo sha256sum "$DOMAIN_CONFIG" "$SSL_CONFIG" "$GENERATED"
+sudo stat -c '%n %U:%G %a' "$DOMAIN_CONFIG" "$SSL_CONFIG" "$GENERATED"
+sudo getfacl -p "$DOMAIN_CONFIG" "$SSL_CONFIG" "$GENERATED"
+sudo /usr/sbin/httpd -t
+sudo /usr/local/directadmin/directadmin taskq --help
+```
+
+In the observed configuration the HTTPS vhosts use the HTTP custom source and
+its `http`/`80` forwarded headers. The separate SSL custom file differs; do not
+silently replace those effective headers when testing regeneration. Preserve
+both source files and the generated file as independent, metadata-preserving
+backups and verify their hashes. The `taskq --run` scope and reload behavior,
+the exact generated vhost changes, and complete restoration must be verified
+before the first real migration.
+
+The production API cutover's PM2 save was deferred. Until separately
+authorized and verified, a host reboot or PM2 resurrection may start the older
+saved API release, which does not provide wishlist endpoints. Do not start the
+corporate gift worker or run `pm2 save` as part of this verification gate.
 
 Do not run these commands until the PR is approved and merged, the artifact
 workflow and its exact production candidate have passed, the actual hosting
@@ -100,37 +147,38 @@ the current API release, booking/payment capabilities and wishlist API before
 activating a wishlist build. Confirm the effective persistent Apache config,
 matching owner of symlink and release for `SymLinksIfOwnerMatch`, Apache
 traverse/read permissions, ACLs and SELinux labels for every new path, and
-exclusive publisher control of the shared-asset store. Confirm a tested
-site-scoped reload command; Apache is shared. Quiesce webroot writers throughout
+exclusive publisher control of the shared-asset store. Verify DirectAdmin's
+account-scoped rewrite and reload effects; Apache is shared. Quiesce webroot writers throughout
 the first snapshot. An independently stored copy of the sealed backup and
 manifest must be verified before activation.
 
 After creating and securing the release, state and shared-asset directories
 without changing the live document root, set these values to the verified host
-paths. The executable and reload arguments are examples and **must** match
-the verified host:
+paths. The executable paths are examples and **must** match the verified host:
 
 ```bash
 BASE=/home/illoc/releases/frontend
 WEBROOT=/home/illoc/domains/driftdwells.com/public_html
 SITE_CONFIG=/usr/local/directadmin/data/users/illoc/httpd.conf
+CUSTOM_CONFIG=/usr/local/directadmin/data/users/illoc/domains/driftdwells.com.cust_httpd
 APACHE_CONFIG=/etc/httpd/conf/httpd.conf
 ASSET_MANIFEST="$BASE/observed-assets.json"
 
 node --input-type=module -e 'import fs from "node:fs"; import { createInventory } from "./scripts/release-safety/frontend-inventory.mjs"; const [root,out]=process.argv.slice(1); const files=createInventory(root,"observed-production","observed-production").files.filter(x=>x.path.startsWith("assets/")); fs.writeFileSync(out,JSON.stringify(files),{flag:"wx",mode:0o600});' "$WEBROOT" "$ASSET_MANIFEST"
 
 node scripts/release-safety/vhost-migration-cli.mjs plan \
-  --site-config "$SITE_CONFIG" --apache-config "$APACHE_CONFIG" --document-root "$WEBROOT" \
+  --site-config "$SITE_CONFIG" --custom-config "$CUSTOM_CONFIG" --directadmin-user illoc \
+  --apache-config "$APACHE_CONFIG" --document-root "$WEBROOT" \
   --shared-assets "$BASE/assets" --assets-manifest "$ASSET_MANIFEST" \
   --release-root "$BASE/releases" --pointer "$BASE/current" --state-dir "$BASE/migration-state"
 
 node scripts/release-safety/vhost-migration-cli.mjs apply --apply \
-  --confirm-webroot-quiesced --confirm-config-persistence --confirm-shared-assets-policy \
-  --site-config "$SITE_CONFIG" --apache-config "$APACHE_CONFIG" --document-root "$WEBROOT" \
+  --confirm-webroot-quiesced --confirm-account-scoped-regeneration --confirm-shared-assets-policy \
+  --site-config "$SITE_CONFIG" --custom-config "$CUSTOM_CONFIG" --directadmin-user illoc \
+  --apache-config "$APACHE_CONFIG" --document-root "$WEBROOT" \
   --shared-assets "$BASE/assets" --assets-manifest "$ASSET_MANIFEST" \
   --release-root "$BASE/releases" --pointer "$BASE/current" --state-dir "$BASE/migration-state" \
-  --httpd /usr/sbin/httpd --copy-command /usr/bin/cp \
-  --reload-command /usr/sbin/httpd --reload-arg -k --reload-arg graceful \
+  --httpd /usr/sbin/httpd --directadmin /usr/local/directadmin/directadmin --copy-command /usr/bin/cp \
   --probe-url https://driftdwells.com/search --probe-url https://driftdwells.com/checkout
 ```
 

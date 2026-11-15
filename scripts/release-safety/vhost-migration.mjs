@@ -9,6 +9,16 @@ import { createInventory } from './frontend-inventory.mjs';
 const JOURNAL = 'vhost-migration.json';
 const LOCK = 'vhost-migration.lock';
 const HASH = /^[a-f0-9]{64}$/;
+export const DIRECTADMIN_REGENERATION_VERIFIED = false;
+
+function assertDirectAdminRegenerationAvailable(run, siteConfig) {
+  const actualAccount = '/usr/local/directadmin/data/users/illoc/httpd.conf';
+  if (!DIRECTADMIN_REGENERATION_VERIFIED &&
+      (run === runCommand || siteConfig === actualAccount ||
+       (typeof siteConfig === 'string' && fs.existsSync(siteConfig) && fs.realpathSync(siteConfig) === actualAccount))) {
+    throw new Error('DirectAdmin apply/recovery is disabled until real taskq regeneration, queue isolation, and Apache reload side effects are verified');
+  }
+}
 
 function hashFile(file) {
   const digest = crypto.createHash('sha256');
@@ -312,15 +322,34 @@ function ensureFreeState(stateRoot) {
 }
 
 function validateMigrationPaths({
-  siteConfig, apacheConfig, documentRoot, sharedAssets, assets, releasesRoot, pointer, stateRoot
+  siteConfig, apacheConfig, documentRoot, sharedAssets, assets, releasesRoot, pointer, stateRoot,
+  customConfig, directadminUser
 }) {
   for (const [value, label] of [
     [siteConfig, 'Site config'], [apacheConfig, 'Apache config'], [documentRoot, 'Document root'],
     [sharedAssets, 'Shared assets'], [releasesRoot, 'Release root'],
-    [pointer, 'Release pointer'], [stateRoot, 'State directory']
+    [pointer, 'Release pointer'], [stateRoot, 'State directory'],
+    [customConfig, 'Persistent DirectAdmin custom config']
   ]) validatePath(value, label);
+  validateDirectAdminUser(directadminUser);
+  validateDirectAdminPaths(siteConfig, customConfig);
   requireRegularFile(siteConfig, 'Site config');
   requireRegularFile(apacheConfig, 'Apache config');
+  requireRegularFile(customConfig, 'Persistent DirectAdmin custom config');
+  if (new Set([siteConfig, apacheConfig, customConfig]).size !== 3) {
+    throw new Error('Apache main, generated site, and persistent DirectAdmin configs must be distinct files');
+  }
+  if (!path.basename(customConfig).endsWith('.cust_httpd') ||
+      path.basename(customConfig).endsWith('.cust_httpd_ssl')) {
+    throw new Error('Persistent config must be the per-domain .cust_httpd source used by the effective vhosts');
+  }
+  for (const [other, otherLabel] of [
+    [documentRoot, 'document root'], [sharedAssets, 'shared assets'],
+    [releasesRoot, 'release root'], [stateRoot, 'state directory'], [pointer, 'release pointer'],
+    [apacheConfig, 'Apache config']
+  ]) {
+    disjoint(customConfig, other, `Persistent DirectAdmin config must be separate from the ${otherLabel}`);
+  }
   requireRealDirectory(documentRoot, 'Document root');
   requireRealDirectory(sharedAssets, 'Shared assets directory');
   const verifiedAssets = validateAssets(assets);
@@ -348,47 +377,156 @@ function validateMigrationPaths({
       [releasesRoot, 'release root'], [stateRoot, 'state directory'], [pointer, 'release pointer']
     ]) disjoint(config, other, `Apache config must be separate from the ${label}`);
   }
-  const siteSource = readRegularFile(siteConfig, 'Site config').data.toString('utf8');
-  const transformed = prepareSiteVhostConfig(siteSource, {
+  const siteSource = readRegularFile(siteConfig, 'Generated Apache site config').data.toString('utf8');
+  assertVhostProtocolCoverage(siteSource);
+  assertMainCgiTemplateOutput(siteSource, documentRoot);
+  const transformedSiteConfig = prepareSiteVhostConfig(siteSource, {
     originalRoot: documentRoot, releasePointer: pointer, sharedAssets
   });
+  const savedCustomConfig = readRegularFile(customConfig, 'Persistent DirectAdmin custom config');
+  const customSource = savedCustomConfig.data.toString('utf8');
+  const transformedCustomConfig = prepareDirectAdminCustomConfig(customSource, {
+    originalRoot: documentRoot, releasePointer: pointer, sharedAssets
+  });
+  const persistentConfigs = [{
+    path: customConfig, protocol: 'cust_httpd', source: customSource,
+    transformed: transformedCustomConfig, originalHash: hashText(savedCustomConfig.data),
+    migratedHash: hashText(transformedCustomConfig), mode: savedCustomConfig.stat.mode & 0o7777,
+    uid: savedCustomConfig.stat.uid, gid: savedCustomConfig.stat.gid
+  }];
   const journal = path.join(stateRoot, JOURNAL);
   if (fs.existsSync(journal)) throw new Error('A prior migration journal exists; use recovery or rollback');
   return {
-    transformed, assets: verifiedAssets,
-    originalConfigHash: hashText(siteSource), migratedConfigHash: hashText(transformed)
+    transformedSiteConfig, persistentConfigs, assets: verifiedAssets,
+    originalConfigHash: hashText(siteSource), migratedConfigHash: hashText(transformedSiteConfig)
   };
 }
 
-function installConfig({ siteConfig, backupConfig, configTempPath, contents, originalMode, originalHash, migratedHash, copyCommand, run }) {
-  const currentHash = hashFile(siteConfig);
-  if (currentHash !== originalHash && currentHash !== migratedHash) {
-    throw new Error('Site config changed after migration preparation; refusing overwrite');
+function validateDirectAdminPaths(siteConfig, customConfig) {
+  const accountDir = path.dirname(siteConfig);
+  if (path.basename(siteConfig) !== 'httpd.conf' ||
+      path.basename(accountDir) !== 'illoc' ||
+      path.basename(path.dirname(accountDir)) !== 'users' ||
+      customConfig !== path.join(accountDir, 'domains', 'driftdwells.com.cust_httpd')) {
+    throw new Error('DirectAdmin configuration paths must identify the illoc account and driftdwells.com domain');
   }
-  if (currentHash === migratedHash) return;
-  if (pathExists(configTempPath)) throw new Error('Config transaction temporary path already exists');
-  copyArchive(run, copyCommand, backupConfig, configTempPath);
-  fs.chmodSync(configTempPath, originalMode);
-  fs.writeFileSync(configTempPath, contents);
-  const fd = fs.openSync(configTempPath, 'r');
-  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-  fs.renameSync(configTempPath, siteConfig);
-  syncDirectory(path.dirname(siteConfig));
 }
 
-function removeConfigTemp(journal) {
-  let stat;
-  try { stat = fs.lstatSync(journal.configTempPath); }
-  catch (error) {
-    if (error.code === 'ENOENT') return;
-    throw error;
+function validateDirectAdminUser(user) {
+  if (user !== 'illoc') {
+    throw new Error('This migration permits only the explicitly scoped DirectAdmin account illoc');
   }
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 ||
-      stat.uid !== journal.siteConfigUid || stat.gid !== journal.siteConfigGid) {
-    throw new Error('Config transaction temporary file was replaced; refusing cleanup');
+  return user;
+}
+
+function directAdminTaskArgs(user) {
+  return ['taskq', `--run=action=rewrite&value=httpd&user=${validateDirectAdminUser(user)}`];
+}
+
+function runDirectAdminRewrite(run, directadmin, user, label) {
+  requireCommandOk(run, directadmin, directAdminTaskArgs(user), label);
+}
+
+function atomicReplacePersistentConfig(entry, contents, expectedHash, { copyCommand, run }) {
+  const current = readRegularFile(entry.path, 'Persistent DirectAdmin custom config');
+  const currentHash = hashText(current.data);
+  if (current.stat.uid !== entry.uid || current.stat.gid !== entry.gid ||
+      (current.stat.mode & 0o7777) !== entry.mode) {
+    throw new Error(`Persistent DirectAdmin config metadata changed outside the migration: ${entry.path}`);
   }
-  fs.unlinkSync(journal.configTempPath);
-  syncDirectory(path.dirname(journal.siteConfig));
+  if (currentHash !== entry.originalHash && currentHash !== entry.migratedHash && currentHash !== expectedHash) {
+    throw new Error(`Persistent DirectAdmin config changed outside the migration: ${entry.path}`);
+  }
+  if (currentHash === expectedHash) return;
+  const backup = readRegularFile(entry.backupPath, 'Persistent DirectAdmin config backup');
+  if (hashText(backup.data) !== entry.originalHash || backup.stat.uid !== entry.uid ||
+      backup.stat.gid !== entry.gid || (backup.stat.mode & 0o7777) !== (entry.mode & ~0o222)) {
+    throw new Error(`Persistent DirectAdmin config backup metadata or integrity mismatch: ${entry.path}`);
+  }
+  const temp = entry.tempPath;
+  if (pathExists(temp)) throw new Error(`Persistent config transaction path already exists: ${temp}`);
+  copyArchive(run, copyCommand, entry.backupPath, temp);
+  const copied = readRegularFile(temp, 'Metadata-preserving persistent config temporary');
+  if (copied.stat.uid !== entry.uid || copied.stat.gid !== entry.gid ||
+      (copied.stat.mode & 0o7777) !== (entry.mode & ~0o222)) {
+    throw new Error(`Persistent config metadata was not preserved by cp --preserve=all: ${entry.path}`);
+  }
+  fs.chmodSync(temp, entry.mode);
+  const fd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW);
+  try {
+    fs.writeFileSync(fd, contents);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const prepared = readRegularFile(temp, 'Prepared persistent DirectAdmin config');
+  if (hashText(prepared.data) !== expectedHash || prepared.stat.uid !== entry.uid ||
+      prepared.stat.gid !== entry.gid || (prepared.stat.mode & 0o7777) !== entry.mode) {
+    throw new Error(`Persistent config content or metadata verification failed before replacement: ${entry.path}`);
+  }
+  fs.renameSync(temp, entry.path);
+  syncDirectory(path.dirname(entry.path));
+  const saved = readRegularFile(entry.path, 'Updated DirectAdmin custom config');
+  if (hashText(saved.data) !== expectedHash || saved.stat.uid !== entry.uid ||
+      saved.stat.gid !== entry.gid || (saved.stat.mode & 0o7777) !== entry.mode) {
+    throw new Error(`Persistent DirectAdmin config write verification failed: ${entry.path}`);
+  }
+}
+
+function restorePersistentConfig(entry, originalBytes, { copyCommand, run }) {
+  const current = readRegularFile(entry.path, 'Persistent DirectAdmin custom config');
+  const currentHash = hashText(current.data);
+  if (currentHash !== entry.originalHash && currentHash !== entry.migratedHash) {
+    throw new Error(`Recovery refused: persistent DirectAdmin config differs from both recorded versions: ${entry.path}`);
+  }
+  atomicReplacePersistentConfig(entry, originalBytes, entry.originalHash, {
+    copyCommand, run
+  });
+  const restored = readRegularFile(entry.path, 'Restored DirectAdmin custom config');
+  if (hashText(restored.data) !== entry.originalHash || restored.stat.uid !== entry.uid ||
+      restored.stat.gid !== entry.gid || (restored.stat.mode & 0o7777) !== entry.mode) {
+    throw new Error(`Persistent DirectAdmin config restoration verification failed: ${entry.path}`);
+  }
+}
+
+function removeConfigTemps(journal) {
+  for (const entry of journal.persistentConfigs) {
+    let stat;
+    try { stat = fs.lstatSync(entry.tempPath); }
+    catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 ||
+        stat.uid !== entry.uid || stat.gid !== entry.gid) {
+      throw new Error(`Persistent config transaction file was replaced; refusing cleanup: ${entry.tempPath}`);
+    }
+    fs.unlinkSync(entry.tempPath);
+    syncDirectory(path.dirname(entry.path));
+  }
+}
+
+function verifyGeneratedConfig(expected, siteConfig, label, metadata = null) {
+  const actual = readRegularFile(siteConfig, 'Generated Apache site config');
+  if (hashText(actual.data) !== hashText(expected)) {
+    throw new Error(`${label}: regenerated effective vhosts or unrelated directives differ from the journaled expectation`);
+  }
+  if (metadata && (actual.stat.uid !== metadata.uid || actual.stat.gid !== metadata.gid ||
+      (actual.stat.mode & 0o7777) !== metadata.mode)) {
+    throw new Error(`${label}: regenerated Apache config metadata changed`);
+  }
+  return hashText(actual.data);
+}
+
+function verifyPersistentConfigs(journal, expectedVersion) {
+  for (const entry of journal.persistentConfigs) {
+    const expectedHash = expectedVersion === 'original' ? entry.originalHash : entry.migratedHash;
+    const actual = readRegularFile(entry.path, 'Persistent DirectAdmin custom config');
+    if (hashText(actual.data) !== expectedHash || actual.stat.uid !== entry.uid ||
+        actual.stat.gid !== entry.gid || (actual.stat.mode & 0o7777) !== entry.mode) {
+      throw new Error(`Persistent DirectAdmin config verification failed (${expectedVersion}): ${entry.path}`);
+    }
+  }
 }
 
 function checkPointer(pointer, release) {
@@ -473,40 +611,52 @@ function configTextFromBackup(journal) {
   requireRegularFile(backup, 'Config backup');
   const saved = readRegularFile(backup, 'Config backup').data;
   if (hashText(saved) !== journal.originalConfigHash) throw new Error('Original site config backup integrity check failed');
-  return saved.toString('utf8');
+  return saved;
+}
+
+function persistentConfigBytes(journal, entry) {
+  requireRegularFile(entry.backupPath, 'Persistent config backup');
+  const saved = readRegularFile(entry.backupPath, 'Persistent config backup');
+  if (hashText(saved.data) !== entry.originalHash || saved.stat.uid !== entry.uid ||
+      saved.stat.gid !== entry.gid || (saved.stat.mode & 0o7777) !== (entry.mode & ~0o222)) {
+    throw new Error(`Persistent config backup integrity or metadata check failed: ${entry.path}`);
+  }
+  return saved.data;
 }
 
 function rollbackJournal(stateRoot, journal, run, { explicit = false } = {}) {
   const originalConfig = configTextFromBackup(journal);
-  removeConfigTemp(journal);
-  const currentConfigHash = hashFile(journal.siteConfig);
-  if (currentConfigHash !== journal.originalConfigHash && currentConfigHash !== journal.migratedConfigHash) {
-    throw new Error('Recovery refused: site config differs from both recorded versions');
-  }
+  removeConfigTemps(journal);
+  readRegularFile(journal.siteConfig, 'Generated Apache site config');
   const pointerExists = checkPointer(journal.pointer, journal.release);
-  if (currentConfigHash === journal.migratedConfigHash) {
-    installConfig({
-      siteConfig: journal.siteConfig, backupConfig: journal.backupConfig, configTempPath: journal.configTempPath,
-      contents: originalConfig,
-      originalMode: journal.siteConfigMode, originalHash: journal.migratedConfigHash,
-      migratedHash: journal.originalConfigHash, copyCommand: journal.copyCommand, run
-    });
-  }
+  const restoreEntries = journal.persistentConfigs.map(entry => ({
+    entry, bytes: persistentConfigBytes(journal, entry)
+  }));
+  for (const { entry, bytes } of restoreEntries) restorePersistentConfig(entry, bytes, {
+    copyCommand: journal.copyCommand, run
+  });
+  runDirectAdminRewrite(run, journal.directadmin, journal.directadminUser,
+    'Account-scoped DirectAdmin rewrite after restoring persistent configs');
+  verifyPersistentConfigs(journal, 'original');
   verifyApacheConfig(run, journal.httpd, journal.httpdArgs, journal.apacheConfig, journal.siteConfig,
-    'Apache syntax test after restoring original config');
-  requireCommandOk(run, journal.reloadCommand, journal.reloadArgs, 'Apache reload after restoring original config');
+    'Apache syntax test after restoring persistent configs');
+  verifyGeneratedConfig(originalConfig, journal.siteConfig, 'Regenerated original site config verification failed', {
+    uid: journal.siteConfigUid, gid: journal.siteConfigGid, mode: journal.siteConfigMode
+  });
   removeProbeMarker(journal);
   if (pointerExists) {
     if (!checkPointer(journal.pointer, journal.release)) throw new Error('Recovery refused: release pointer changed before removal');
     fs.unlinkSync(journal.pointer);
     syncDirectory(path.dirname(journal.pointer));
   }
-  updateJournal(stateRoot, journal, explicit ? 'rolled-back' : 'recovered', 'Original site config restored; original document root was never moved or deleted.');
-  return { status: journal.status, documentRoot: journal.documentRoot, config: journal.siteConfig };
+  updateJournal(stateRoot, journal, explicit ? 'rolled-back' : 'recovered',
+    'Persistent DirectAdmin configs restored and regenerated for the recorded account; generated Apache config was never written directly.');
+  return { status: journal.status, documentRoot: journal.documentRoot, config: journal.siteConfig,
+    persistentConfigs: journal.persistentConfigs.map(entry => entry.path), directadminUser: journal.directadminUser };
 }
 
 function validateJournal(stateRoot, journal) {
-  if (journal?.version !== 1 || !/^[0-9a-f-]{36}$/.test(journal.migrationId) ||
+  if (journal?.version !== 2 || !/^[0-9a-f-]{36}$/.test(journal.migrationId) ||
       !HASH.test(journal.originalConfigHash) || !HASH.test(journal.migratedConfigHash) ||
       !HASH.test(journal.backupManifestHash) || !HASH.test(journal.probeTokenHash) ||
       !['prepared', 'probe-created', 'pointer-created', 'config-installed', 'syntax-passed', 'active', 'recovery-required', 'rolled-back', 'recovered'].includes(journal.status)) {
@@ -517,15 +667,16 @@ function validateJournal(stateRoot, journal) {
     [journal.documentRoot, 'Journal document root'], [journal.release, 'Journal release'],
     [journal.sharedAssets, 'Journal shared assets'], [journal.releasesRoot, 'Journal release root'],
     [journal.pointer, 'Journal pointer'],
-    [journal.configTempPath, 'Journal config temporary'],
     [journal.probePath, 'Journal probe marker'], [journal.probeTempPath, 'Journal probe marker temporary'],
     [journal.backupConfig, 'Journal config backup'], [journal.httpd, 'Journal Apache binary'],
-    [journal.reloadCommand, 'Journal reload command'], [journal.copyCommand, 'Journal copy command']
+    [journal.directadmin, 'Journal DirectAdmin binary'], [journal.copyCommand, 'Journal copy command']
   ]) validatePath(value, label);
   if (!Array.isArray(journal.httpdArgs) || journal.httpdArgs.some(arg => typeof arg !== 'string') ||
-      !Array.isArray(journal.reloadArgs) || journal.reloadArgs.length === 0 || journal.reloadArgs.some(arg => typeof arg !== 'string')) {
+      !Array.isArray(journal.persistentConfigs) || journal.persistentConfigs.length !== 1) {
     throw new Error('Invalid command arguments in migration journal');
   }
+  validateDirectAdminUser(journal.directadminUser);
+  validateDirectAdminPaths(journal.siteConfig, journal.persistentConfigs[0].path);
   if (!Number.isInteger(journal.sealedRootMode) || journal.sealedRootMode < 0 || journal.sealedRootMode > 0o7777 ||
       !Number.isInteger(journal.probeUid) || !Number.isInteger(journal.probeGid) ||
       !Number.isInteger(journal.siteConfigMode) || !Number.isInteger(journal.siteConfigUid) ||
@@ -533,11 +684,35 @@ function validateJournal(stateRoot, journal) {
     throw new Error('Invalid probe marker metadata in migration journal');
   }
   if (journal.release !== path.join(journal.releasesRoot, `vhost-migration-${journal.migrationId}`) ||
-      journal.configTempPath !== `${journal.siteConfig}.vhost-migration-${journal.migrationId}.tmp` ||
       journal.probePath !== path.join(journal.release, `vhost-migration-${journal.migrationId}-probe.txt`) ||
       journal.probeTempPath !== `${journal.probePath}.tmp` ||
-      journal.backupConfig !== path.join(stateRoot, 'backup', 'site.conf')) {
+      journal.backupConfig !== path.join(stateRoot, 'backup', 'generated-site.conf')) {
     throw new Error('Journal paths escape their recorded migration roots');
+  }
+  for (const entry of journal.persistentConfigs) {
+    validatePath(entry.path, 'Journal persistent config');
+    validatePath(entry.backupPath, 'Journal persistent config backup');
+    validatePath(entry.tempPath, 'Journal persistent config temporary');
+    if (entry.protocol !== 'cust_httpd' ||
+        entry.backupPath !== path.join(stateRoot, 'backup', 'persistent-cust_httpd.conf') ||
+        entry.tempPath !== `${entry.path}.vhost-migration-${journal.migrationId}.tmp` ||
+        !HASH.test(entry.originalHash) || !HASH.test(entry.migratedHash) ||
+        !Number.isInteger(entry.uid) || !Number.isInteger(entry.gid) ||
+        !Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o7777) {
+      throw new Error('Invalid persistent config journal entry');
+    }
+    disjoint(journal.siteConfig, entry.path, 'Generated and persistent Apache configs must be separate');
+    requireRegularFile(entry.path, 'Journal persistent DirectAdmin config');
+    const current = readRegularFile(entry.path, 'Journal persistent DirectAdmin config');
+    if ((hashText(current.data) !== entry.originalHash && hashText(current.data) !== entry.migratedHash) ||
+        current.stat.uid !== entry.uid || current.stat.gid !== entry.gid ||
+        (current.stat.mode & 0o7777) !== entry.mode) {
+      throw new Error(`Persistent DirectAdmin config changed outside the recorded transaction: ${entry.path}`);
+    }
+  }
+  if (!path.basename(journal.persistentConfigs[0].path).endsWith('.cust_httpd') ||
+      path.basename(journal.persistentConfigs[0].path).endsWith('.cust_httpd_ssl')) {
+    throw new Error('Journal does not identify the effective per-domain .cust_httpd source');
   }
   disjoint(journal.documentRoot, journal.releasesRoot, 'Journal release root overlaps the original document root');
   disjoint(journal.documentRoot, journal.pointer, 'Journal pointer overlaps the original document root');
@@ -557,10 +732,17 @@ function validateJournal(stateRoot, journal) {
   requireRegularFile(manifest, 'Backup manifest');
   if (hashFile(manifest) !== journal.backupManifestHash) throw new Error('Backup manifest integrity check failed');
   const saved = JSON.parse(readRegularFile(manifest, 'Backup manifest').data.toString('utf8'));
-  if (saved.version !== 1 || saved.migrationId !== journal.migrationId ||
+  if (saved.version !== 2 || saved.migrationId !== journal.migrationId ||
       saved.documentRoot !== journal.documentRoot || saved.sharedAssets !== journal.sharedAssets ||
       saved.originalConfigHash !== journal.originalConfigHash ||
-      JSON.stringify(saved.assets) !== JSON.stringify(journal.assets)) {
+      JSON.stringify(saved.siteConfig) !== JSON.stringify({
+        path: journal.siteConfig, mode: journal.siteConfigMode, uid: journal.siteConfigUid, gid: journal.siteConfigGid
+      }) ||
+      JSON.stringify(saved.assets) !== JSON.stringify(journal.assets) ||
+      JSON.stringify(saved.persistentConfigs) !== JSON.stringify(journal.persistentConfigs.map(({ path: configPath,
+        protocol, originalHash, migratedHash, mode, uid, gid }) => ({
+        path: configPath, protocol, originalHash, migratedHash, mode, uid, gid
+      })))) {
     throw new Error('Backup manifest identity mismatch');
   }
   const journalAssets = validateAssets(journal.assets);
@@ -581,16 +763,36 @@ function validateJournal(stateRoot, journal) {
   if (hashText(expectedConfig) !== journal.migratedConfigHash) {
     throw new Error('Recorded transformed config does not match the immutable backup');
   }
+  const generatedBackupStat = readRegularFile(journal.backupConfig, 'Generated config backup').stat;
+  if (generatedBackupStat.uid !== journal.siteConfigUid || generatedBackupStat.gid !== journal.siteConfigGid ||
+      (generatedBackupStat.mode & 0o7777) !== (journal.siteConfigMode & ~0o222)) {
+    throw new Error('Generated Apache config backup metadata differs from its journaled baseline');
+  }
+  for (const entry of journal.persistentConfigs) {
+    const backup = readRegularFile(entry.backupPath, 'Persistent config backup');
+    if (hashText(backup.data) !== entry.originalHash || backup.stat.uid !== entry.uid ||
+        backup.stat.gid !== entry.gid || (backup.stat.mode & 0o7777) !== (entry.mode & ~0o222)) {
+      throw new Error(`Persistent config backup integrity or metadata check failed: ${entry.path}`);
+    }
+    const expected = prepareDirectAdminCustomConfig(backup.data.toString('utf8'), {
+      originalRoot: journal.documentRoot, releasePointer: journal.pointer, sharedAssets: journal.sharedAssets
+    });
+    if (hashText(expected) !== entry.migratedHash) {
+      throw new Error(`Recorded DirectAdmin config transformation does not match its immutable backup: ${entry.path}`);
+    }
+  }
   if ((fs.statSync(backupRoot).mode & 0o222) ||
       (fs.statSync(backupWebroot).mode & 0o222) ||
       (fs.statSync(manifest).mode & 0o222) ||
-      (fs.statSync(journal.backupConfig).mode & 0o222)) {
+      (fs.statSync(journal.backupConfig).mode & 0o222) ||
+      journal.persistentConfigs.some(entry => fs.statSync(entry.backupPath).mode & 0o222)) {
     throw new Error('Migration backup is not sealed read-only');
   }
 }
 
 /**
- * Generate a site-only vhost edit. It never writes the supplied config.
+ * Generate the expected effective config for strict post-regeneration comparison.
+ * The generated DirectAdmin config is never written by this module.
  */
 export function prepareSiteVhostConfig(source, { originalRoot, releasePointer, sharedAssets }) {
   for (const value of [originalRoot, releasePointer]) {
@@ -616,6 +818,11 @@ export function prepareSiteVhostConfig(source, { originalRoot, releasePointer, s
     if ([documentRoot, directoryRoot, legalDirectory, legalAlias].some(directive => block.split(directive).length !== 2)) {
       throw new Error('Unexpected site document root directives');
     }
+    const scriptAlias = `ScriptAlias /cgi-bin/ "${originalRoot}/cgi-bin/"`;
+    const scriptAliases = block.match(/^[ \t]*ScriptAlias\s+\/cgi-bin\/[^\r\n]*$/gm) || [];
+    if (scriptAliases.length > 1 || (scriptAliases.length === 1 && scriptAliases[0].trim() !== scriptAlias)) {
+      throw new Error('Unexpected main-site CGI ScriptAlias; refusing to assume DirectAdmin DOCROOT token behavior');
+    }
     for (const proxy of ['ProxyPass /api ', 'ProxyPass /uploads ']) {
       if (!block.includes(proxy)) throw new Error(`Missing site proxy: ${proxy}`);
     }
@@ -633,17 +840,145 @@ export function prepareSiteVhostConfig(source, { originalRoot, releasePointer, s
           block.includes(`<LocationMatch "^/assets/`)) {
         throw new Error('Site vhost has an incomplete shared-assets Apache mapping');
       }
-      updatedBlock = block.replace(/<\/VirtualHost>\s*$/, `${sharedAssetDirectives}\n</VirtualHost>`);
-      if (updatedBlock === block) throw new Error('Unable to add shared-assets mapping to the site vhost');
+      const templateDirective = /^\s*(?:ScriptAlias\s+\/cgi-bin\/|SSLEngine\b|ServerName\b|DocumentRoot\b|ServerAlias\b)/m;
+      const insertion = block.search(templateDirective);
+      if (insertion < 0) throw new Error('Unable to locate the DirectAdmin custom-config insertion boundary');
+      updatedBlock = `${block.slice(0, insertion)}${sharedAssetDirectives}\n${block.slice(insertion)}`;
     }
     matches++;
-    return updatedBlock.replace(documentRoot, `DocumentRoot "${releasePointer}"`)
+    const opening = updatedBlock.match(/<VirtualHost\b([^>]*)>/);
+    const httpVhost = /:80(?:\s|$)/.test(opening?.[1] ?? '');
+    const transformed = updatedBlock.replace(documentRoot, `DocumentRoot "${releasePointer}"`)
       .replace(directoryRoot, `<Directory "${releasePointer}">`)
       .replace(legalDirectory, `<Directory "${releasePointer}/legal">`)
       .replace(legalAlias, `Alias /legal/ ${releasePointer}/legal/`);
+    if (!httpVhost) return transformed;
+    return scriptAliases.length === 1
+      ? transformed.replace(scriptAlias, `ScriptAlias /cgi-bin/ "${releasePointer}/cgi-bin/"`)
+      : transformed;
   });
   if (matches !== 2) throw new Error(`Expected exactly two site vhosts, found ${matches}`);
   return updated;
+}
+
+function assertVhostProtocolCoverage(source) {
+  const blocks = [...source.matchAll(/<VirtualHost\b[^>]*>[\s\S]*?<\/VirtualHost>/g)].map(match => match[0]);
+  const groups = [
+    {
+      label: 'main',
+      matches: block => /^\s*ServerName\s+www\.driftdwells\.com\s*$/m.test(block) &&
+        /^\s*ServerAlias\s+www\.driftdwells\.com\s+driftdwells\.com\s*$/m.test(block)
+    },
+    {
+      label: 'test',
+      matches: block => /^\s*ServerName\s+test\.driftdwells\.com\s*$/m.test(block) ||
+        /^\s*ServerAlias\s+.*(?:^|\s)test\.driftdwells\.com(?:\s|$)/m.test(block)
+    }
+  ];
+  for (const group of groups) {
+    const matches = blocks.filter(group.matches);
+    if (matches.length !== 2) throw new Error(`Expected exactly two ${group.label} HTTP/HTTPS vhosts, found ${matches.length}`);
+    const ports = matches.map(block => {
+      const opening = block.match(/<VirtualHost\b([^>]*)>/);
+      return [...new Set([...(opening?.[1].matchAll(/:(80|443)(?=\s|$)/g) || [])].map(match => match[1]))];
+    });
+    if (ports.some(value => value.length !== 1) ||
+        new Set(ports.map(value => value[0])).size !== 2 ||
+        !ports.flat().includes('80') || !ports.flat().includes('443')) {
+      throw new Error(`Expected one HTTP and one HTTPS ${group.label} vhost`);
+    }
+  }
+}
+
+function assertMainCgiTemplateOutput(source, originalRoot) {
+  const expected = `ScriptAlias /cgi-bin/ "${originalRoot}/cgi-bin/"`;
+  const mainBlocks = [...source.matchAll(/<VirtualHost\b[^>]*>[\s\S]*?<\/VirtualHost>/g)]
+    .map(match => match[0])
+    .filter(block => /^\s*ServerName\s+www\.driftdwells\.com\s*$/m.test(block));
+  if (mainBlocks.length !== 2) throw new Error('Expected exactly two main-site vhosts for CGI template verification');
+  for (const block of mainBlocks) {
+    const opening = block.match(/<VirtualHost\b([^>]*)>/);
+    const ports = new Set([...(opening?.[1].matchAll(/:(80|443)(?=\s|$)/g) || [])].map(match => match[1]));
+    const aliases = block.match(/^[ \t]*ScriptAlias\s+\/cgi-bin\/[^\r\n]*$/gm) || [];
+    if (ports.size !== 1 || aliases.length !== 1 || aliases[0].trim() !== expected) {
+      throw new Error('Unexpected main-site CGI ScriptAlias or port; DirectAdmin template output is not verified');
+    }
+  }
+}
+
+export function prepareDirectAdminCustomConfig(source, { originalRoot, releasePointer, sharedAssets: assetsPath }) {
+  for (const value of [originalRoot, releasePointer, assetsPath]) {
+    validatePath(value, 'DirectAdmin document path');
+    if (value.includes(' ') || value.endsWith('/')) throw new Error('Invalid absolute DirectAdmin site path');
+  }
+  if (originalRoot === releasePointer || releasePointer.startsWith(`${originalRoot}/`)) {
+    throw new Error('Release pointer must be separate from the original document root');
+  }
+  if (typeof source !== 'string' || source.length === 0 || source.includes('\0')) {
+    throw new Error('Persistent DirectAdmin custom config is empty or invalid');
+  }
+  if (/\|\?DOCROOT=/.test(source) ||
+      /^\s*(?:Alias|AliasMatch|ScriptAlias)\s+\/assets(?:\/|\s)/m.test(source)) {
+    throw new Error('Persistent DirectAdmin config already has migration directives; refusing ambiguous rewrite');
+  }
+  for (const proxy of ['ProxyPass /api ', 'ProxyPass /uploads ']) {
+    if (!source.includes(proxy)) throw new Error(`Missing persistent site proxy: ${proxy}`);
+  }
+
+  const lines = source.split(/\r?\n/);
+  const lineEnding = source.includes('\r\n') ? '\r\n' : '\n';
+  const legalAliasPattern = /^([ \t]*)(Alias[ \t]+\/legal\/[ \t]+)(["']?)([^"' \t]+)(\3)([ \t]*)$/;
+  const aliases = lines.map((line, index) => ({ line, index, match: line.match(legalAliasPattern) }))
+    .filter(entry => entry.match);
+  if (aliases.length !== 1 || aliases[0].match[4] !== `${originalRoot}/legal/`) {
+    throw new Error('Persistent DirectAdmin config must contain exactly the expected /legal/ alias');
+  }
+
+  const directoryStarts = [];
+  for (let index = 0; index < lines.length; index++) {
+    const opening = lines[index].match(/^([ \t]*<Directory[ \t]+)(["']?)([^"']+?)(\2[ \t]*>)[ \t]*$/);
+    if (opening && opening[3] === `${originalRoot}/legal`) directoryStarts.push({ index, opening });
+  }
+  if (directoryStarts.length !== 1) {
+    throw new Error('Persistent DirectAdmin config must contain exactly the expected /legal Directory section');
+  }
+  const directoryStart = directoryStarts[0];
+  const directoryEnd = lines.findIndex((line, index) => index > directoryStart.index && /^[ \t]*<\/Directory>[ \t]*$/.test(line));
+  if (directoryEnd < 0 || lines.slice(directoryStart.index + 1, directoryEnd).some(line => /^\s*<Directory\b/i.test(line))) {
+    throw new Error('Persistent DirectAdmin /legal Directory section is incomplete or nested');
+  }
+
+  const alias = aliases[0];
+  const quote = alias.match[3];
+  const mainAlias = `${alias.match[1]}${alias.match[2]}${quote}${releasePointer}/legal/${quote}${alias.match[6]}`;
+  const originalAlias = alias.line;
+  const mainDirectory = lines.slice(directoryStart.index, directoryEnd + 1)
+    .map(line => line.replace(`${originalRoot}/legal`, `${releasePointer}/legal`));
+  const originalDirectory = lines.slice(directoryStart.index, directoryEnd + 1);
+  const conditional = (main, original) => [
+    '|*if !SUB|', ...main, '|*else|', ...original, '|*endif|'
+  ];
+
+  const replacements = [
+    {
+      start: directoryStart.index, end: directoryEnd + 1,
+      lines: conditional(mainDirectory, originalDirectory)
+    },
+    {
+      start: alias.index, end: alias.index + 1,
+      lines: conditional([mainAlias], [originalAlias])
+    }
+  ].sort((a, b) => b.start - a.start);
+  for (const replacement of replacements) {
+    lines.splice(replacement.start, replacement.end - replacement.start, ...replacement.lines);
+  }
+  const custom = lines.join(lineEnding);
+  const assetDirectives = apacheSharedAssetsDirectives(assetsPath)
+    .split('\n').join(lineEnding);
+  const prefix = `|*if !SUB|${lineEnding}|?DOCROOT=${releasePointer}|${lineEnding}|*endif|${lineEnding}`;
+  const suffix = `${custom.endsWith(lineEnding) || custom.length === 0 ? '' : lineEnding}` +
+    `|*if !SUB|${lineEnding}${assetDirectives}${lineEnding}|*endif|`;
+  return `${prefix}${custom}${suffix}`;
 }
 
 export function assertSiteSharedAssetsMapping(source, sharedAssets) {
@@ -671,15 +1006,17 @@ export function assertSiteSharedAssetsMapping(source, sharedAssets) {
  */
 export async function migrateSiteVhost({
   siteConfig, apacheConfig, documentRoot, sharedAssets, releasesRoot, pointer, stateRoot,
-  httpd, httpdArgs = [], reloadCommand, reloadArgs, copyCommand,
-  confirmWebrootQuiesced, confirmConfigPersistence, confirmSharedAssetsPolicy,
+  customConfig, directadmin, directadminUser,
+  httpd, httpdArgs = [], copyCommand,
+  confirmWebrootQuiesced, confirmDirectAdminAccount, confirmSharedAssetsPolicy,
   verifyAssetServing, assets, preflightProbe, probe, run = runCommand
 }) {
+  assertDirectAdminRegenerationAvailable(run, siteConfig);
   if (confirmWebrootQuiesced !== true) {
     throw new Error('Explicit confirmation that document-root writers are quiesced is required');
   }
-  if (confirmConfigPersistence !== true) {
-    throw new Error('Explicit confirmation that the supplied site config is the persistent Apache source is required');
+  if (confirmDirectAdminAccount !== true) {
+    throw new Error('Explicit confirmation of the account-scoped DirectAdmin regeneration target is required');
   }
   if (confirmSharedAssetsPolicy !== true) {
     throw new Error('Explicit confirmation of the append-only, exclusively controlled, Apache-read-only shared-assets store is required');
@@ -690,18 +1027,17 @@ export async function migrateSiteVhost({
   if (typeof preflightProbe !== 'function' || typeof probe !== 'function') {
     throw new Error('Baseline and post-migration live HTTP probes are required');
   }
-  for (const [command, label] of [[httpd, 'Apache binary'], [reloadCommand, 'Reload command'], [copyCommand, 'Copy command']]) {
+  for (const [command, label] of [[httpd, 'Apache binary'], [directadmin, 'DirectAdmin binary'], [copyCommand, 'Copy command']]) {
     if (typeof command !== 'string' || !path.isAbsolute(command)) throw new Error(`${label} must be an explicit absolute executable path`);
   }
-  if (!Array.isArray(reloadArgs) || reloadArgs.length === 0 || reloadArgs.some(arg => typeof arg !== 'string')) {
-    throw new Error('An explicit reload command argument list is required');
-  }
+  validateDirectAdminUser(directadminUser);
   if (!Array.isArray(httpdArgs) || httpdArgs.some(arg => typeof arg !== 'string')) {
     throw new Error('Apache command arguments must be a list of strings');
   }
   validatePath(stateRoot, 'State directory');
   const preparedPaths = validateMigrationPaths({
-    siteConfig, apacheConfig, documentRoot, sharedAssets, assets, releasesRoot, pointer, stateRoot
+    siteConfig, apacheConfig, documentRoot, sharedAssets, assets, releasesRoot, pointer, stateRoot,
+    customConfig, directadminUser
   });
   const initialTree = pathManifest(documentRoot);
   if (!initialTree.length) throw new Error('Refusing to migrate an empty document root');
@@ -723,15 +1059,32 @@ export async function migrateSiteVhost({
     const release = path.join(releasesRoot, `vhost-migration-${migrationId}`);
     const backupRoot = path.join(stateRoot, 'backup');
     const backupWebroot = path.join(backupRoot, 'webroot');
-    const backupConfig = path.join(backupRoot, 'site.conf');
+    const backupConfig = path.join(backupRoot, 'generated-site.conf');
     const stagingPath = `${release}.staging`;
     if (pathExists(release) || pathExists(stagingPath)) throw new Error('A migration release path already exists');
     fs.mkdirSync(backupRoot, { mode: 0o700 });
     copyArchive(run, copyCommand, documentRoot, backupWebroot);
     copyArchive(run, copyCommand, documentRoot, stagingPath);
     copyArchive(run, copyCommand, siteConfig, backupConfig);
+    for (const entry of preparedPaths.persistentConfigs) {
+      const current = readRegularFile(entry.path, `Persistent ${entry.protocol} DirectAdmin config`);
+      if (hashText(current.data) !== entry.originalHash || current.stat.uid !== entry.uid ||
+          current.stat.gid !== entry.gid || (current.stat.mode & 0o7777) !== entry.mode) {
+        throw new Error(`Persistent DirectAdmin config changed while preparing migration: ${entry.path}`);
+      }
+      entry.backupPath = path.join(backupRoot, `persistent-${entry.protocol}.conf`);
+      entry.tempPath = `${entry.path}.vhost-migration-${migrationId}.tmp`;
+      copyArchive(run, copyCommand, entry.path, entry.backupPath);
+      const backup = readRegularFile(entry.backupPath, 'Persistent config backup');
+      if (hashText(backup.data) !== entry.originalHash || backup.stat.uid !== entry.uid ||
+          backup.stat.gid !== entry.gid || (backup.stat.mode & 0o7777) !== entry.mode) {
+        throw new Error(`Persistent DirectAdmin config backup verification failed: ${entry.path}`);
+      }
+      fs.chmodSync(entry.backupPath, entry.mode & ~0o222);
+      syncFile(entry.backupPath);
+    }
     if (hashFile(backupConfig) !== preparedPaths.originalConfigHash) {
-      throw new Error('Original site config backup integrity check failed');
+      throw new Error('Generated Apache config backup integrity check failed');
     }
     const sourceAfterCopy = pathManifest(documentRoot);
     compareManifest(sourceAfterCopy, originalTree, 'Source webroot stability');
@@ -765,16 +1118,22 @@ export async function migrateSiteVhost({
       }
     }
     const backupMode = fs.statSync(backupConfig).mode & 0o7777;
-    const configStat = fs.statSync(siteConfig);
-    const configBytes = readRegularFile(siteConfig, 'Site config').data;
+    const configSnapshot = readRegularFile(siteConfig, 'Generated Apache site config');
+    const configStat = configSnapshot.stat;
+    const configBytes = configSnapshot.data;
     if (hashText(configBytes) !== preparedPaths.originalConfigHash) throw new Error('Site config changed while preparing migration');
     fs.chmodSync(backupConfig, backupMode & ~0o222);
     syncFile(backupConfig);
     const backupManifest = {
-      version: 1, migrationId, documentRoot, originalConfigHash: preparedPaths.originalConfigHash,
+      version: 2, migrationId, documentRoot, originalConfigHash: preparedPaths.originalConfigHash,
       sharedAssets, assets: preparedPaths.assets,
       originalRoot: { mode: originalRootStat.mode & 0o7777, uid: originalRootStat.uid, gid: originalRootStat.gid },
-      siteConfigMode: configStat.mode & 0o7777, originalWebroot: originalTree,
+      siteConfig: { path: siteConfig, mode: configStat.mode & 0o7777, uid: configStat.uid, gid: configStat.gid },
+      persistentConfigs: preparedPaths.persistentConfigs.map(({ path: configPath, protocol, originalHash,
+        migratedHash, mode, uid, gid }) => ({
+        path: configPath, protocol, originalHash, migratedHash, mode, uid, gid
+      })),
+      originalWebroot: originalTree,
       backupWebroot: contentManifest(backupTree), release: path.basename(release)
     };
     const backupManifestFile = path.join(backupRoot, 'manifest.json');
@@ -789,26 +1148,35 @@ export async function migrateSiteVhost({
       inventory: { files: preparedPaths.assets }
     }]);
     verifySharedAssets(sharedAssets, preparedPaths.assets);
-    const configContents = readRegularFile(siteConfig, 'Site config').data.toString('utf8');
+    const configContents = readRegularFile(siteConfig, 'Generated Apache site config').data.toString('utf8');
     const transformed = prepareSiteVhostConfig(configContents, {
       originalRoot: documentRoot, releasePointer: pointer, sharedAssets
     });
-    if (hashText(transformed) !== preparedPaths.migratedConfigHash) throw new Error('Site config changed during migration preparation');
+    if (hashText(transformed) !== preparedPaths.migratedConfigHash) {
+      throw new Error('Generated Apache config changed during migration preparation');
+    }
     const probeToken = crypto.randomBytes(32).toString('hex');
     const probePath = path.join(release, `vhost-migration-${migrationId}-probe.txt`);
-    const configTempPath = `${siteConfig}.vhost-migration-${migrationId}.tmp`;
-    if (pathExists(configTempPath)) throw new Error('Config transaction temporary path already exists');
+    for (const entry of preparedPaths.persistentConfigs) {
+      if (pathExists(entry.tempPath)) throw new Error(`Persistent config transaction path already exists: ${entry.tempPath}`);
+    }
+    const generatedBackupStat = readRegularFile(backupConfig, 'Generated config backup').stat;
     journal = {
-      version: 1, migrationId, status: 'prepared', createdAt: new Date().toISOString(),
+      version: 2, migrationId, status: 'prepared', createdAt: new Date().toISOString(),
       siteConfig, apacheConfig, documentRoot, sharedAssets, releasesRoot, release, pointer,
       assets: preparedPaths.assets,
-      configTempPath, siteConfigUid: configStat.uid, siteConfigGid: configStat.gid,
+      siteConfigUid: configStat.uid, siteConfigGid: configStat.gid,
       probePath, probeTempPath: `${probePath}.tmp`, probeTokenHash: hashText(probeToken),
       sealedRootMode: originalRootStat.mode & 0o7777 & ~0o222,
       probeUid: process.getuid?.() ?? originalRootStat.uid, probeGid: process.getgid?.() ?? originalRootStat.gid,
       backupConfig, backupManifestHash, siteConfigMode: configStat.mode & 0o7777,
+      directadmin, directadminUser,
+      persistentConfigs: preparedPaths.persistentConfigs.map(({ path: configPath, protocol, backupPath, tempPath,
+        originalHash, migratedHash, mode, uid, gid }) => ({
+        path: configPath, protocol, backupPath, tempPath, originalHash, migratedHash, mode, uid, gid
+      })),
       originalConfigHash: preparedPaths.originalConfigHash, migratedConfigHash: preparedPaths.migratedConfigHash,
-      httpd, httpdArgs, reloadCommand, reloadArgs, copyCommand
+      httpd, httpdArgs, copyCommand
     };
     saveJournal(stateRoot, journal);
     writeProbeMarker(journal, probeToken);
@@ -822,19 +1190,25 @@ export async function migrateSiteVhost({
     }
     syncDirectory(path.dirname(pointer));
     updateJournal(stateRoot, journal, 'pointer-created');
-    installConfig({
-      siteConfig, backupConfig, configTempPath, contents: transformed, originalMode: journal.siteConfigMode,
-      originalHash: journal.originalConfigHash, migratedHash: journal.migratedConfigHash, copyCommand, run
-    });
+    for (const entry of journal.persistentConfigs) {
+      const prepared = preparedPaths.persistentConfigs.find(item => item.path === entry.path);
+      if (!prepared) throw new Error(`Missing prepared DirectAdmin config: ${entry.path}`);
+      atomicReplacePersistentConfig(entry, prepared.transformed, entry.migratedHash, { copyCommand, run });
+    }
     updateJournal(stateRoot, journal, 'config-installed');
+    runDirectAdminRewrite(run, directadmin, directadminUser,
+      'Account-scoped DirectAdmin HTTP vhost regeneration');
+    verifyPersistentConfigs(journal, 'migrated');
     verifyApacheConfig(run, httpd, httpdArgs, apacheConfig, siteConfig, 'Apache syntax test');
     updateJournal(stateRoot, journal, 'syntax-passed');
-    requireCommandOk(run, reloadCommand, reloadArgs, 'Apache reload');
-    verifyApacheConfig(run, httpd, httpdArgs, apacheConfig, siteConfig, 'Post-reload Apache verification');
-    if (hashFile(siteConfig) !== journal.migratedConfigHash) {
-      throw new Error('Site config changed after reload; the generated host config does not match the migration');
-    }
-    const mapping = assertSiteSharedAssetsMapping(readRegularFile(siteConfig, 'Site config').data.toString('utf8'), sharedAssets);
+    verifyApacheConfig(run, httpd, httpdArgs, apacheConfig, siteConfig, 'Post-regeneration Apache verification');
+    verifyGeneratedConfig(Buffer.from(transformed), siteConfig,
+      'DirectAdmin regenerated config is outside the expected scoped migration', {
+        uid: journal.siteConfigUid, gid: journal.siteConfigGid, mode: journal.siteConfigMode
+      });
+    const mapping = assertSiteSharedAssetsMapping(
+      readRegularFile(siteConfig, 'Regenerated Apache site config').data.toString('utf8'), sharedAssets
+    );
     const verificationPath = `/${path.basename(probePath)}`;
     const probeResult = await probe({ documentRoot: release, pointer, verificationPath, verificationToken: probeToken });
     if (probeResult?.ok !== true || probeResult.pointerVerified !== true) {
@@ -845,10 +1219,12 @@ export async function migrateSiteVhost({
       siteConfigSha256: journal.migratedConfigHash, mapping
     });
     if (assetResult?.ok !== true) throw new Error('Shared-assets vhost and HTTP verification did not pass');
-    if (hashFile(siteConfig) !== journal.migratedConfigHash) {
-      throw new Error('Site config changed during shared-assets verification');
-    }
+    verifyGeneratedConfig(Buffer.from(transformed), siteConfig,
+      'Generated Apache config changed during shared-assets verification', {
+        uid: journal.siteConfigUid, gid: journal.siteConfigGid, mode: journal.siteConfigMode
+      });
     verifySharedAssets(sharedAssets, preparedPaths.assets);
+    verifyPersistentConfigs(journal, 'migrated');
     removeProbeMarker(journal);
     compareManifest(pathManifest(release), expectedSealedTree, 'Published release after probe-marker cleanup');
     if ((fs.statSync(release).mode & 0o7777) !== journal.sealedRootMode) {
@@ -884,6 +1260,7 @@ export async function migrateSiteVhost({
  * The full original document root is retained, never renamed or removed.
  */
 export function recoverSiteVhostMigration({ stateRoot, run = runCommand, rollback = false }) {
+  assertDirectAdminRegenerationAvailable(run);
   validatePath(stateRoot, 'State directory');
   if (path.dirname(stateRoot) === stateRoot) throw new Error('State directory cannot be a filesystem root');
   requireRealDirectory(stateRoot, 'State directory');
@@ -893,6 +1270,7 @@ export function recoverSiteVhostMigration({ stateRoot, run = runCommand, rollbac
     const file = path.join(stateRoot, JOURNAL);
     requireRegularFile(file, 'Migration journal');
     const journal = JSON.parse(readRegularFile(file, 'Migration journal').data.toString('utf8'));
+    assertDirectAdminRegenerationAvailable(run, journal.siteConfig);
     validateJournal(stateRoot, journal);
     if (journal.status === 'rolled-back' || journal.status === 'recovered') {
       throw new Error(`Migration is already ${journal.status}`);
@@ -917,7 +1295,8 @@ export function verifyObservedMigrationRollback({ stateRoot, releases, pointer, 
     validateJournal(stateRoot, journal);
     if (journal.status !== 'active' || journal.releasesRoot !== fs.realpathSync(releases) ||
         journal.pointer !== path.resolve(pointer) || journal.release !== previous ||
-        hashFile(journal.siteConfig) !== journal.migratedConfigHash) {
+        hashFile(journal.siteConfig) !== journal.migratedConfigHash ||
+        journal.persistentConfigs.some(entry => hashFile(entry.path) !== entry.migratedHash)) {
       throw new Error('Observed rollback does not match the active migration');
     }
     if (requireActivePointer && (!fs.lstatSync(pointer).isSymbolicLink() || fs.realpathSync(pointer) !== previous)) {
@@ -941,6 +1320,11 @@ export function planSiteVhostMigration(options) {
   return {
     status: 'plan-only',
     siteConfig: options.siteConfig,
+    customConfig: options.customConfig,
+    directadminUser: options.directadminUser,
+    persistentConfigs: prepared.persistentConfigs.map(({ path: configPath, protocol, originalHash, migratedHash }) => ({
+      path: configPath, protocol, originalSha256: originalHash, migratedSha256: migratedHash
+    })),
     documentRoot: options.documentRoot,
     sharedAssets: options.sharedAssets,
     sharedAssetsVerified: prepared.assets.length,
@@ -951,6 +1335,14 @@ export function planSiteVhostMigration(options) {
     recommendedFreeBytes,
     originalConfigSha256: prepared.originalConfigHash,
     migratedConfigSha256: prepared.migratedConfigHash,
-    changes: ['Copy the complete document root to a sealed release and backup', 'Create the explicit release pointer', 'Replace only the supplied site config atomically']
+    changes: [
+      'Back up the effective per-domain cust_httpd source and generated Apache config separately',
+      'Write only conditional per-domain cust_httpd customizations',
+      'Regenerate only the selected DirectAdmin account using taskq action=rewrite&value=httpd',
+      'Verify the regenerated main/test vhosts and every unrelated generated directive',
+      'Main HTTP ScriptAlias /cgi-bin/ follows DOCROOT to the release root; main HTTPS keeps its template-fixed original-root CGI alias',
+      'Copy the complete document root to a sealed release and backup',
+      'Create the explicit release pointer'
+    ]
   };
 }

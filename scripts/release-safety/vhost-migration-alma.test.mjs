@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { assertSiteSharedAssetsMapping, migrateSiteVhost, recoverSiteVhostMigration } from './vhost-migration.mjs';
 import { activateVerifiedProduction, recoverVerifiedProduction, rollbackToObservedProduction } from './activate-production.mjs';
 import { createInventory } from './frontend-inventory.mjs';
+import { renderAlmaFixture } from './fixtures/directadmin/alma-renderer.mjs';
 
 const enabled = process.env.RUN_ALMA_HTTPD_TEST === '1';
 const image = process.env.ALMA_HTTPD_TEST_IMAGE || 'drift-wishlist-httpd-validation:local';
@@ -63,9 +64,14 @@ function httpGet(port, route, host = 'www.driftdwells.com') {
   });
 }
 
-function containerRunner(container) {
+function containerRunner(container, regenerate, apacheConfigPath) {
   const run = (executable, args) => {
     if (executable === '/usr/bin/cp') return command(executable, args);
+    if (executable === '/usr/local/directadmin/directadmin') {
+      assert.deepEqual(args, ['taskq', '--run=action=rewrite&value=httpd&user=illoc']);
+      regenerate();
+      return command('docker', ['exec', container, '/usr/sbin/httpd', '-k', 'graceful', '-f', apacheConfigPath]);
+    }
     if (executable !== '/usr/sbin/httpd') {
       throw new Error(`Unexpected integration command: ${executable}`);
     }
@@ -80,7 +86,7 @@ function containerRunner(container) {
 function confirmQuiescedAndPersistent() {
   return {
     confirmWebrootQuiesced: true,
-    confirmConfigPersistence: true,
+    confirmDirectAdminAccount: true,
     confirmSharedAssetsPolicy: true
   };
 }
@@ -106,13 +112,14 @@ test('real AlmaLinux httpd vhost migration installs first-use assets, serves pre
   const state = path.join(stateParent, 'migration-one');
   const recoveryState = path.join(stateParent, 'migration-interrupted');
   const configRoot = path.join(root, 'etc', 'httpd');
-  const siteConfig = path.join(configRoot, 'users', 'illoc.conf');
+  const siteConfig = path.join(configRoot, 'users', 'illoc', 'httpd.conf');
+  const customConfig = path.join(configRoot, 'users', 'illoc', 'domains', 'driftdwells.com.cust_httpd');
   const apacheConfig = path.join(configRoot, 'httpd.conf');
   const backend = path.join(root, 'backend');
   const testSite = path.join(root, 'domains', 'test.driftdwells.com', 'public_html');
 
   for (const dir of [original, releaseRoot, sharedAssets, stateParent, path.dirname(pointer),
-    path.dirname(siteConfig), backend, testSite]) fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+    path.dirname(customConfig), backend, testSite]) fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
   for (const relative of ['search', 'checkout', 'legal', 'assets']) {
     fs.mkdirSync(path.join(original, relative), { recursive: true });
   }
@@ -132,49 +139,20 @@ test('real AlmaLinux httpd vhost migration installs first-use assets, serves pre
 
   const assetBytes = fs.readFileSync(path.join(original, 'assets', 'app.js'));
   const assets = [{ path: 'assets/app.js', size: assetBytes.length, sha256: sha256(assetBytes) }];
-  const siteBlock = port => `<VirtualHost *:${port}>
-  ServerName www.driftdwells.com
-  ServerAlias www.driftdwells.com driftdwells.com
-  DocumentRoot "${original}"
-  <Directory "${original}">
-    Options -Indexes
-    AllowOverride All
-    Require all granted
-  </Directory>
-  Alias /legal/ ${original}/legal/
-  <Directory "${original}/legal">
-    Options -Indexes
-    Require all granted
-  </Directory>
-  ProxyPass /api http://127.0.0.1:8081/api
-  ProxyPassReverse /api http://127.0.0.1:8081/api
-  ProxyPass /uploads http://127.0.0.1:8081/uploads
-  ProxyPassReverse /uploads http://127.0.0.1:8081/uploads
-</VirtualHost>`;
-  const originalSiteConfig = `${siteBlock(8080)}
-${siteBlock(8082).replaceAll(':8080>', ':8082>')}
-<VirtualHost *:8080>
-  ServerName test.driftdwells.com
-  ServerAlias test.driftdwells.com staging.driftdwells.com
-  DocumentRoot "${testSite}"
-  <Directory "${testSite}">
-    Require all granted
-  </Directory>
-</VirtualHost>
-<VirtualHost *:8081>
-  ServerName backend.local
-  DocumentRoot "${backend}"
-  <Directory "${backend}">
-    Require all granted
-  </Directory>
-</VirtualHost>`;
+  const customSource = fs.readFileSync(new URL('./fixtures/directadmin/cust_httpd.conf', import.meta.url), 'utf8')
+    .replaceAll('/home/illoc/domains/driftdwells.com/public_html', original)
+    .replaceAll('127.0.0.1:5000', '127.0.0.1:8081');
+  fs.writeFileSync(customConfig, customSource);
+  const regenerate = () => fs.writeFileSync(siteConfig,
+    renderAlmaFixture(fs.readFileSync(customConfig, 'utf8'), { original, testSite, backend }));
+  const originalSiteConfig = renderAlmaFixture(customSource, { original, testSite, backend });
   fs.writeFileSync(siteConfig, originalSiteConfig);
   fs.writeFileSync(apacheConfig, `ServerRoot "/etc/httpd"
 Include conf.modules.d/*.conf
 ServerName localhost
-Listen 8080
+Listen 80
 Listen 8081
-Listen 8082
+Listen 443
 PidFile /tmp/dd-vhost-migration.pid
 ErrorLog /dev/stderr
 CustomLog /dev/stdout combined
@@ -189,7 +167,7 @@ Include "${siteConfig}"
 `);
 
   const launched = command('docker', [
-    'run', '-d', '--rm', '--name', container, '-p', '127.0.0.1::8080',
+    'run', '-d', '--rm', '--name', container, '-p', '127.0.0.1::80',
     '-v', `${root}:${root}`,
     image, '/usr/sbin/httpd', '-f', apacheConfig, '-DFOREGROUND'
   ]);
@@ -198,7 +176,7 @@ Include "${siteConfig}"
   const osRelease = command('docker', ['exec', container, 'cat', '/etc/os-release']);
   assert.equal(osRelease.status, 0, osRelease.stderr);
   assert.match(osRelease.stdout, /^ID="?almalinux"?$/m, 'integration container must be AlmaLinux');
-  const portResult = command('docker', ['port', container, '8080/tcp']);
+  const portResult = command('docker', ['port', container, '80/tcp']);
   assert.equal(portResult.status, 0, portResult.stderr);
   const port = Number(portResult.stdout.trim().split(':').pop());
   assert.ok(Number.isInteger(port) && port > 0, `Invalid mapped Apache port: ${portResult.stdout}`);
@@ -218,7 +196,7 @@ Include "${siteConfig}"
   };
   await waitFor(async () => (await httpGet(port, '/')).status === 200, 'Initial Apache');
 
-  const runner = containerRunner(container);
+  const runner = containerRunner(container, regenerate, apacheConfig);
   const probeRoutes = async ({ verificationPath, verificationToken } = {}) => {
     for (const route of ['/search/', '/checkout/']) {
       const response = await httpGet(port, route);
@@ -245,10 +223,10 @@ Include "${siteConfig}"
     return { ok: true };
   };
   const args = stateRoot => ({
-    siteConfig, apacheConfig, documentRoot: original, sharedAssets, assets,
+    siteConfig, customConfig, directadmin: '/usr/local/directadmin/directadmin',
+    directadminUser: 'illoc', apacheConfig, documentRoot: original, sharedAssets, assets,
     releasesRoot: releaseRoot, pointer, stateRoot,
     httpd: '/usr/sbin/httpd', copyCommand: '/usr/bin/cp',
-    reloadCommand: '/usr/sbin/httpd', reloadArgs: ['-k', 'graceful', '-f', apacheConfig],
     ...confirmQuiescedAndPersistent(),
     preflightProbe: probeRoutes, probe: probeRoutes, verifyAssetServing,
     run: runner.run
@@ -346,6 +324,8 @@ Include "${siteConfig}"
 
   const childScript = `
     import { migrateSiteVhost } from ${JSON.stringify(cliModule)};
+    import { renderAlmaFixture } from ${JSON.stringify(fileURLToPath(new URL('./fixtures/directadmin/alma-renderer.mjs', import.meta.url)))};
+    import fs from 'node:fs';
     import { spawnSync } from 'node:child_process';
     const options = JSON.parse(process.env.VHOST_MIGRATION_OPTIONS);
     let syntaxTests = 0;
@@ -353,6 +333,17 @@ Include "${siteConfig}"
       if (executable === '/usr/bin/cp') {
         const result = spawnSync(executable, args, { encoding: 'utf8' });
         return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
+      }
+      if (executable === '/usr/local/directadmin/directadmin') {
+        if (JSON.stringify(args) !== JSON.stringify(['taskq', '--run=action=rewrite&value=httpd&user=illoc'])) {
+          throw new Error('Unexpected regeneration arguments');
+        }
+        fs.writeFileSync(${JSON.stringify(siteConfig)},
+          renderAlmaFixture(fs.readFileSync(${JSON.stringify(customConfig)}, 'utf8'),
+            ${JSON.stringify({ original, testSite, backend })}));
+        const reload = spawnSync('docker', ['exec', ${JSON.stringify(container)}, '/usr/sbin/httpd',
+          '-k', 'graceful', '-f', ${JSON.stringify(apacheConfig)}], { encoding: 'utf8' });
+        return { status: reload.status, stdout: reload.stdout || '', stderr: reload.stderr || '' };
       }
       if (executable !== '/usr/sbin/httpd') throw new Error('Unexpected migration command: ' + executable);
       if (args.includes('-k') && args.includes('graceful')) {
@@ -391,7 +382,7 @@ Include "${siteConfig}"
   assert.equal(fs.readFileSync(siteConfig, 'utf8').includes(pointer), true);
   assert.equal(fs.existsSync(pointer), true);
 
-  const recoveryRunner = containerRunner(container);
+  const recoveryRunner = containerRunner(container, regenerate, apacheConfig);
   const recovered = recoverSiteVhostMigration({ stateRoot: recoveryState, run: recoveryRunner.run });
   assert.equal(recovered.status, 'recovered');
   assert.equal(fs.readFileSync(siteConfig, 'utf8'), originalSiteConfig);
