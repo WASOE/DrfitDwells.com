@@ -298,12 +298,13 @@ export async function publishWishlistRelease({ source, inventory, webroot, state
     throw new Error('Deployment rolled back: ' + error.message);
   }
 }
-function originGet(ip, relative) {
+function originGet(ip, relative, bearerToken) {
   return new Promise((resolve, reject) => {
     const req = https.get({
       hostname: ip, port: 443, servername: 'driftdwells.com',
       path: relative + (relative.includes('?') ? '&' : '?') + 'wishlistcheck=' + crypto.randomBytes(8).toString('hex'),
-      headers: { Host: 'driftdwells.com', 'Cache-Control': 'no-cache', 'Accept-Encoding': 'identity' },
+      headers: { Host: 'driftdwells.com', 'Cache-Control': 'no-cache', 'Accept-Encoding': 'identity',
+        ...(bearerToken ? { Authorization: 'Bearer ' + bearerToken } : {}) },
       timeout: 12000
     }, res => {
       if (res.statusCode !== 200 || (res.headers['content-encoding'] && res.headers['content-encoding'] !== 'identity')) {
@@ -342,6 +343,17 @@ async function liveSmoke(plan) {
   const health = JSON.parse(await originGet(ip, '/api/health'));
   if (health.status !== 'OK' || health.database !== 'connected' || health.applicationRelease !== API_COMMIT) {
     throw new Error('API release/health contract changed');
+  }
+  const capabilities = JSON.parse(await originGet(ip, '/api/bookings/checkout-capabilities'));
+  if (capabilities.success !== true || capabilities.contractVersion !== 2 ||
+      capabilities.checkoutSessionV2 !== true || capabilities.finalizeIntentPersist !== true) {
+    throw new Error('Booking/checkout capabilities changed');
+  }
+  const token = process.env.OPS_VERIFY_TOKEN;
+  if (!token || !token.trim()) throw new Error('OPS_VERIFY_TOKEN required for read-only Finance Ops verification');
+  const ops = JSON.parse(await originGet(ip, '/api/ops/corporate-gift-leads', token));
+  if (ops.success !== true || !Array.isArray(ops.data?.items) || !Number.isSafeInteger(ops.data?.total)) {
+    throw new Error('Authenticated wishlist lead listing invalid');
   }
   return true;
 }
