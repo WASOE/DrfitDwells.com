@@ -3,6 +3,31 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SITE_HOSTS = new Set(['driftdwells.com', 'www.driftdwells.com']);
+const TEST_HOST = 'test.driftdwells.com';
+
+export async function observeTestSubdomain({ fetchImpl = fetch, timeoutMs = 10000 } = {}) {
+  const observations = [];
+  for (const protocol of ['http:', 'https:']) {
+    const url = new URL(`${protocol}//${TEST_HOST}/`);
+    const response = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
+    const location = response.headers.get('location');
+    if (location) {
+      const target = new URL(location, url);
+      if (!['http:', 'https:'].includes(target.protocol) || target.hostname !== TEST_HOST || target.username || target.password || target.port) throw new Error('Unsafe test-subdomain redirect');
+    }
+    observations.push({ protocol, status: response.status, location: location || null,
+      contentType: response.headers.get('content-type') || null });
+    await response.body?.cancel?.();
+  }
+  return observations;
+}
+
+export async function verifyTestSubdomainBaseline(expected, options = {}) {
+  if (!Array.isArray(expected) || expected.length !== 2) throw new Error('HTTP and HTTPS test-subdomain baseline is required');
+  const actual = await observeTestSubdomain(options);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`Test-subdomain HTTP/HTTPS behavior changed: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  return { ok: true, observations: actual };
+}
 
 export function scriptFromRelease(dist) {
   const index = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');

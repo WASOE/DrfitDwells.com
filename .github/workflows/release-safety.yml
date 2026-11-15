@@ -125,7 +125,7 @@ jobs:
         run: node scripts/release-safety/run-browser-gate.mjs
       - name: Package and verify the tested frontend
         run: |
-          node --test scripts/release-safety/frontend-inventory.test.mjs scripts/release-safety/publish-wishlist-only.test.mjs scripts/release-safety/blue-green.test.mjs scripts/release-safety/atomic-frontend.test.mjs scripts/release-safety/production-smoke.test.mjs scripts/release-safety/production-assets.test.mjs scripts/release-safety/activate-production.test.mjs scripts/release-safety/vhost-migration.test.mjs scripts/release-safety/production-artifact.test.mjs scripts/release-safety/stage-production.test.mjs
+          node --test scripts/release-safety/frontend-inventory.test.mjs scripts/release-safety/publish-wishlist-only.test.mjs scripts/release-safety/blue-green.test.mjs scripts/release-safety/atomic-frontend.test.mjs scripts/release-safety/atomic-production.test.mjs scripts/release-safety/production-smoke.test.mjs scripts/release-safety/production-assets.test.mjs scripts/release-safety/activate-production.test.mjs scripts/release-safety/vhost-migration.test.mjs scripts/release-safety/production-artifact.test.mjs scripts/release-safety/stage-production.test.mjs
           node scripts/release-safety/frontend-inventory.mjs create client/dist frontend-inventory.json "$GITHUB_SHA" test
           tar -C client/dist -cf frontend-validation.tar .
           mkdir "$RUNNER_TEMP/frontend-artifact-check"

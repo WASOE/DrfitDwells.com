@@ -15,12 +15,17 @@ no two-rename fallback. The original directory is then retained intact under
 `frontend/backups/`. A durable journal is written before and after the exchange.
 If verification fails, the same atomic exchange restores the original directory.
 
-Each release is read-only and has an owner-matched `assets` symlink to an
-append-only shared asset store. This preserves old content-hashed URLs for
-existing browser sessions without an Apache Alias. `/api` and `/uploads` remain
-the existing reverse proxies, `/legal` continues through the unchanged
-DocumentRoot pathname, and the test subdomain continues to resolve
-`public_html/test` inside the active release.
+Each release is read-only and has owner-matched `assets` and `test` symlinks.
+`assets` targets an append-only shared asset store. Before the first exchange,
+every file in the original live `public_html/assets` is hashed and imported
+without replacement; a same-name/different-hash collision blocks migration.
+This preserves prior hashed URLs for existing browser sessions. `test` targets
+the stable path `frontend/stable-test/root`; if the original test root is
+absent, that target remains absent so the existing 404 behavior is preserved.
+If it exists, its complete real-file tree is imported before exchange.
+`/api` and `/uploads` remain the existing reverse proxies. `/legal` and every
+other non-artifact local path are audited: a live path missing from the verified
+candidate blocks migration instead of being silently lost.
 
 ## Verified host compatibility (read-only, 15 November 2026)
 
@@ -46,13 +51,18 @@ restart PM2 processes.
 
 1. Build the exact master commit through `production-artifact.yml`. Confirm its
    exact release-safety run passed and record both workflow run IDs.
-2. As `illoc`, create private state and append-only asset directories on the
+2. As `illoc`, create private state, append-only assets, and the stable test
+   parent on the
    same filesystem:
 
    ```bash
-   install -d -m 0755 /home/illoc/releases/frontend/{releases,shared-assets}
+   install -d -m 0755 /home/illoc/releases/frontend/{releases,shared-assets,stable-test}
    install -d -m 0700 /home/illoc/releases/frontend/{state,backups}
    ```
+
+   Do not create `stable-test/root` when the current
+   `public_html/test` does not exist. The migration creates and fills it only
+   when an existing real test tree must be preserved.
 
 3. Export the existing protected values without printing them, then stage the
    verified artifact. Staging does not change the live site:
@@ -61,11 +71,15 @@ restart PM2 processes.
    node scripts/release-safety/atomic-production.mjs stage PRODUCTION_RUN_ID FRONTEND_FULL_SHA
    ```
 
-4. Verify the staged release, owner/group/modes, parent traversal, current
-   Apache syntax, main/test vhost paths, origin responses, API release, booking
-   and checkout capabilities. Make and independently verify a full off-host
-   backup of the existing `public_html` tree. The exchange also retains that
-   original tree locally, but it is not a substitute for the off-host backup.
+4. Verify the staged release, owner/group/modes, parent traversal and current
+   Apache syntax. Record HTTP and HTTPS responses for the apex, www and test
+   hosts, including status, redirect location and content type. Verify `/api`,
+   `/uploads`, `/legal`, representative legal files, API release, booking and
+   checkout capabilities. Inventory all top-level live paths and review any
+   path not present in the candidate; the migration independently repeats this
+   audit and fails closed. Make and independently verify a full off-host backup
+   of the existing `public_html` tree. The retained original tree is not a
+   substitute for that off-host backup.
 5. With explicit cutover authorization, run only the migration command through
    the approved narrow sudo policy, preserving only the three named public or
    protected verification variables:
@@ -75,6 +89,13 @@ restart PM2 processes.
      node scripts/release-safety/migrate-atomic-production.mjs apply FRONTEND_FULL_SHA API_FULL_SHA
    ```
 
+   During this command, legacy assets and any real test tree are imported and
+   verified before `RENAME_EXCHANGE`. Candidate-only assets are checked locally
+   before switching and through the certificate-validated production origin
+   only after switching; any failure atomically restores the original root.
+   The command also compares actual HTTP and HTTPS test-subdomain behavior with
+   the immediately preceding baseline.
+
 6. Verify the journal phase is `complete`, `public_html` resolves through
    `frontend/current` to the exact commit, and the original nonempty tree is at
    `frontend/backups/pre-atomic-public_html`. Re-run homepage, booking,
@@ -82,7 +103,10 @@ restart PM2 processes.
    representative unrelated-site checks. Do not delete the original tree.
 
 If the process is interrupted and `document-root-migration.json` is `prepared`
-or `exchanged`, do not improvise. After proving no migration process is alive:
+or `exchanged`, do not improvise. Recovery handles both locations of the
+original tree: `public_html.atomic-exchange` before the backup move and
+`frontend/backups/pre-atomic-public_html` after it. After proving no migration
+process is alive:
 
 ```bash
 sudo --preserve-env=OPS_VERIFY_TOKEN \
@@ -97,9 +121,11 @@ overwritten.
 
 Run as `illoc` from the exact merged repository revision. The command downloads
 and independently verifies both candidate and rollback artifacts, checks exact
-commit provenance and CI evidence, stages a sealed release, verifies assets at
-the certificate-validated origin, checks the current site and API, atomically
-switches `current`, and rolls back on a failed smoke check:
+commit provenance and CI evidence, stages a sealed release, checks local hashes
+and the current site/API, records HTTP and HTTPS test-subdomain behavior,
+atomically switches `current`, then verifies candidate assets at the
+certificate-validated origin. Candidate-origin, site, API, or test-subdomain
+failure rolls the pointer back:
 
 ```bash
 node scripts/release-safety/atomic-production.mjs deploy \
@@ -107,7 +133,7 @@ node scripts/release-safety/atomic-production.mjs deploy \
 ```
 
 Never run two publishers concurrently. The filesystem lock fails the second
-publisher closed. Retain release directories and shared assets for the complete
+publisher closed. Retain release directories, stable test content and shared assets for the complete
 browser-session rollback window; there is intentionally no automated garbage
 collection.
 
