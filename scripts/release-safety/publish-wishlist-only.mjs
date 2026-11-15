@@ -212,7 +212,14 @@ function recoverFromJournal(state, journal) {
     if (actual === page.prior) continue;
     if (page.prior === null) {
       fs.unlinkSync(target);
-      syncDir(path.dirname(target));
+      const routeDirectory = path.dirname(target);
+      syncDir(routeDirectory);
+      // Restore the pre-release SPA fallback: an empty wishlist directory
+      // would otherwise suppress .htaccess's !-d rewrite and return 403.
+      if (fs.readdirSync(routeDirectory).length === 0) {
+        fs.rmdirSync(routeDirectory);
+        syncDir(path.dirname(routeDirectory));
+      }
     } else {
       const backup = path.join(state, 'backup-' + page.relative.replaceAll('/', '_'));
       if (!regularOrAbsent(backup) || sha256(backup) !== page.prior) throw new Error('Backup invalid: ' + page.relative);
