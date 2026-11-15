@@ -30,17 +30,19 @@ async function withSite(t, fn) {
   write(webroot, 'assets/index-Old123456.js', 'old asset, must not be changed');
   const entry = 'assets/index-New123456.js';
   write(source, entry, 'export default "new";');
+  write(source, 'media/home/wishlist-lux-cabin-christmas.jpeg', 'wishlist hero exact image');
+  write(source, 'media/home/valley-aframes-close.jpg', 'valley image exact bytes');
   write(source, 'wishlist/index.html',
-    '<html><div class="wishlist-hero" data-prerender-route="/wishlist"></div><script src="/' + entry + '"></script></html>');
+    '<html><div class="wishlist-hero" data-prerender-route="/wishlist"></div><img src="/media/home/wishlist-lux-cabin-christmas.jpeg"><img src="/media/home/valley-aframes-close.jpg"><script src="/' + entry + '"></script></html>');
   write(source, 'bg/wishlist/index.html',
-    '<html><div class="wishlist-hero" data-prerender-route="/bg/wishlist"></div><script src="/' + entry + '"></script></html>');
+    '<html><div class="wishlist-hero" data-prerender-route="/bg/wishlist"></div><img src="/media/home/wishlist-lux-cabin-christmas.jpeg"><img src="/media/home/valley-aframes-close.jpg"><script src="/' + entry + '"></script></html>');
   const inventory = createInventory(source, COMMIT, 'production');
   await fn({ source, webroot, state, inventory, entry });
 }
 test('plan requires exact pinned production artifact and changes no live files', async t => withSite(t, async env => {
   const plan = inspectWishlistRelease(env);
   assert.deepEqual(plan.pages.map(x => x.relative), ['wishlist/index.html', 'bg/wishlist/index.html']);
-  assert.deepEqual(plan.assets.map(x => x.path), [env.entry]);
+  assert.deepEqual(plan.assets.map(x => x.path), [env.entry, 'media/home/wishlist-lux-cabin-christmas.jpeg', 'media/home/valley-aframes-close.jpg']);
   assert.equal(fs.existsSync(env.state), false);
   assert.equal(fs.readFileSync(path.join(env.webroot, 'index.html'), 'utf8'), '<html>original homepage</html>');
   assert.throws(() => inspectWishlistRelease({
@@ -54,6 +56,7 @@ test('publish only two route pages and additive hashed assets, then rollback', a
   assert.match(fs.readFileSync(path.join(env.webroot, 'wishlist/index.html'), 'utf8'), /wishlist-hero/);
   assert.match(fs.readFileSync(path.join(env.webroot, 'bg/wishlist/index.html'), 'utf8'), /wishlist-hero/);
   assert.equal(fs.readFileSync(path.join(env.webroot, env.entry), 'utf8'), 'export default "new";');
+  assert.equal(fs.readFileSync(path.join(env.webroot, 'media/home/wishlist-lux-cabin-christmas.jpeg'), 'utf8'), 'wishlist hero exact image');
   assert.equal(fs.readFileSync(path.join(env.webroot, 'assets/index-Old123456.js'), 'utf8'), 'old asset, must not be changed');
   assert.equal(fs.readFileSync(path.join(env.webroot, 'index.html'), 'utf8'), '<html>original homepage</html>');
   const rollback = rollbackWishlistRelease(env.state);
@@ -62,6 +65,7 @@ test('publish only two route pages and additive hashed assets, then rollback', a
   assert.equal(fs.existsSync(path.join(env.webroot, 'bg/wishlist/index.html')), false);
   assert.equal(fs.existsSync(path.join(env.webroot, 'bg/wishlist')), false, 'empty route folder removed so SPA fallback works');
   assert.equal(fs.existsSync(path.join(env.webroot, env.entry)), true, 'immutable assets remain to protect old tabs');
+  assert.equal(fs.existsSync(path.join(env.webroot, 'media/home/wishlist-lux-cabin-christmas.jpeg')), true, 'new media remains safely additive');
 }));
 test('failed origin smoke automatically restores original route files', async t => withSite(t, async env => {
   write(env.webroot, 'wishlist/index.html', '<html>old EN</html>');
@@ -75,7 +79,7 @@ test('failed origin smoke automatically restores original route files', async t 
 }));
 test('hash collision aborts before any write', async t => withSite(t, async env => {
   write(env.webroot, env.entry, 'different bytes under identical hashed name');
-  assert.throws(() => inspectWishlistRelease(env), /Shared asset collisions/);
+  assert.throws(() => inspectWishlistRelease(env), /Shared file collisions/);
   await assert.rejects(publishWishlistRelease({ ...env, smoke: async () => true }), /Shared asset collisions/);
   assert.equal(fs.existsSync(env.state), false);
 }));
