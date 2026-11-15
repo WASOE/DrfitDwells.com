@@ -29,13 +29,15 @@ download or production compatibility; associate it with the trusted CI run.
 
 ## What blocks a production deploy
 
-**Production frontend publication is currently blocked.** The existing
-in-place publisher can leave nested prerendered pages and other static files
-from different releases after interruption, and its legacy snapshot only
-contains the shell. Do not remove the production block until a transactional
-publication and complete recovery path have been implemented and verified on
-the production hosting layout. The separate legacy `activateTestedRelease`
-helper is disabled as it also copied in place and could not restore all files.
+**The initial atomic migration is implemented but is not authorized.** The
+existing in-place publisher remains blocked because it can leave nested
+prerendered pages and other static files from different releases after an
+interruption. The permanent path is documented in
+[`atomic-frontend-deploy.md`](./atomic-frontend-deploy.md): a one-time
+`renameat2(RENAME_EXCHANGE)` conversion of the nonempty DocumentRoot to a
+symlink, followed by atomic `current` pointer switches. Do not run the initial
+migration until the separately authorized cutover procedure and its off-host
+backup are complete.
 The release host need not run Apache for production HTTP checks; the Apache
 routing check belongs in the verified build workflow.
 
@@ -47,16 +49,13 @@ symlink behavior, and be tested for interruption and recovery on the hosting
 layout. A rename of a replacement symlink over the nonempty directory is not an
 ordinary atomic switch. No activation or rollback procedure is approved yet.
 
-The blue-green modules stage an inventory outside the active tree, atomically
-switch an existing symlink, retain hashed assets separately, and journal
-activation. The activation entry point downloads and verifies both artifacts,
-checks the site and shared assets, and restores the previous pointer on smoke
-failure. **This is not yet a production-ready migration procedure.** In
-particular, the first activation may use only the separately checked migration
-snapshot labeled `observed-production`; it is not a Git commit or a recovered
-historical release. The historical production artifact and complete sequence
-still need verification with real production configuration. Removing write permissions does not make an owner-controlled directory
-immutable. The optional `RUN_ALMA_HTTPD_TEST=1 node --test
+The legacy blue-green and DirectAdmin migration modules remain historical and
+must not be used for this cutover. The atomic implementation downloads and
+verifies exact production artifacts, seals release trees, retains hashed assets
+in an append-only owner-matched store, journals activation, and restores the
+previous pointer on smoke failure. Removing write permissions does not make an
+owner-controlled directory cryptographically immutable; inventory verification
+and exclusive publisher locking remain mandatory. The optional `RUN_ALMA_HTTPD_TEST=1 node --test
 scripts/release-safety/blue-green-alma.test.mjs` test exercises an isolated
 AlmaLinux httpd container with selected observed vhost rules, including a
 test vhost and uploads proxy. It does not reproduce the full DirectAdmin

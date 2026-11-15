@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { hasWishlist, scriptFromRelease, smokeProduction } from './production-smoke.mjs';
+import { hasWishlist, observeTestSubdomain, scriptFromRelease, smokeProduction, verifyTestSubdomainBaseline } from './production-smoke.mjs';
 
 function fake({ broken, redirect } = {}) {
   return async (url, options) => {
@@ -75,4 +75,15 @@ test('rejects an unexpected running API release when requested', async () => {
     expectedApiRelease: 'a'.repeat(40), fetchImpl: fake() }), /api\/health/);
   await assert.rejects(smokeProduction({ token: 'ops-test', releaseAsset: '/assets/app-abc.js',
     expectedApiRelease: 'main', fetchImpl: fake() }), /full lowercase SHA/);
+});
+
+test('captures and enforces actual HTTP and HTTPS test-subdomain behavior', async () => {
+  const fetchImpl = async url => url.protocol === 'http:'
+    ? new Response(null, { status: 301, headers: { location: 'https://test.driftdwells.com/' } })
+    : new Response('missing', { status: 404, headers: { 'content-type': 'text/html' } });
+  const baseline = await observeTestSubdomain({ fetchImpl });
+  assert.deepEqual(baseline.map(item => item.status), [301, 404]);
+  assert.equal((await verifyTestSubdomainBaseline(baseline, { fetchImpl })).ok, true);
+  await assert.rejects(verifyTestSubdomainBaseline(baseline, { fetchImpl: async url =>
+    new Response('changed', { status: url.protocol === 'http:' ? 200 : 404, headers: { 'content-type': 'text/html' } }) }), /behavior changed/);
 });

@@ -62,6 +62,16 @@ function originGet(ip, asset, expectedSize) {
 export async function verifyProductionAssets({ sharedAssets, assets, originIp, config = readSiteConfig(), get = originGet }) {
   if (net.isIP(originIp) === 0) throw new Error('An explicit origin IP is required');
   assertSiteAssetMapping(config, sharedAssets);
+  return verifyOriginAssets({ sharedAssets, assets, originIp, get });
+}
+
+/** Verify the filesystem-backed /assets symlink used by atomic DocumentRoot releases. */
+export async function verifySymlinkProductionAssets({ sharedAssets, assets, originIp, get = originGet }) {
+  if (net.isIP(originIp) === 0) throw new Error('An explicit origin IP is required');
+  return verifyOriginAssets({ sharedAssets, assets, originIp, get });
+}
+
+async function verifyOriginAssets({ sharedAssets, assets, originIp, get }) {
   const sentinel = `verification-${crypto.randomBytes(16).toString('hex')}.txt`;
   const file = path.join(sharedAssets, sentinel);
   const content = crypto.randomBytes(32);
