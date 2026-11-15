@@ -559,6 +559,24 @@ test('only the authorized DirectAdmin account can be planned', t => {
   assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource);
 });
 
+test('real DirectAdmin apply and recovery stay disabled before host-side work', async t => {
+  const f = fixture();
+  t.after(() => removeFixture(f.tmp));
+  const args = migrationArgs(f, async () => ({ ok: true, pointerVerified: true }));
+  delete args.run;
+  await assert.rejects(migrateSiteVhost(args), /disabled until real taskq regeneration/);
+  assert.throws(() => recoverSiteVhostMigration({ stateRoot: f.stateRoot }),
+    /disabled until real taskq regeneration/);
+  for (const action of ['recover', 'rollback']) {
+    const result = spawnSync(process.execPath, [cli, action, '--state-dir', f.stateRoot], { encoding: 'utf8' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /disabled until real taskq regeneration/);
+  }
+  assert.equal(fs.existsSync(f.stateRoot), false);
+  assert.equal(fs.readFileSync(f.customConfig, 'utf8'), f.customSource);
+  assert.equal(fs.readFileSync(f.siteConfig, 'utf8'), f.siteConfigContents);
+});
+
 test('rejects a customization path from another account or domain before any write', t => {
   const f = fixture();
   t.after(() => removeFixture(f.tmp));
