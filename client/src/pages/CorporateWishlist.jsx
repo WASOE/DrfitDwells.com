@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import Seo from '../components/Seo';
 import api from '../services/api';
 import { getAttributionPayload } from '../tracking/attribution';
+import { normalizeCompanyWebsite } from '../utils/normalizeCompanyWebsite';
 import './CorporateWishlist.css';
 
 const copy = {
@@ -30,9 +31,20 @@ const copy = {
     formKicker: 'THE HINT / 03', formTitle: 'Let’s put a little bug in HR’s ear.',
     formLead: 'Nominate your company and leave the awkward part out of it.',
     nomination: 'Employee nomination', hr: 'Buying for a team?',
+    personal: 'Hint a loved one ;)',
+    personalTitle: 'A little hint for someone you love.',
+    personalLead: 'For your partner, a friend, or someone who always asks what you’d like.',
+    personalIntro: 'A slow morning, fresh mountain air, a Drift & Dwells stay. Let someone know you’d love one as a gift. Edit your message, then choose how to share it.',
+    personalMessage: 'Your message',
+    personalDefault: 'A little hint ;) I’d love a Drift & Dwells stay as a gift. Time in the mountains and memories together sound pretty perfect to me.',
+    personalSubject: 'A little gift hint ;)',
+    giftLink: 'Gift-voucher link', whatsapp: 'WhatsApp', emailShare: 'Email', copyLink: 'Copy Link',
+    copied: 'Gift-voucher link copied.',
+    copyError: 'We couldn’t copy the link. Select and copy the gift-voucher link above.',
+    personalPrivacy: 'Nothing is sent automatically or submitted to our team. You choose who to share with and when.',
     modeLegend: 'Choose how to take part', nominationIntro: 'No employee name or email needed. Your suggestion is private and reviewed by our team; we never contact your company automatically.',
     hrIntro: 'Tell us a little about your team. This is a request for a proposal, not a payment or an order.',
-    company: 'Company name', website: 'Company website or contact URL', websiteOptional: 'Company website (optional)', websiteHint: 'https://',
+    company: 'Company name', website: 'Company website or contact URL', websiteOptional: 'Company website (optional)', websiteHint: 'company.com',
     hrContact: 'HR contact name (optional)', hrEmail: 'HR email address', contactRequired: 'Provide an HR email address or company website/contact URL.',
     contactInvalid: 'Enter a valid email and an http or https website URL without credentials.', requiredFields: 'Please complete the required fields.', contactName: 'Your name', contactEmail: 'Work email',
     employeeCount: 'Number of employees (optional)', budget: 'Approximate budget (optional)', message: 'Anything else? (optional)',
@@ -73,9 +85,20 @@ const copy = {
     formKicker: 'ПОДСКАЗКАТА / 03', formTitle: 'Нека подшушнем на HR.',
     formLead: 'Предложете компанията си, без неудобната част.',
     nomination: 'Предложение от служител', hr: 'Купувате за екип?',
+    personal: 'Подскажи на любим човек ;)',
+    personalTitle: 'Малка подсказка за любим човек.',
+    personalLead: 'За половинката, приятел или някого, който все пита какъв подарък искаш.',
+    personalIntro: 'Спокойна сутрин, чист планински въздух и престой в Drift & Dwells. Подскажи на близък човек, че мечтаеш за такъв подарък. Редактирай съобщението и избери как да го споделиш.',
+    personalMessage: 'Твоето съобщение',
+    personalDefault: 'Една малка подсказка ;) Мечтая си за престой в Drift & Dwells като подарък. Време в планината и общи спомени — звучи ми прекрасно!',
+    personalSubject: 'Малка подсказка за подарък ;)',
+    giftLink: 'Линк към подаръчните ваучери', whatsapp: 'WhatsApp', emailShare: 'Имейл', copyLink: 'Копирай линка',
+    copied: 'Линкът към подаръчните ваучери е копиран.',
+    copyError: 'Не успяхме да копираме линка. Маркирай и копирай линка към ваучерите по-горе.',
+    personalPrivacy: 'Нищо не се изпраща автоматично или към нашия екип. Ти избираш с кого и кога да споделиш.',
     modeLegend: 'Изберете как да участвате', nominationIntro: 'Не са нужни име или имейл на служител. Предложението е поверително, разглежда се от екипа ни и не води до автоматичен контакт с компанията.',
     hrIntro: 'Разкажете ни за екипа си. Това е запитване за оферта, а не плащане или поръчка.',
-    company: 'Име на компанията', website: 'Уебсайт на компанията или адрес за контакт', websiteOptional: 'Уебсайт на компанията (по избор)', websiteHint: 'https://',
+    company: 'Име на компанията', website: 'Уебсайт на компанията или адрес за контакт', websiteOptional: 'Уебсайт на компанията (по избор)', websiteHint: 'company.bg',
     hrContact: 'Име на HR контакт (по избор)', hrEmail: 'Имейл адрес на HR', contactRequired: 'Посочете имейл на HR или уебсайт/адрес за контакт на компанията.',
     contactInvalid: 'Въведете валиден имейл и http или https адрес без потребителско име и парола.', requiredFields: 'Моля, попълнете задължителните полета.', contactName: 'Вашето име', contactEmail: 'Служебен имейл',
     employeeCount: 'Брой служители (по избор)', budget: 'Приблизителен бюджет (по избор)', message: 'Нещо друго? (по избор)',
@@ -111,36 +134,47 @@ function Mug({ className = '' }) {
 export default function CorporateWishlist() {
   const location = useLocation();
   const c = location.pathname.startsWith('/bg/') ? copy.bg : copy.en;
+  const locale = c === copy.bg ? 'bg' : 'en';
   const [mode, setMode] = useState(() => new URLSearchParams(location.search).get('intent') === 'hr' ? 'hr' : 'nomination');
   const [key, setKey] = useState(newKey);
   const [values, setValues] = useState({ company: '', companyWebsite: '', hrContact: '', hrEmail: '', contactName: '', contactEmail: '', employeeCount: '', budget: '', message: '', consent: false, honeypot: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+  const [personalMessages, setPersonalMessages] = useState({ en: copy.en.personalDefault, bg: copy.bg.personalDefault });
+  const [copyStatus, setCopyStatus] = useState('');
+  const giftUrl = `https://driftdwells.com${locale === 'bg' ? '/bg' : ''}/gift-vouchers`;
+  const shareMessage = `${personalMessages[locale].trim()}\n\n${giftUrl}`;
+  const copyGiftLink = async () => {
+    try {
+      await navigator.clipboard.writeText(giftUrl);
+      setCopyStatus('copied');
+    } catch {
+      setCopyStatus('error');
+    }
+  };
   const update = (name) => (event) => {
     if (error) { setKey(newKey()); setError(''); }
     setValues((old) => ({ ...old, [name]: event.target.type === 'checkbox' ? event.target.checked : event.target.value }));
   };
   const selectMode = (next) => {
-    setMode(next); setKey(newKey()); setError(''); setDone(false);
+    setMode(next); setKey(newKey()); setError(''); setDone(false); setCopyStatus('');
     setValues((old) => ({ ...old, consent: false }));
   };
   const submit = async (event) => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || mode === 'personal') return;
     if (!values.company.trim() || (mode === 'hr' && (!values.contactName.trim() || !values.contactEmail.trim()))) { setError(c.requiredFields); return; }
     if (mode === 'nomination' && !values.hrEmail.trim() && !values.companyWebsite.trim()) { setError(c.contactRequired); return; }
     const email = mode === 'nomination' ? values.hrEmail.trim() : values.contactEmail.trim();
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError(c.contactInvalid); return; }
-    if (values.companyWebsite.trim()) {
-      try {
-        const url = new URL(values.companyWebsite.trim());
-        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid URL');
-      } catch { setError(c.contactInvalid); return; }
-    }
+    let companyWebsite;
+    try { companyWebsite = normalizeCompanyWebsite(values.companyWebsite); }
+    catch { setError(c.contactInvalid); return; }
+    setValues(old => ({ ...old, companyWebsite }));
     setBusy(true); setError('');
     try {
-      const common = { company: values.company, companyWebsite: values.companyWebsite, consent: values.consent, honeypot: values.honeypot };
+      const common = { company: values.company, companyWebsite, consent: values.consent, honeypot: values.honeypot };
       const details = mode === 'hr'
         ? { contactName: values.contactName, contactEmail: values.contactEmail, employeeCount: values.employeeCount, budget: values.budget, message: values.message }
         : { hrContact: values.hrContact, hrEmail: values.hrEmail };
@@ -156,7 +190,7 @@ export default function CorporateWishlist() {
     <label className="wishlist-field">{label}
       {options.textarea
         ? <textarea value={values[name]} onChange={update(name)} maxLength={4000} rows="4" />
-        : <input type={options.type || 'text'} value={values[name]} onChange={update(name)} required={options.required} maxLength={options.max || 200} placeholder={options.placeholder} />}
+        : <input type={options.type || 'text'} value={values[name]} onChange={update(name)} required={options.required} maxLength={options.max || 200} placeholder={options.placeholder} inputMode={options.inputMode} autoComplete={options.autoComplete} autoCapitalize={options.autoCapitalize} spellCheck={options.spellCheck} />}
     </label>
   );
   return (
@@ -205,18 +239,32 @@ export default function CorporateWishlist() {
 
       <section className="wishlist-form-section" id="wishlist-form">
         <div className="wishlist-wrap wishlist-form-layout">
-          <div className="wishlist-form-intro"><div className="wishlist-eyebrow">{c.formKicker}</div><h2>{c.formTitle}</h2><p>{c.formLead}</p><div className="wishlist-envelope" aria-hidden="true"><span>TO: HR<br />FROM: YOUR BIGGEST FAN</span><i>✳</i></div></div>
+          <div className="wishlist-form-intro"><div className="wishlist-eyebrow">{c.formKicker}</div><h2>{mode === 'personal' ? c.personalTitle : c.formTitle}</h2><p>{mode === 'personal' ? c.personalLead : c.formLead}</p><div className="wishlist-envelope" aria-hidden="true"><span>{mode === 'personal' ? c.personalSubject : <>TO: HR<br />FROM: YOUR BIGGEST FAN</>}</span><i>✳</i></div></div>
           <div className="wishlist-form-box">
-            {done ? <div role="status" className="wishlist-confirmation"><div className="wishlist-confirmation-mark" aria-hidden="true">✳</div><h3>{mode === 'hr' ? c.hrThanks : c.thanks}</h3><p>{mode === 'hr' ? c.hrDone : c.nominationDone}</p><div className="wishlist-handwritten">{c.successNote} ↗</div></div> : <>
               <fieldset className="wishlist-modes" disabled={busy}><legend className="wishlist-sr-only">{c.modeLegend}</legend>
                 <label><input type="radio" name="mode" checked={mode === 'nomination'} onChange={() => selectMode('nomination')} /><span>{c.nomination}</span></label>
                 <label><input type="radio" name="mode" checked={mode === 'hr'} onChange={() => selectMode('hr')} /><span>{c.hr}</span></label>
+                <label><input type="radio" name="mode" checked={mode === 'personal'} onChange={() => selectMode('personal')} /><span>{c.personal}</span></label>
               </fieldset>
+            {mode === 'personal' ? <div className="wishlist-personal">
+              <p className="wishlist-form-context">{c.personalIntro}</p>
+              <label className="wishlist-field">{c.personalMessage}
+                <textarea rows="6" maxLength={1500} value={personalMessages[locale]} onChange={event => setPersonalMessages(old => ({ ...old, [locale]: event.target.value }))} />
+              </label>
+              <label className="wishlist-field">{c.giftLink}<input type="text" readOnly value={giftUrl} onFocus={event => event.target.select()} /></label>
+              <div className="wishlist-share-actions">
+                <a className="wishlist-button wishlist-button-dark" href={`https://wa.me/?text=${encodeURIComponent(shareMessage)}`} target="_blank" rel="noopener noreferrer">{c.whatsapp}</a>
+                <a className="wishlist-button wishlist-button-dark" href={`mailto:?subject=${encodeURIComponent(c.personalSubject)}&body=${encodeURIComponent(shareMessage)}`}>{c.emailShare}</a>
+                <button className="wishlist-button wishlist-button-dark" type="button" onClick={copyGiftLink}>{c.copyLink}</button>
+              </div>
+              {copyStatus && <p className={copyStatus === 'error' ? 'wishlist-error' : 'wishlist-form-context'} role={copyStatus === 'error' ? 'alert' : 'status'}>{copyStatus === 'error' ? c.copyError : c.copied}</p>}
+              <p className="wishlist-form-context">{c.personalPrivacy}</p>
+            </div> : done ? <div role="status" className="wishlist-confirmation"><div className="wishlist-confirmation-mark" aria-hidden="true">✳</div><h3>{mode === 'hr' ? c.hrThanks : c.thanks}</h3><p>{mode === 'hr' ? c.hrDone : c.nominationDone}</p><div className="wishlist-handwritten">{c.successNote} ↗</div></div> : <>
               <p className="wishlist-form-context">{mode === 'hr' ? c.hrIntro : c.nominationIntro}</p>
               <form onSubmit={submit}><fieldset className="wishlist-fields" disabled={busy}>
                 {field('company', c.company, { required: true })}
                 {mode === 'nomination' && <p className="wishlist-form-context">{c.contactRequired}</p>}
-                {field('companyWebsite', mode === 'nomination' ? c.website : c.websiteOptional, { type: 'url', max: 500, placeholder: c.websiteHint })}
+                {field('companyWebsite', mode === 'nomination' ? c.website : c.websiteOptional, { inputMode: 'url', autoComplete: 'url', autoCapitalize: 'none', spellCheck: false, max: 500, placeholder: c.websiteHint })}
                 {mode === 'nomination' ? <>{field('hrEmail', c.hrEmail, { type: 'email', max: 320 })}{field('hrContact', c.hrContact)}</> : <>
                   {field('contactName', c.contactName, { required: true, max: 120 })}
                   {field('contactEmail', c.contactEmail, { required: true, type: 'email', max: 320 })}

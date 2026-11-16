@@ -66,6 +66,18 @@ a stale deployment lock. Preserve old releases, append-only hashed assets,
 the cutover receipt, and backups. These operations deploy FRONTEND only.
 API, PM2, payment completion and actual email delivery require separate tests.
 
+### Wishlist campaign checks
+
+Both `/wishlist/` and `/bg/wishlist/` accept bare company domains by normalizing
+them to HTTPS before lead validation and submission. Employee nominations still
+need an HR email **or** a website; HR enquiries keep their existing requirements.
+The personal hint option never submits a lead: WhatsApp and Email open an editable
+share chosen by the visitor, and Copy Link copies the localized `/gift-vouchers`
+URL. Check both languages and 390px mobile with
+`tests/e2e/release-safety/wishlist-sharing.spec.js` (included in the browser gate).
+Its form submissions are intercepted and validated locally; no live leads,
+bookings, payments or messages are created.
+
 ---
 
 

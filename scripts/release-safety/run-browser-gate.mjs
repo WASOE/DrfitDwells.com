@@ -32,7 +32,7 @@ const exitCode = await withApache(docroot, async ({ httpsPort }) => {
   const baseURL = `https://127.0.0.1:${httpsPort}`;
   const result = spawnSync(
     'npx',
-    ['playwright', 'test', 'tests/e2e/release-safety/booking-protection.spec.js', '--project=release-safety', '--project=release-safety-mobile'],
+    ['playwright', 'test', 'tests/e2e/release-safety/booking-protection.spec.js', 'tests/e2e/release-safety/wishlist-sharing.spec.js', '--project=release-safety', '--project=release-safety-mobile'],
     {
       cwd: repoRoot,
       stdio: 'inherit',
