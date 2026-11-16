@@ -88,7 +88,24 @@ export function importAppendOnlyTree(source, destination) {
 
 export function auditLegacyWebroot({ webroot, candidate, inventory }) {
   const candidateFiles = new Set(inventory.files.map(file => file.path));
-  const allowedMissing = relative => relative === 'release-manifest.json' ||
+  const htaccess = fs.readFileSync(path.join(candidate, '.htaccess'), 'utf8');
+  const exactHistoricalManifests = new Set([
+    'release-manifest.json',
+    'release-manifest.json.backup-pre-7d24458-20261026-201445Z',
+    'release-manifest.json.backup-pre-arrival-v2-20261030-122341Z',
+    'release-manifest.previous.json'
+  ]);
+  const equivalentLegacyRoutes = new Map([
+    ['bg/about', /^RewriteRule \^ \/index\.html \[L\]$/m],
+    ['off-grid-stays-bulgaria', /^RewriteRule \^off-grid-stays-bulgaria\/\?\$ \/off-grid-cabins-bulgaria\/ \[R=301,L,QSA\]$/m],
+    ['bg/off-grid-stays-bulgaria', /^RewriteRule \^bg\/off-grid-stays-bulgaria\/\?\$ \/bg\/off-grid-cabins-bulgaria\/ \[R=301,L,QSA\]$/m]
+  ]);
+  const hasEquivalentRoute = relative => {
+    const normalized = relative.replace(/\/$/, '').replace(/\/index\.html$/, '');
+    const rule = equivalentLegacyRoutes.get(normalized);
+    return Boolean(rule && candidateFiles.has('index.html') && rule.test(htaccess));
+  };
+  const allowedMissing = relative => exactHistoricalManifests.has(relative) || hasEquivalentRoute(relative) ||
     /^index\.html\.backup-/.test(path.posix.basename(relative)) || /^\.htaccess\.bk-/.test(path.posix.basename(relative));
   const preservedRoots = new Set(['assets', 'test', 'uploads']);
   const unexpected = [];
@@ -98,7 +115,7 @@ export function auditLegacyWebroot({ webroot, candidate, inventory }) {
       const top = relative.split('/')[0];
       if (entry.isSymbolicLink()) throw new Error(`Legacy webroot contains unsupported symlink: ${relative}`);
       if (entry.isDirectory()) {
-        if (!preservedRoots.has(top) && !fs.existsSync(path.join(candidate, relative))) unexpected.push(`${relative}/`);
+        if (!preservedRoots.has(top) && !fs.existsSync(path.join(candidate, relative)) && !allowedMissing(`${relative}/`)) unexpected.push(`${relative}/`);
         walk(path.join(dir, entry.name), relative);
       } else if (entry.isFile() && !preservedRoots.has(top) && !candidateFiles.has(relative) && !allowedMissing(relative)) unexpected.push(relative);
       else if (!entry.isFile() && !entry.isDirectory()) unexpected.push(relative);
