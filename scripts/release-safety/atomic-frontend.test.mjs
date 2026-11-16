@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { createInventory } from './frontend-inventory.mjs';
 import {
-  activatePreparedRelease, migrateDocumentRoot, prepareRelease,
+  activatePreparedRelease, auditLegacyWebroot, migrateDocumentRoot, prepareRelease,
   recoverActivation, recoverDocumentRootMigration, verifyHostCompatibility,
   verifyPreparedRelease
 } from './atomic-frontend.mjs';
@@ -94,6 +94,34 @@ test('migration refuses a legacy asset collision and an unaccounted legal file b
   fs.writeFileSync(path.join(f.webroot, 'assets', 'one.js'), 'different');
   await assert.rejects(migrateDocumentRoot({ ...f, inventory: a.inventory, observedRelease: release, smoke: async () => ({ ok: true }) }), /Legacy import hash.*one\.js/);
   assert.equal(fs.lstatSync(f.webroot).isDirectory(), true);
+});
+
+test('legacy audit accepts only proven route replacements and exact historical manifests', t => {
+  const f = fixture(t); const a = artifact(f.root, 'a'.repeat(40), 'one');
+  fs.writeFileSync(path.join(a.dir, '.htaccess'), [
+    'RewriteEngine On',
+    'RewriteRule ^off-grid-stays-bulgaria/?$ /off-grid-cabins-bulgaria/ [R=301,L,QSA]',
+    'RewriteRule ^bg/off-grid-stays-bulgaria/?$ /bg/off-grid-cabins-bulgaria/ [R=301,L,QSA]',
+    'RewriteRule ^ /index.html [L]'
+  ].join('\n'));
+  a.inventory = createInventory(a.dir, 'a'.repeat(40), 'production');
+  for (const route of ['bg/about', 'off-grid-stays-bulgaria', 'bg/off-grid-stays-bulgaria']) {
+    fs.mkdirSync(path.join(f.webroot, route), { recursive: true });
+    fs.writeFileSync(path.join(f.webroot, route, 'index.html'), route);
+  }
+  for (const manifest of ['release-manifest.json.backup-pre-7d24458-20261026-201445Z',
+    'release-manifest.json.backup-pre-arrival-v2-20261030-122341Z', 'release-manifest.previous.json']) {
+    fs.writeFileSync(path.join(f.webroot, manifest), manifest);
+  }
+  assert.equal(auditLegacyWebroot({ webroot: f.webroot, candidate: a.dir, inventory: a.inventory }).ok, true);
+  fs.writeFileSync(path.join(a.dir, '.htaccess'), 'RewriteEngine On\nRewriteRule ^ /index.html [L]\n');
+  assert.throws(() => auditLegacyWebroot({ webroot: f.webroot, candidate: a.dir, inventory: a.inventory }),
+    /off-grid-stays-bulgaria/);
+  fs.rmSync(path.join(f.webroot, 'off-grid-stays-bulgaria'), { recursive: true });
+  fs.rmSync(path.join(f.webroot, 'bg', 'off-grid-stays-bulgaria'), { recursive: true });
+  fs.writeFileSync(path.join(f.webroot, 'release-manifest.unexpected.json'), 'unexpected');
+  assert.throws(() => auditLegacyWebroot({ webroot: f.webroot, candidate: a.dir, inventory: a.inventory }),
+    /release-manifest\.unexpected\.json/);
 });
 
 test('failed initial smoke atomically restores the original directory', async t => {

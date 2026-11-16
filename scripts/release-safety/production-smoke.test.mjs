@@ -102,3 +102,21 @@ test('test-subdomain probe uses verified origin IP without DNS and retains TLS/H
   assert.equal((await verifyTestSubdomainBaseline(baseline, { originIp: '192.0.2.10', originRequest })).ok, true);
   await assert.rejects(observeTestSubdomain({ originIp: 'not-an-ip', originRequest }), /valid.*origin IP/);
 });
+
+test('records a pre-existing TLS certificate failure without disabling certificate verification', async () => {
+  const calls = [];
+  const originRequest = async (protocol) => {
+    calls.push(protocol);
+    if (protocol === 'https:') throw Object.assign(new Error('certificate expired'), { code: 'CERT_HAS_EXPIRED' });
+    return { status: 301, location: 'https://test.driftdwells.com/', contentType: null };
+  };
+  const baseline = await observeTestSubdomain({ originIp: '192.0.2.10', originRequest });
+  assert.deepEqual(baseline[1], { protocol: 'https:', status: null, location: null,
+    contentType: null, tlsError: 'CERT_HAS_EXPIRED' });
+  assert.equal((await verifyTestSubdomainBaseline(baseline, { originIp: '192.0.2.10', originRequest })).ok, true);
+  assert.deepEqual(calls, ['http:', 'https:', 'http:', 'https:']);
+  await assert.rejects(observeTestSubdomain({ originIp: '192.0.2.10', originRequest: async protocol => {
+    if (protocol === 'https:') throw Object.assign(new Error('connection reset'), { code: 'ECONNRESET' });
+    return { status: 301, location: 'https://test.driftdwells.com/', contentType: null };
+  } }), /connection reset/);
+});

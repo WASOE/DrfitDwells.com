@@ -7,6 +7,11 @@ import { fileURLToPath } from 'node:url';
 
 const SITE_HOSTS = new Set(['driftdwells.com', 'www.driftdwells.com']);
 const TEST_HOST = 'test.driftdwells.com';
+const TLS_CERTIFICATE_ERRORS = new Set([
+  'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'ERR_TLS_CERT_ALTNAME_INVALID', 'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'
+]);
 
 function originTestRequest(protocol, originIp, timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -33,7 +38,13 @@ export async function observeTestSubdomain({ fetchImpl = fetch, timeoutMs = 1000
   for (const protocol of ['http:', 'https:']) {
     const url = new URL(`${protocol}//${TEST_HOST}/`);
     let observed;
-    if (originIp) observed = await originRequest(protocol, originIp, timeoutMs);
+    if (originIp) {
+      try { observed = await originRequest(protocol, originIp, timeoutMs); }
+      catch (error) {
+        if (protocol !== 'https:' || !TLS_CERTIFICATE_ERRORS.has(error?.code)) throw error;
+        observed = { status: null, location: null, contentType: null, tlsError: error.code };
+      }
+    }
     else {
       const response = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
       observed = { status: response.status, location: response.headers.get('location'),
@@ -45,8 +56,8 @@ export async function observeTestSubdomain({ fetchImpl = fetch, timeoutMs = 1000
       const target = new URL(location, url);
       if (!['http:', 'https:'].includes(target.protocol) || target.hostname !== TEST_HOST || target.username || target.password || target.port) throw new Error('Unsafe test-subdomain redirect');
     }
-    observations.push({ protocol, status: observed.status, location: location || null,
-      contentType: observed.contentType });
+    observations.push({ protocol, status: observed.status ?? null, location: location || null,
+      contentType: observed.contentType || null, ...(observed.tlsError ? { tlsError: observed.tlsError } : {}) });
   }
   return observations;
 }
