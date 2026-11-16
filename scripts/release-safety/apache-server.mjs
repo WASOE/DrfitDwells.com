@@ -28,7 +28,8 @@ function writeCertificate(dir) {
     'req', '-x509', '-newkey', 'rsa:2048',
     '-keyout', key, '-out', cert,
     '-days', '2', '-nodes',
-    '-subj', '/CN=driftdwells.com'
+    '-subj', '/CN=driftdwells.com',
+    '-addext', 'subjectAltName=DNS:driftdwells.com,DNS:www.driftdwells.com,DNS:test.driftdwells.com'
   ], { stdio: 'ignore' });
   if (result.status !== 0) {
     throw new Error('openssl could not create the local Apache certificate.');
@@ -36,7 +37,7 @@ function writeCertificate(dir) {
   return { key, cert };
 }
 
-function httpdConf({ runDir, docroot, httpPort, httpsPort, key, cert, apiPort = null }) {
+function httpdConf({ runDir, docroot, httpPort, httpsPort, key, cert, apiPort = null, testSubdomain = false }) {
   const proxyModules = apiPort ? `
 LoadModule proxy_module /usr/lib/apache2/modules/mod_proxy.so
 LoadModule proxy_http_module /usr/lib/apache2/modules/mod_proxy_http.so
@@ -95,6 +96,20 @@ DirectoryIndex index.html
     Require all granted
   </Directory>
 </VirtualHost>
+${testSubdomain ? [httpPort, httpsPort].map(port => `
+<VirtualHost 127.0.0.1:${port}>
+  ServerName test.driftdwells.com
+  DocumentRoot ${docroot}/test
+  ${port === httpsPort ? `SSLEngine on
+  SSLCertificateFile ${cert}
+  SSLCertificateKeyFile ${key}` : ''}
+  <Directory ${docroot}>
+    Options SymLinksIfOwnerMatch
+    AllowOverride All
+    Require all granted
+  </Directory>
+</VirtualHost>
+`).join('') : ''}
 `;
 }
 
@@ -125,13 +140,13 @@ export function linkReleaseDocroot(distDir, dest, htaccessText) {
   return dest;
 }
 
-export async function withApache(docroot, fn, { apiPort = null } = {}) {
+export async function withApache(docroot, fn, { apiPort = null, testSubdomain = false } = {}) {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-apache-'));
   const httpPort = await freePort();
   const httpsPort = await freePort();
   const { key, cert } = writeCertificate(runDir);
   const conf = path.join(runDir, 'httpd.conf');
-  fs.writeFileSync(conf, httpdConf({ runDir, docroot, httpPort, httpsPort, key, cert, apiPort }));
+  fs.writeFileSync(conf, httpdConf({ runDir, docroot, httpPort, httpsPort, key, cert, apiPort, testSubdomain }));
   const started = spawnSync('apache2', ['-f', conf, '-k', 'start'], { encoding: 'utf8' });
   if (started.status !== 0) {
     const log = fs.existsSync(path.join(runDir, 'error.log'))

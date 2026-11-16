@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
+import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { createInventory } from './frontend-inventory.mjs';
+import { withApache } from './apache-server.mjs';
+import { observeTestSubdomain, verifyTestSubdomainBaseline } from './production-smoke.mjs';
 import {
   activatePreparedRelease, auditLegacyWebroot, migrateDocumentRoot, prepareRelease,
   recoverActivation, recoverDocumentRootMigration, verifyHostCompatibility,
@@ -23,9 +27,10 @@ function fixture(t) {
   const releases = path.join(base, 'releases');
   const state = path.join(base, 'state');
   const sharedAssets = path.join(base, 'shared-assets');
-  const stableTest = path.join(base, 'stable-test');
+  const stableTestParent = path.join(base, 'stable-test');
+  const stableTest = path.join(stableTestParent, 'root');
   const webroot = path.join(root, 'public_html');
-  for (const dir of [base, releases, state, sharedAssets, stableTest, webroot]) fs.mkdirSync(dir, { mode: 0o755 });
+  for (const dir of [base, releases, state, sharedAssets, stableTestParent, webroot]) fs.mkdirSync(dir, { mode: 0o755 });
   fs.writeFileSync(path.join(webroot, 'index.html'), 'old');
   fs.mkdirSync(path.join(webroot, 'assets'));
   const owner = fs.statSync(base);
@@ -70,6 +75,48 @@ test('stages immutable releases with a shared owner-matched asset link and rejec
   assert.throws(() => verifyPreparedRelease({ release, inventory: a.inventory, sharedAssets: f.sharedAssets, stableTest: f.stableTest }), /mismatch/);
 });
 
+test('absent stable test root stays absent through staging and rejects a dangling release link', t => {
+  const f = fixture(t); const a = artifact(f.root, 'a'.repeat(40), 'one');
+  const release = stage(f, a);
+  assert.equal(fs.lstatSync(f.stableTest, { throwIfNoEntry: false }), undefined);
+  assert.equal(fs.lstatSync(path.join(release, 'test'), { throwIfNoEntry: false }), undefined);
+  assert.equal(verifyPreparedRelease({ ...f, release, inventory: a.inventory }).ok, true);
+  fs.chmodSync(release, 0o755);
+  fs.symlinkSync(f.stableTest, path.join(release, 'test'));
+  fs.chmodSync(release, 0o555);
+  assert.throws(() => verifyPreparedRelease({ ...f, release, inventory: a.inventory }), /test path must be absent/);
+});
+
+test('present stable test root requires the exact owner-matched link and a real safe directory', t => {
+  const f = fixture(t); const a = artifact(f.root, 'a'.repeat(40), 'one');
+  fs.mkdirSync(f.stableTest, { mode: 0o755 });
+  fs.writeFileSync(path.join(f.stableTest, 'index.html'), 'test');
+  const release = stage(f, a);
+  assert.equal(fs.readlinkSync(path.join(release, 'test')), f.stableTest);
+  assert.equal(fs.lstatSync(path.join(release, 'test')).uid, fs.statSync(f.stableTest).uid);
+  assert.equal(fs.lstatSync(path.join(release, 'test')).gid, fs.statSync(f.stableTest).gid);
+  assert.equal(verifyPreparedRelease({ ...f, release, inventory: a.inventory }).ok, true);
+  fs.chmodSync(release, 0o755);
+  fs.unlinkSync(path.join(release, 'test'));
+  assert.throws(() => verifyPreparedRelease({ ...f, release, inventory: a.inventory }), /must point to the stable/);
+  fs.symlinkSync(f.webroot, path.join(release, 'test'));
+  assert.throws(() => verifyPreparedRelease({ ...f, release, inventory: a.inventory }), /must point to the stable/);
+  fs.chmodSync(f.stableTest, 0o777);
+  assert.throws(() => verifyPreparedRelease({ ...f, release, inventory: a.inventory }), /permissions are unsafe/);
+});
+
+test('staging refuses dangling or redirected stable test roots rather than treating them as absent', t => {
+  const f = fixture(t); const a = artifact(f.root, 'a'.repeat(40), 'one');
+  fs.symlinkSync(path.join(f.root, 'missing'), f.stableTest);
+  assert.throws(() => stage(f, a), /must be a real directory/);
+  fs.unlinkSync(f.stableTest);
+  fs.symlinkSync(f.webroot, f.stableTest);
+  assert.throws(() => stage(f, a), /must be a real directory/);
+  fs.unlinkSync(f.stableTest);
+  fs.writeFileSync(f.stableTest, 'not a directory');
+  assert.throws(() => stage(f, a), /must be a real directory/);
+});
+
 test('initial nonempty document-root migration is atomic and preserves the original full tree as backup', async t => {
   const f = fixture(t); const a = artifact(f.root, 'a'.repeat(40), 'one');
   fs.writeFileSync(path.join(f.webroot, 'assets', 'legacy.js'), 'legacy', { flag: 'wx' });
@@ -82,8 +129,100 @@ test('initial nonempty document-root migration is atomic and preserves the origi
   assert.equal(fs.lstatSync(result.backup).isDirectory(), true);
   assert.equal(fs.readFileSync(path.join(f.sharedAssets, 'legacy.js'), 'utf8'), 'legacy');
   assert.equal(fs.readFileSync(path.join(f.webroot, 'test', 'marker.html'), 'utf8'), 'stable-test');
+  assert.equal(fs.statSync(release).mode & 0o777, 0o555);
+  assert.equal(verifyPreparedRelease({ ...f, release, inventory: a.inventory }).ok, true);
   assert.equal(JSON.parse(fs.readFileSync(path.join(f.state, 'document-root-migration.json'))).phase, 'complete');
 });
+
+function localTestRequest({ httpPort, httpsPort, runDir }) {
+  const ca = fs.readFileSync(path.join(runDir, 'cert.pem'));
+  return protocol => new Promise((resolve, reject) => {
+    const request = (protocol === 'https:' ? https : http).get({
+      hostname: '127.0.0.1', port: protocol === 'https:' ? httpsPort : httpPort,
+      servername: 'test.driftdwells.com', ca,
+      headers: { Host: 'test.driftdwells.com' }, path: '/', timeout: 5000
+    }, response => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', chunk => { body += chunk; });
+      response.on('end', () => resolve({
+        status: response.statusCode, location: response.headers.location || null,
+        contentType: response.headers['content-type'] || null, body
+      }));
+      response.on('error', reject);
+    });
+    request.on('timeout', () => request.destroy(new Error('Local test-subdomain request timed out')));
+    request.on('error', reject);
+  });
+}
+
+for (const present of [false, true]) {
+  test(`real Apache preserves ${present ? 'present' : 'absent'} test root across exchange, deployment and rollback`, async t => {
+    const f = fixture(t); const a = artifact(f.root, 'a'.repeat(40), 'one');
+    const htaccess = fs.readFileSync(new URL('../../client/public/.htaccess', import.meta.url), 'utf8');
+    fs.writeFileSync(path.join(f.webroot, '.htaccess'), htaccess);
+    fs.writeFileSync(path.join(a.dir, '.htaccess'), htaccess);
+    a.inventory = createInventory(a.dir, 'a'.repeat(40), 'production');
+    if (present) {
+      fs.mkdirSync(path.join(f.webroot, 'test'));
+      fs.writeFileSync(path.join(f.webroot, 'test', 'index.html'), 'preserved test homepage');
+    }
+    const release = stage(f, a);
+    await withApache(f.webroot, async ports => {
+      t.after(() => fs.rmSync(ports.runDir, { recursive: true, force: true }));
+      const request = localTestRequest(ports);
+      const options = { originIp: '127.0.0.1', originRequest: request };
+      const baseline = await observeTestSubdomain(options);
+      assert.deepEqual(baseline, [
+        { protocol: 'http:', status: 301, location: 'https://driftdwells.com/', contentType: 'text/html; charset=iso-8859-1' },
+        { protocol: 'https:', status: present ? 200 : 404, location: null, contentType: present ? 'text/html' : 'text/html; charset=iso-8859-1' }
+      ]);
+      if (!present) {
+        // Prove the original defect against Apache, not an HTTP mock.
+        fs.symlinkSync(f.stableTest, path.join(f.webroot, 'test'));
+        try {
+          assert.equal((await request('http:')).status, 403);
+          assert.equal((await request('https:')).status, 403);
+          await assert.rejects(verifyTestSubdomainBaseline(baseline, options), /behavior changed/);
+        } finally { fs.unlinkSync(path.join(f.webroot, 'test')); }
+      }
+      const check = async () => {
+        const result = await verifyTestSubdomainBaseline(baseline, options);
+        if (present) assert.equal((await request('https:')).body, 'preserved test homepage');
+        else assert.equal(fs.lstatSync(path.join(f.webroot, 'test'), { throwIfNoEntry: false }), undefined);
+        return result;
+      };
+      let migrationSmokes = 0;
+      await assert.rejects(migrateDocumentRoot({ ...f, runExchange: undefined,
+        observedRelease: release, inventory: a.inventory, smoke: async ({ rollback }) => {
+          await check(); migrationSmokes += 1;
+          return { ok: Boolean(rollback) };
+        } }), /Post-migration/);
+      assert.equal(migrationSmokes, 2);
+      assert.equal(fs.lstatSync(f.webroot).isDirectory(), true);
+      await check();
+      fs.unlinkSync(path.join(f.state, 'document-root-migration.json'));
+      await migrateDocumentRoot({ ...f, runExchange: undefined, observedRelease: release, inventory: a.inventory, smoke: check });
+      await check();
+      const b = artifact(f.root, 'b'.repeat(40), 'two');
+      fs.writeFileSync(path.join(b.dir, '.htaccess'), htaccess);
+      b.inventory = createInventory(b.dir, 'b'.repeat(40), 'production');
+      const next = stage(f, b);
+      await assert.rejects(activatePreparedRelease({ ...f, candidate: next, inventory: b.inventory,
+        preflight: check, smoke: async () => { await check(); return { ok: false }; }, rollbackSmoke: check }), /Smoke failed/);
+      assert.equal(fs.realpathSync(f.webroot), release);
+      await check();
+      await activatePreparedRelease({ ...f, candidate: next, inventory: b.inventory,
+        preflight: check, smoke: check, rollbackSmoke: check });
+      assert.equal(fs.realpathSync(f.webroot), next);
+      await check();
+      await activatePreparedRelease({ ...f, candidate: release, inventory: a.inventory,
+        preflight: check, smoke: check, rollbackSmoke: check });
+      assert.equal(fs.realpathSync(f.webroot), release);
+      await check();
+    }, { testSubdomain: true });
+  });
+}
 
 test('migration refuses a legacy asset collision and an unaccounted legal file before exchange', async t => {
   const f = fixture(t); const a = artifact(f.root, 'a'.repeat(40), 'one'); const release = stage(f, a);
@@ -220,4 +359,3 @@ test('unsafe shared-store permissions fail before release publication', t => {
   assert.throws(() => stage(f, a), /permissions are unsafe/);
   assert.equal(fs.existsSync(path.join(f.releases, 'a'.repeat(40))), false);
 });
-

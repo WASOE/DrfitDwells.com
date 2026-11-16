@@ -15,14 +15,21 @@ no two-rename fallback. The original directory is then retained intact under
 `frontend/backups/`. A durable journal is written before and after the exchange.
 If verification fails, the same atomic exchange restores the original directory.
 
-Each release is read-only and has owner-matched `assets` and `test` symlinks.
+Each release is read-only and has an owner-matched `assets` symlink.
 `assets` targets an append-only shared asset store. Before the first exchange,
 every file in the original live `public_html/assets` is hashed and imported
 without replacement; a same-name/different-hash collision blocks migration.
-This preserves prior hashed URLs for existing browser sessions. `test` targets
-the stable path `frontend/stable-test/root`; if the original test root is
-absent, that target remains absent so the existing 404 behavior is preserved.
-If it exists, its complete real-file tree is imported before exchange.
+This preserves prior hashed URLs for existing browser sessions. When the test
+root exists, an owner-matched `test` symlink targets the stable path
+`frontend/stable-test/root`. If the original test root is absent, both the stable
+root and the release's `test` entry remain absent: a dangling symlink changes
+Apache's behavior to 403 before the inherited redirect rules can run.
+This preserves the observed HTTP 301 to `https://driftdwells.com/` and HTTPS 404.
+If a real legacy test tree exists, its complete tree is imported before exchange;
+the migration then adds the link to the inactive staged release, restores its
+read-only mode and verifies it again. Future releases link only an existing real
+stable root. Previously staged releases with dangling test links fail verification
+and must be restaged; do not bypass the check or create an empty test root.
 `/api` and `/uploads` remain the existing reverse proxies. `/legal` and every
 other non-artifact local path are audited: a live path missing from the verified
 candidate blocks migration instead of being silently lost.
@@ -158,4 +165,3 @@ node scripts/release-safety/atomic-production.mjs recover PREVIOUS_FULL_SHA API_
 
 The journal permits only its recorded candidate or previous target. Any other
 pointer state fails closed and requires investigation.
-
