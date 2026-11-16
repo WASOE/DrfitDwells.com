@@ -1,5 +1,74 @@
 # Atomic frontend deployment
 
+
+## CURRENT PRODUCTION STATUS: LIVE (16 November 2026)
+
+The first atomic document-root migration is **complete**. Do **not** run the
+initial migration again, use the old in-place publisher, or apply the old
+DirectAdmin vhost migration.
+
+- DocumentRoot stays /home/illoc/domains/driftdwells.com/public_html
+- Live chain: public_html -> /home/illoc/releases/frontend/current -> immutable release
+- Initial live frontend SHA: 43ee143d88fc35824f92997253c03c0a11f1dc78
+- API SHA at cutover: 01d64f8f4b1f6503c92f3e849a4aa04e99476687
+- Original tree: /home/illoc/releases/frontend/backups/pre-atomic-public_html
+- Host cutover receipt: /home/illoc/releases/frontend/state/cutover-43ee143-20261116/cutover-receipt.json
+- An independently checked off-host backup was retained.
+- Known old test host behavior: HTTP 301 to https://driftdwells.com/ and
+  HTTPS diagnostic 404, with an expired test-host certificate. Production
+  TLS validation must remain strict.
+- Apache, DirectAdmin, PHP-FPM, API, and nine PM2 processes were unchanged
+  by the initial cutover.
+
+### Routine frontend update
+
+Run as illoc from the reviewed, merged repository. Produce a verified exact
+commit production artifact using production-artifact.yml, verify release-safety
+CI success, and record the NEW artifact run ID and full SHA.
+
+Identify the CURRENT artifact run ID and full SHA from release records and
+the live pointer. Never assume the initial SHA is still active.
+Supply OPS_VERIFY_TOKEN, VITE_STRIPE_PUBLISHABLE_KEY and DRIFT_ORIGIN_IP
+via the existing protected server environment. Do not print credentials.
+
+```bash
+readlink -f /home/illoc/domains/driftdwells.com/public_html
+readlink -f /home/illoc/releases/frontend/current
+
+node scripts/release-safety/atomic-production.mjs deploy \
+  CANDIDATE_RUN_ID CANDIDATE_FULL_SHA \
+  CURRENT_RUN_ID CURRENT_FULL_SHA API_FULL_SHA
+```
+
+
+That command verifies artifacts, stages a sealed release, checks the live
+site, atomically switches frontend/current, and runs origin/route checks with
+automatic rollback on verification failure. Verify homepage, both wishlist
+routes, booking, checkout, Ops, API, uploads, legal files, test HTTP/HTTPS,
+and representative unrelated hosted websites. Routine frontend updates
+require no Apache, DirectAdmin, PHP-FPM or PM2 restart.
+
+### Manual rollback
+
+Use the verified rollback action with the old artifact as ROLLBACK and the
+currently active artifact as CURRENT:
+
+```bash
+node scripts/release-safety/atomic-production.mjs rollback \
+  ROLLBACK_RUN_ID ROLLBACK_FULL_SHA \
+  CURRENT_RUN_ID CURRENT_FULL_SHA API_FULL_SHA
+```
+
+
+For an interrupted release, inspect the activation journal and follow the
+recover section further below. Verify no publisher is running before removing
+a stale deployment lock. Preserve old releases, append-only hashed assets,
+the cutover receipt, and backups. These operations deploy FRONTEND only.
+API, PM2, payment completion and actual email delivery require separate tests.
+
+---
+
+
 ## Decision
 
 Keep DirectAdmin and Apache configured with `DocumentRoot
