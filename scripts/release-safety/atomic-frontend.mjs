@@ -34,6 +34,21 @@ function assertRealDirectory(value, label) {
   if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(value) !== value) throw new Error(`${label} must be a real directory`);
 }
 
+function hasStableTestRoot(stableTest) {
+  const stat = fs.lstatSync(stableTest, { throwIfNoEntry: false });
+  if (!stat) return false;
+  assertRealDirectory(stableTest, 'Stable test-subdomain root');
+  if (stat.mode & 0o022) throw new Error('Stable test-subdomain root permissions are unsafe');
+  return true;
+}
+
+function linkStableTest(release, stableTest) {
+  const owner = fs.statSync(release);
+  const link = path.join(release, 'test');
+  fs.symlinkSync(stableTest, link);
+  fs.lchownSync(link, owner.uid, owner.gid);
+}
+
 function within(child, parent) {
   return child === parent || child.startsWith(`${parent}${path.sep}`);
 }
@@ -192,9 +207,10 @@ export function prepareRelease({ source, inventory, releases, sharedAssets, stab
   const releaseRoot = fs.realpathSync(releases);
   const sharedRoot = fs.realpathSync(sharedAssets);
   const testRoot = path.resolve(stableTest);
+  const testPresent = hasStableTestRoot(testRoot);
   if (within(sharedRoot, releaseRoot) || within(releaseRoot, sharedRoot) || within(testRoot, releaseRoot) || within(releaseRoot, testRoot) || within(testRoot, sharedRoot) || within(sharedRoot, testRoot)) throw new Error('Release, asset and test roots must be separate');
   const releaseOwner = fs.statSync(releaseRoot); const sharedOwner = fs.statSync(sharedRoot);
-  const testOwner = fs.statSync(fs.existsSync(testRoot) ? testRoot : path.dirname(testRoot));
+  const testOwner = fs.statSync(testPresent ? testRoot : path.dirname(testRoot));
   if (releaseOwner.uid !== sharedOwner.uid || releaseOwner.gid !== sharedOwner.gid || releaseOwner.uid !== testOwner.uid || releaseOwner.gid !== testOwner.gid || (sharedOwner.mode & 0o022) || (testOwner.mode & 0o022)) {
     throw new Error('Shared asset root ownership or permissions are unsafe');
   }
@@ -238,11 +254,10 @@ export function prepareRelease({ source, inventory, releases, sharedAssets, stab
       }
     }
     fs.symlinkSync(sharedRoot, path.join(staging, 'assets'));
-    fs.symlinkSync(testRoot, path.join(staging, 'test'));
+    if (testPresent) linkStableTest(staging, testRoot);
     writeJson(path.join(staging, '.frontend-inventory.json'), inventory);
     const owner = fs.statSync(staging);
     fs.lchownSync(path.join(staging, 'assets'), owner.uid, owner.gid);
-    fs.lchownSync(path.join(staging, 'test'), owner.uid, owner.gid);
     function seal(dir) {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const item = path.join(dir, entry.name);
@@ -270,10 +285,13 @@ export function verifyPreparedRelease({ release, inventory, sharedAssets, stable
   const assetsLink = path.join(root, 'assets');
   if (!fs.lstatSync(assetsLink).isSymbolicLink() || fs.realpathSync(assetsLink) !== fs.realpathSync(sharedAssets)) throw new Error('Release assets must point to the shared immutable asset store');
   const testLink = path.join(root, 'test');
-  if (!fs.lstatSync(testLink).isSymbolicLink() || path.resolve(path.dirname(testLink), fs.readlinkSync(testLink)) !== path.resolve(stableTest)) throw new Error('Release test path must point to the stable test-subdomain store');
+  const testPresent = hasStableTestRoot(stableTest);
+  const testLinkOwner = fs.lstatSync(testLink, { throwIfNoEntry: false });
+  if (!testPresent && testLinkOwner) throw new Error('Release test path must be absent when the stable test-subdomain root is absent');
+  if (testPresent && (!testLinkOwner?.isSymbolicLink() || path.resolve(path.dirname(testLink), fs.readlinkSync(testLink)) !== path.resolve(stableTest))) throw new Error('Release test path must point to the stable test-subdomain store');
   const owner = fs.statSync(root); const linkOwner = fs.lstatSync(assetsLink); const targetOwner = fs.statSync(sharedAssets);
-  const testLinkOwner = fs.lstatSync(testLink); const testTargetOwner = fs.statSync(fs.existsSync(stableTest) ? stableTest : path.dirname(stableTest));
-  if (linkOwner.uid !== owner.uid || linkOwner.gid !== owner.gid || targetOwner.uid !== owner.uid || targetOwner.gid !== owner.gid || testLinkOwner.uid !== owner.uid || testLinkOwner.gid !== owner.gid || testTargetOwner.uid !== owner.uid || testTargetOwner.gid !== owner.gid) throw new Error('SymLinksIfOwnerMatch ownership check failed');
+  const testTargetOwner = fs.statSync(testPresent ? stableTest : path.dirname(stableTest));
+  if (linkOwner.uid !== owner.uid || linkOwner.gid !== owner.gid || targetOwner.uid !== owner.uid || targetOwner.gid !== owner.gid || (testLinkOwner && (testLinkOwner.uid !== owner.uid || testLinkOwner.gid !== owner.gid)) || testTargetOwner.uid !== owner.uid || testTargetOwner.gid !== owner.gid) throw new Error('SymLinksIfOwnerMatch ownership check failed');
   const recorded = JSON.parse(fs.readFileSync(path.join(root, '.frontend-inventory.json'), 'utf8'));
   if (JSON.stringify(recorded) !== JSON.stringify(inventory)) throw new Error('Release inventory record mismatch');
   for (const file of inventory.files) {
@@ -304,6 +322,14 @@ export async function migrateDocumentRoot({ webroot, base, releases, state, poin
       fs.mkdirSync(stableTest, { mode: 0o755 }); fs.chownSync(stableTest, expectedUid, expectedGid);
     }
     const legacyTest = fs.existsSync(path.join(webroot, 'test')) ? importAppendOnlyTree(path.join(webroot, 'test'), stableTest) : [];
+    // A real legacy test tree may have populated the store after staging.
+    if (hasStableTestRoot(stableTest) && !fs.lstatSync(path.join(candidate, 'test'), { throwIfNoEntry: false })) {
+      const mode = fs.statSync(candidate).mode & 0o777;
+      fs.chmodSync(candidate, mode | 0o200);
+      try { linkStableTest(candidate, stableTest); fsyncDir(candidate); }
+      finally { fs.chmodSync(candidate, mode); }
+    }
+    verifyPreparedRelease({ release: candidate, inventory, sharedAssets, stableTest });
     atomicSymlink(pointer, candidate, { uid: expectedUid, gid: expectedGid });
     fs.symlinkSync(pointer, exchangePath); fs.lchownSync(exchangePath, expectedUid, expectedGid); fsyncDir(path.dirname(webroot));
     writeJson(journalFile, { version: 1, phase: 'prepared', webroot, exchangePath, backupPath, pointer, candidate, legacyAssets, legacyTest });
@@ -397,4 +423,3 @@ export async function recoverActivation({ releases, state, pointer, rollbackSmok
     fs.unlinkSync(journal); fsyncDir(state); return { active: previous };
   } finally { unlock(); }
 }
-
