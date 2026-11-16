@@ -15,6 +15,87 @@ function show(path) {
 }
 
 describe('corporate wishlist', () => {
+  for (const bg of [false, true]) {
+    for (const mode of ['nomination', 'hr']) {
+      it.each(['wasoe.nl', 'www.wasoe.nl', 'https://wasoe.nl', 'wasoe.nl/team/contact?ref=gift'])(
+        `submits a normalized website in ${bg ? 'BG' : 'EN'} ${mode}: %s`, async website => {
+          mocks.post.mockResolvedValue({});
+          show(`${bg ? '/bg' : ''}/wishlist${mode === 'hr' ? '?intent=hr' : ''}`);
+          fireEvent.change(screen.getByLabelText(bg ? 'Име на компанията' : 'Company name'), { target: { value: 'Example' } });
+          const input = screen.getByLabelText(bg
+            ? mode === 'hr' ? 'Уебсайт на компанията (по избор)' : 'Уебсайт на компанията или адрес за контакт'
+            : mode === 'hr' ? 'Company website (optional)' : 'Company website or contact URL');
+          expect(input).toHaveAttribute('type', 'text');
+          expect(input).toHaveAttribute('inputmode', 'url');
+          fireEvent.change(input, { target: { value: website } });
+          if (mode === 'hr') {
+            fireEvent.change(screen.getByLabelText(bg ? 'Вашето име' : 'Your name'), { target: { value: 'HR Person' } });
+            fireEvent.change(screen.getByLabelText(bg ? 'Служебен имейл' : 'Work email'), { target: { value: 'hr@example.com' } });
+          }
+          fireEvent.click(screen.getByRole('checkbox'));
+          fireEvent.click(screen.getByRole('button'));
+          await screen.findByRole('status');
+          expect(mocks.post).toHaveBeenCalledWith('/public/corporate-gift-leads', expect.objectContaining({
+            type: mode, companyWebsite: new URL(website.startsWith('https://') ? website : `https://${website}`).href
+          }));
+        }
+      );
+      it(`rejects invalid websites in ${bg ? 'BG' : 'EN'} ${mode}`, () => {
+        show(`${bg ? '/bg' : ''}/wishlist${mode === 'hr' ? '?intent=hr' : ''}`);
+        fireEvent.change(screen.getByLabelText(bg ? 'Име на компанията' : 'Company name'), { target: { value: 'Example' } });
+        if (mode === 'hr') {
+          fireEvent.change(screen.getByLabelText(bg ? 'Вашето име' : 'Your name'), { target: { value: 'HR Person' } });
+          fireEvent.change(screen.getByLabelText(bg ? 'Служебен имейл' : 'Work email'), { target: { value: 'hr@example.com' } });
+        }
+        for (const website of ['not-a-domain', 'https://user:pass@wasoe.nl', 'javascript:alert(1)', 'ftp://wasoe.nl']) {
+          fireEvent.change(document.querySelector('input[inputmode="url"]'), { target: { value: website } });
+          fireEvent.submit(screen.getByRole('button').closest('form'));
+          expect(screen.getByRole('alert')).toHaveTextContent(bg ? 'валиден' : 'valid');
+          expect(mocks.post).not.toHaveBeenCalled();
+        }
+      });
+    }
+    it(`shares edited personal hints without an API submission in ${bg ? 'BG' : 'EN'}`, async () => {
+      const writeText = vi.fn().mockResolvedValue();
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      show(`${bg ? '/bg' : ''}/wishlist`);
+      fireEvent.click(screen.getByLabelText(bg ? 'Подскажи на любим човек ;)' : 'Hint a loved one ;)'));
+      expect(document.querySelector('form')).not.toBeInTheDocument();
+      const message = screen.getByLabelText(bg ? 'Твоето съобщение' : 'Your message');
+      expect(message.value).toContain('Drift & Dwells');
+      const edited = bg ? 'За нас двамата & приятели ❤️' : 'For us & our friends ❤️';
+      fireEvent.change(message, { target: { value: edited } });
+      const giftUrl = `https://driftdwells.com${bg ? '/bg' : ''}/gift-vouchers`;
+      const whatsapp = screen.getByRole('link', { name: 'WhatsApp' });
+      expect(new URL(whatsapp.href).searchParams.get('text')).toBe(`${edited}\n\n${giftUrl}`);
+      expect(whatsapp).toHaveAttribute('target', '_blank');
+      const email = screen.getByRole('link', { name: bg ? 'Имейл' : 'Email' });
+      expect(new URL(email.href).searchParams.get('body')).toBe(`${edited}\n\n${giftUrl}`);
+      expect(new URL(email.href).searchParams.get('subject')).toContain(bg ? 'подсказка' : 'hint');
+      expect(writeText).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: bg ? 'Копирай линка' : 'Copy Link' }));
+      expect(await screen.findByRole('status')).toHaveTextContent(bg ? 'копиран' : 'copied');
+      expect(writeText).toHaveBeenCalledWith(giftUrl);
+      expect(mocks.post).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByLabelText(bg ? 'Предложение от служител' : 'Employee nomination'));
+      expect(screen.getByRole('checkbox')).not.toBeChecked();
+      fireEvent.click(screen.getByLabelText(bg ? 'Подскажи на любим човек ;)' : 'Hint a loved one ;)'));
+      expect(screen.getByLabelText(bg ? 'Твоето съобщение' : 'Your message')).toHaveValue(edited);
+    });
+  }
+
+  it('reports clipboard failure and keeps a selectable voucher link', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) }, configurable: true
+    });
+    show('/wishlist');
+    fireEvent.click(screen.getByLabelText('Hint a loved one ;)'));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Link' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Select and copy');
+    expect(screen.getByLabelText('Gift-voucher link')).toHaveValue('https://driftdwells.com/gift-vouchers');
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
   it('defaults to private nomination without employee identity and confirms only after save', async () => {
     let resolve;
     mocks.post.mockReturnValue(new Promise((done) => { resolve = done; }));

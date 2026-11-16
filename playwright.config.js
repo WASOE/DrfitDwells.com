@@ -79,7 +79,7 @@ module.exports = defineConfig({
     },
     {
       name: 'release-safety',
-      testMatch: ['**/release-safety/booking-protection.spec.js'],
+      testMatch: ['**/release-safety/booking-protection.spec.js', '**/release-safety/wishlist-sharing.spec.js'],
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },
@@ -89,7 +89,7 @@ module.exports = defineConfig({
     },
     {
       name: 'release-safety-mobile',
-      testMatch: ['**/release-safety/booking-protection.spec.js'],
+      testMatch: ['**/release-safety/booking-protection.spec.js', '**/release-safety/wishlist-sharing.spec.js'],
       use: {
         ...devices['Pixel 7'],
         baseURL: process.env.RELEASE_GATE_BASE_URL,
