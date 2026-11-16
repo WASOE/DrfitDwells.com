@@ -1,5 +1,20 @@
 # Release safety gate
 
+> **PRODUCTION STATUS: LIVE, 16 November 2026.** The initial atomic
+> document-root migration succeeded. For all future frontend releases,
+> use [the atomic frontend deployment runbook](./atomic-frontend-deploy.md),
+> especially its **CURRENT PRODUCTION STATUS** and **Routine frontend update**
+> sections. Do NOT repeat the initial migration or use legacy in-place
+> publishing, blue-green vhost migration, or DirectAdmin rewrite workflows.
+> The initial cutover receipt is at
+> /home/illoc/releases/frontend/state/cutover-43ee143-20261116/cutover-receipt.json.
+>
+> **Historical warning:** The old first-migration/activation/rollback
+> instructions below document abandoned pre-cutover approaches. They are
+> retained only for context and **must not** be executed. The GitHub Actions
+> release-safety CI requirements remain relevant.
+
+
 Booking routes are gated before production. This workflow does not deploy.
 
 ## What runs on every pull request
@@ -27,7 +42,7 @@ contains a **test** Stripe publishable key and is not a production release.
 Its inventory establishes package integrity, not the authenticity of a
 download or production compatibility; associate it with the trusted CI run.
 
-## What blocks a production deploy
+## Historical pre-cutover blockers (obsolete, do not execute)
 
 **The initial atomic migration is implemented but is not authorized.** The
 existing in-place publisher remains blocked because it can leave nested
@@ -82,7 +97,7 @@ artifact and evidence have been independently verified. Do not use the
 staging or activation commands as a production procedure until that
 independent rollback and deployment prerequisites are resolved.
 
-### First migration and activation (not yet authorized)
+### Archived first migration and activation (obsolete, do not execute)
 
 Do not run these commands until the PR is approved and merged, the artifact
 workflow and its exact production candidate have passed, the actual hosting
@@ -185,7 +200,7 @@ https://github.com/settings/personal-access-tokens/new?name=drift-dwells-release
 
 Install that token only in `/home/illoc/.config/gh` as mode `600`. Do not paste it into chat, logs, or the repository. Until it exists, `gh run view` returns 401 and publication fails closed.
 
-## Rollback
+## Historical rollback of abandoned migration path (obsolete, do not execute)
 
 The legacy `WEBROOT` publisher snapshots only `index.html`, `sw.js`,
 `.htaccess`, and `release-manifest.json` in
