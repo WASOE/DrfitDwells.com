@@ -54,7 +54,9 @@ export async function observeTestSubdomain({ fetchImpl = fetch, timeoutMs = 1000
     const location = observed.location;
     if (location) {
       const target = new URL(location, url);
-      if (!['http:', 'https:'].includes(target.protocol) || target.hostname !== TEST_HOST || target.username || target.password || target.port) throw new Error('Unsafe test-subdomain redirect');
+      const testTarget = ['http:', 'https:'].includes(target.protocol) && target.hostname === TEST_HOST;
+      const establishedApexTarget = target.href === 'https://driftdwells.com/';
+      if ((!testTarget && !establishedApexTarget) || target.username || target.password || target.port) throw new Error('Unsafe test-subdomain redirect');
     }
     observations.push({ protocol, status: observed.status ?? null, location: location || null,
       contentType: observed.contentType || null, ...(observed.tlsError ? { tlsError: observed.tlsError } : {}) });

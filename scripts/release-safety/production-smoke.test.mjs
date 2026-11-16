@@ -120,3 +120,18 @@ test('records a pre-existing TLS certificate failure without disabling certifica
     return { status: 301, location: 'https://test.driftdwells.com/', contentType: null };
   } }), /connection reset/);
 });
+
+test('accepts only the established exact production-apex redirect in the test baseline', async () => {
+  const originRequest = async protocol => protocol === 'http:'
+    ? { status: 301, location: 'https://driftdwells.com/', contentType: null }
+    : Promise.reject(Object.assign(new Error('certificate expired'), { code: 'CERT_HAS_EXPIRED' }));
+  const baseline = await observeTestSubdomain({ originIp: '192.0.2.10', originRequest });
+  assert.equal(baseline[0].location, 'https://driftdwells.com/');
+  assert.equal((await verifyTestSubdomainBaseline(baseline, { originIp: '192.0.2.10', originRequest })).ok, true);
+  for (const location of ['http://driftdwells.com/', 'https://www.driftdwells.com/',
+    'https://driftdwells.com/path', 'https://evil.example/']) {
+    await assert.rejects(observeTestSubdomain({ originIp: '192.0.2.10', originRequest: async protocol => protocol === 'http:'
+      ? { status: 301, location, contentType: null }
+      : { status: 404, location: null, contentType: 'text/html' } }), /Unsafe test-subdomain redirect/);
+  }
+});
