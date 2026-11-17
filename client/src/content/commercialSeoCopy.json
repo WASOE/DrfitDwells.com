@@ -1,0 +1,886 @@
+{
+  "forest-cabin-for-two-bulgaria": {
+    "en": {
+      "title": "Forest Cabin for Two in Bulgaria | Drift & Dwells",
+      "description": "A secluded forest cabin for two near Bansko, with a wood stove, simple off-grid comforts and no guest Wi-Fi. Find your quiet weekend in Bulgaria.",
+      "h1": "A little cabin in the forest. Just for two.",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "There are easier places to spend a weekend. You could pull into a hotel car park, collect a key and order dinner from a menu. At The Cabin, the journey ends on a rough forest road near Bachevo, about 15 km from Bansko. You bring what you need, light the wood stove and settle into a place that asks very little of you, apart from being there."
+        },
+        {
+          "type": "p",
+          "text": "The Cabin belongs to two people at a time. No neighbouring rooms. No breakfast buffet. No guest Wi-Fi. You can hear the wind in the trees, put the kettle on the gas stove and leave your phone somewhere you won't keep checking it."
+        },
+        {
+          "type": "p",
+          "text": "If that's the kind of weekend you're after, you've found your place."
+        },
+        {
+          "type": "p",
+          "text": "[See The Cabin and check your dates](/cabin/)"
+        },
+        {
+          "type": "h2",
+          "text": "What a stay here actually feels like"
+        },
+        {
+          "type": "p",
+          "text": "The first hour is usually about arriving. Carrying in your bag. Getting the fire going. Figuring out where the light falls as evening comes through the trees. Then there's nothing scheduled. You can read in bed, cook something simple, take a slow walk or spend an entire afternoon talking."
+        },
+        {
+          "type": "p",
+          "text": "You'll be looking after the fire and keeping the space comfortable yourself. The routine is part of the stay, but it isn't for everyone. If you prefer hotel-style facilities, choose a more conventional place to sleep."
+        },
+        {
+          "type": "p",
+          "text": "Inside, the essentials are deliberately simple. The cabin sleeps two. There's a wood stove for heat, a gas stove for cooking, basic solar lighting and a composting toilet. Washing water is heated manually. There are no ordinary power sockets for charging your devices, so bring a power bank if you need one."
+        },
+        {
+          "type": "p",
+          "text": "This is a proper off-grid stay, not a conventional holiday home dressed up to look rustic."
+        },
+        {
+          "type": "h2",
+          "text": "Is it right for you?"
+        },
+        {
+          "type": "p",
+          "text": "If you like the idea of doing a little work for your comfort, you'll probably love it. If you want room service, a long hot shower, a hair dryer and a guaranteed mobile signal, we'd rather tell you now: choose somewhere else, or look at our [Luxury Cabin at The Valley](/stays/lux-cabin/)."
+        },
+        {
+          "type": "p",
+          "text": "The Cabin is especially good for two people who don't need an itinerary. An anniversary without a restaurant reservation. A birthday with no guests to entertain. Or a weekend when you simply want to spend time together without the usual interruptions."
+        },
+        {
+          "type": "h2",
+          "text": "Getting here"
+        },
+        {
+          "type": "p",
+          "text": "The Cabin is near Bachevo in southwestern Bulgaria. The final approach is a rough forest road, and a vehicle with good ground clearance is recommended. Follow the park-and-walk instructions we send after booking, not a map pin dropped directly onto the building. Snow, mud and rain can change the conditions quickly."
+        },
+        {
+          "type": "p",
+          "text": "Check-in is from 15:00, and checkout is by 11:00. Save your directions before leaving: phone coverage can be unreliable around the cabin."
+        },
+        {
+          "type": "h2",
+          "text": "Your weekend, on your terms"
+        },
+        {
+          "type": "p",
+          "text": "We won't tell you how to reconnect, recharge or transform your life. It's a small wooden cabin among the trees. The fire needs tending, the water takes effort, and the silence is real. For the right two people, that's enough."
+        },
+        {
+          "type": "p",
+          "text": "[Explore The Cabin and check availability](/cabin/)"
+        },
+        {
+          "type": "p",
+          "text": "[Read the practical FAQ before booking](/cabin/faq/)"
+        }
+      ]
+    },
+    "bg": {
+      "title": "Къщичка в гората за двама | Drift & Dwells",
+      "description": "Самостоятелна къщичка в гората край Банско за двама. Печка на дърва, истинско усамотение и без Wi-Fi за гости. Разгледайте условията.",
+      "h1": "Къщичка в гората за двама. И никой друг.",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Може да прекарате уикенда и по лесния начин. Да паркирате пред хотел, да вземете ключа и да поръчате вечеря. До нашата къщичка се стига по горски път над Бачево, на около 15 км от Банско. Внасяте багажа, палите печката и оставате насаме с гората."
+        },
+        {
+          "type": "p",
+          "text": "The Cabin е само за двама. Няма съседна стая, ресторант или Wi-Fi за гости. Има дървета, тишина, печка на дърва и време, което не е нужно да запълвате с нищо."
+        },
+        {
+          "type": "p",
+          "text": "Ако търсите къщичка в гората, а не поредния хотел с дървена облицовка, тук ще се почувствате на място."
+        },
+        {
+          "type": "p",
+          "text": "[Разгледайте The Cabin и проверете свободните дати](/bg/cabin/)"
+        },
+        {
+          "type": "h2",
+          "text": "Как минава един ден тук"
+        },
+        {
+          "type": "p",
+          "text": "Първо разтоварвате багажа. После палите огъня. Става уютно и някак естествено преставате да гледате часовника. Може да си направите кафе, да излезете на разходка, да четете или да останете цял следобед в леглото. Няма програма, която да изпускате."
+        },
+        {
+          "type": "p",
+          "text": "Тук сами се грижите за огъня и за уюта. Няма хотелски удобства, които да се появяват с натискането на бутон. Затова е важно да знаете предварително какво ви очаква."
+        },
+        {
+          "type": "p",
+          "text": "Вътре условията са семпли и истински. Къщичката е за двама, отоплява се с печка на дърва, има газов котлон, основно соларно осветление и компостираща тоалетна. Водата за миене се затопля ръчно. Няма стандартни контакти за зареждане на телефони, така че вземете външна батерия, ако ви трябва."
+        },
+        {
+          "type": "p",
+          "text": "Това е действително място извън мрежата. Не е обикновена вила, представена като приключение."
+        },
+        {
+          "type": "h2",
+          "text": "Подходящо ли е за вас?"
+        },
+        {
+          "type": "p",
+          "text": "Ако нямате нищо против сами да се погрижите за огъня и топлата вода, вероятно ще ви хареса. Ако държите на румсървис, сешоар, дълъг горещ душ и постоянен обхват, това не е правилният избор. За повече удобства вижте [Luxury Cabin в The Valley](/bg/valley/)."
+        },
+        {
+          "type": "p",
+          "text": "The Cabin е чудесно място за годишнина без задължителна вечеря в ресторант, рожден ден без шумна компания или просто два дни, в които най-после имате време един за друг."
+        },
+        {
+          "type": "h2",
+          "text": "Как се стига"
+        },
+        {
+          "type": "p",
+          "text": "Къщичката е над Бачево, в района на Разлог. Последният участък е неравен горски път. Препоръчваме автомобил с по-висок просвет. След резервацията изпращаме точни указания до мястото за паркиране и краткия подход пеша. Не следвайте директно координатите на самата постройка."
+        },
+        {
+          "type": "p",
+          "text": "Настаняването е след 15:00 ч., а освобождаването е до 11:00 ч. Запазете указанията предварително, защото телефонният сигнал може да изчезне по пътя."
+        },
+        {
+          "type": "h2",
+          "text": "Два дни, които си принадлежат на вас"
+        },
+        {
+          "type": "p",
+          "text": "Няма да ви обещаваме, че един уикенд ще промени живота ви. Това е малка дървена къщичка в гората. Огънят трябва да се поддържа, водата да се затопли, а тишината е съвсем истинска. Понякога точно това е достатъчно."
+        },
+        {
+          "type": "p",
+          "text": "[Разгледайте къщичката и проверете наличността](/bg/cabin/)"
+        },
+        {
+          "type": "p",
+          "text": "[Прочетете подробните условия преди резервация](/bg/cabin/)"
+        }
+      ]
+    }
+  },
+  "romantic-mountain-getaway-bulgaria": {
+    "en": {
+      "title": "Romantic Mountain Getaway for Two | Drift & Dwells",
+      "description": "Planning a romantic mountain break in Bulgaria? Choose a secluded forest cabin or a more comfortable cabin with Rhodope views. Find your kind of weekend.",
+      "h1": "A romantic mountain getaway, without the usual fuss",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "You don't need rose petals on a bed to make a weekend feel special. Sometimes you just need somewhere new, a long evening and no reason to hurry home."
+        },
+        {
+          "type": "p",
+          "text": "At Drift & Dwells, we have two very different places for a couple to disappear into the mountains for a few days. One is a little wooden cabin alone in the forest. The other is a comfortable private cabin high above the villages of the Rhodopes. Neither involves a fixed programme or a schedule someone else has chosen for you."
+        },
+        {
+          "type": "p",
+          "text": "The choice is simple: what kind of time together do you want?"
+        },
+        {
+          "type": "h2",
+          "text": "The Cabin: for the two of you and the forest"
+        },
+        {
+          "type": "p",
+          "text": "Near Bachevo, about 15 km from Bansko, [The Cabin](/cabin/) is the most private stay we offer. It's tucked away among trees, with a wood stove inside and no guest Wi-Fi. Mobile coverage can be patchy. Once you're there, it's easy to forget about everything beyond the forest."
+        },
+        {
+          "type": "p",
+          "text": "It's also our most hands-on stay. You'll light the stove and heat washing water yourself. There are no standard power outlets or hotel-style bathroom facilities. Some couples love doing these little things together. Others would rather spend the evening with a hot shower and a book."
+        },
+        {
+          "type": "p",
+          "text": "There's no right answer, but it's worth choosing honestly."
+        },
+        {
+          "type": "p",
+          "text": "[See The Cabin](/cabin/)"
+        },
+        {
+          "type": "h2",
+          "text": "Luxury Cabin: for comfort and wide-open views"
+        },
+        {
+          "type": "p",
+          "text": "At [The Valley](/valley/), around 30 km from Bansko near Chereshovo, our [Luxury Cabin](/stays/lux-cabin/) is built for two people who like having comfort without staying in a busy hotel. It has heating, modern amenities and expansive mountain views."
+        },
+        {
+          "type": "p",
+          "text": "The cabin itself is private, while the surrounding land is shared with guests in the other A-frames and the Stone House. You might spend most of your time on your own, then wander out to the communal fire area as the evening cools. It's a different feeling from the complete seclusion of The Cabin, and for some couples it's exactly the right balance."
+        },
+        {
+          "type": "p",
+          "text": "One important detail: you park near Chereshovo and reach The Valley by a walk of approximately 2.5 km or an arranged transfer. Starlink is available in the Stone House, not inside the Luxury Cabin."
+        },
+        {
+          "type": "p",
+          "text": "[Explore Luxury Cabin](/stays/lux-cabin/)"
+        },
+        {
+          "type": "h2",
+          "text": "Make the weekend yours"
+        },
+        {
+          "type": "p",
+          "text": "Bring a bottle of something you both like. Pack breakfast. Choose a playlist for the drive, then put the phone away. You can celebrate an anniversary, give someone a surprise trip or book a weekend for no reason at all."
+        },
+        {
+          "type": "p",
+          "text": "We don't sell romance as an add-on. We provide the place; you decide what the time together looks like."
+        },
+        {
+          "type": "h2",
+          "text": "Not sure which one to book?"
+        },
+        {
+          "type": "p",
+          "text": "Choose **The Cabin** for complete privacy, a rustic off-grid experience and a forest around you. Choose **Luxury Cabin** for better everyday comfort, mountain views and a small shared village around your private space."
+        },
+        {
+          "type": "p",
+          "text": "Both places are remote, and the approach matters. Read the arrival information before booking, especially in winter."
+        },
+        {
+          "type": "p",
+          "text": "[Check The Cabin dates](/cabin/) · [Check Luxury Cabin dates](/stays/lux-cabin/)"
+        }
+      ]
+    },
+    "bg": {
+      "title": "Романтична почивка за двама в планината | Drift & Dwells",
+      "description": "Уикенд за двама в България: усамотена къщичка в гората или уютна къща с гледка към Родопите. Изберете вашето място.",
+      "h1": "Романтична почивка за двама, без излишна програма",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Не са ви нужни розови листенца по леглото, за да прекарате хубав уикенд заедно. Понякога стигат друго място, спокойна вечер и усещането, че никъде не бързате."
+        },
+        {
+          "type": "p",
+          "text": "В Drift & Dwells имаме две много различни предложения за романтична почивка в планината. Едното е малка дървена къщичка, скрита в гората. Другото е самостоятелна къща с повече удобства и просторна гледка към Родопите. Няма задължителни активности, няма график и няма нужда да правите нищо специално."
+        },
+        {
+          "type": "p",
+          "text": "Остава само да изберете как искате да прекарате времето си."
+        },
+        {
+          "type": "h2",
+          "text": "The Cabin: само вие и гората"
+        },
+        {
+          "type": "p",
+          "text": "[The Cabin](/bg/cabin/) е над Бачево, на около 15 км от Банско. Това е най-усамотеното ни място. Вътре има печка на дърва, а наоколо само гора. Няма Wi-Fi за гости, а телефонният обхват на места е слаб."
+        },
+        {
+          "type": "p",
+          "text": "Важно е обаче да знаете, че тук удобствата не идват с натискането на бутон. Сами палите печката и затопляте вода за миене. Няма обикновени контакти и стандартна хотелска баня."
+        },
+        {
+          "type": "p",
+          "text": "За някои двойки точно това е чарът на мястото. За други по-приятната вечер включва повече комфорт. И двата избора са напълно нормални."
+        },
+        {
+          "type": "p",
+          "text": "[Вижте The Cabin](/bg/cabin/)"
+        },
+        {
+          "type": "h2",
+          "text": "Luxury Cabin: удобство и просторна гледка"
+        },
+        {
+          "type": "p",
+          "text": "[Luxury Cabin](/bg/valley/) се намира в [The Valley](/bg/valley/), близо до Черешово, на около 30 км от Банско. Къщата е за двама и предлага отопление, модерни удобства и гледка, която си струва да поседите и да погледате."
+        },
+        {
+          "type": "p",
+          "text": "Самата къща е самостоятелна, но теренът около нея се споделя с гостите на останалите къщички и каменната къща. Може да прекарате почти целия ден само двамата, а вечерта да слезете до общото огнище. Това не е пълната изолация на The Cabin, но за много хора е по-добрият баланс."
+        },
+        {
+          "type": "p",
+          "text": "До The Valley не се стига с личен автомобил до самата врата. Паркира се край Черешово, откъдето има около 2,5 км пеша или предварително уговорен трансфер. Интернет чрез Starlink има в каменната къща, не в Luxury Cabin."
+        },
+        {
+          "type": "p",
+          "text": "[Разгледайте Luxury Cabin](/bg/valley/)"
+        },
+        {
+          "type": "h2",
+          "text": "Няма правилен начин да празнувате"
+        },
+        {
+          "type": "p",
+          "text": "Може да е годишнина. Може да е изненада за рожден ден. Може просто да сте намерили два свободни дни в календара. Вземете нещо вкусно за вечеря, любимото си кафе за сутринта и оставете останалото на настроението си."
+        },
+        {
+          "type": "p",
+          "text": "Ние не продаваме романтика като допълнителна услуга. Даваме ви хубаво място, а как ще го преживеете, решавате вие."
+        },
+        {
+          "type": "h2",
+          "text": "Кое място да изберете?"
+        },
+        {
+          "type": "p",
+          "text": "Изберете **The Cabin**, ако искате пълно усамотение, гора и истинско оф-грид преживяване. Изберете **Luxury Cabin**, ако предпочитате повече удобства, планинска гледка и самостоятелна къща в малко споделено селище."
+        },
+        {
+          "type": "p",
+          "text": "И двете места са отдалечени. Прочетете указанията за достъп, особено ако пътувате през зимата."
+        },
+        {
+          "type": "p",
+          "text": "[Проверете датите за The Cabin](/bg/cabin/) · [Проверете датите за Luxury Cabin](/bg/valley/)"
+        }
+      ]
+    }
+  },
+  "rhodope-mountain-cabins": {
+    "en": {
+      "title": "Cabins to Rent in the Rhodope Mountains | Drift & Dwells",
+      "description": "Stay in the Rhodope Mountains near Chereshovo. Choose an A-frame, a private Luxury Cabin or a stone house, with mountain views and space to slow down.",
+      "h1": "Cabins to rent in the Rhodope Mountains",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Some places make sense the moment you arrive. The Valley is one of them: a handful of small cabins, an old stone house, a shared fire area and a great deal of open mountain around them."
+        },
+        {
+          "type": "p",
+          "text": "We're in the Rhodopes near Chereshovo and Ortsevo, about 30 km from Bansko. Not in a resort, and not beside a main road. The Valley sits high in the mountains, where the day can be as simple as coffee outside, a walk, a few hours with a book and dinner with people you like."
+        },
+        {
+          "type": "p",
+          "text": "You don't have to rent the whole place. Come as two people, a family or a group of friends and choose the stay that fits."
+        },
+        {
+          "type": "p",
+          "text": "[Explore The Valley and check availability](/valley/)"
+        },
+        {
+          "type": "h2",
+          "text": "Three ways to stay"
+        },
+        {
+          "type": "h3",
+          "text": "A-frames for two"
+        },
+        {
+          "type": "p",
+          "text": "Five compact A-frame cabins sit within the village. Each sleeps two people. They're a good fit if you want a simple mountain stay with your own space to return to at the end of the day. The landscape is shared; your sleeping cabin isn't."
+        },
+        {
+          "type": "h3",
+          "text": "Luxury Cabin for two"
+        },
+        {
+          "type": "p",
+          "text": "Want more everyday comfort? The [Luxury Cabin](/stays/lux-cabin/) has heating, modern amenities and broad mountain views. It's private accommodation inside The Valley, rather than a separate property hidden from everyone else."
+        },
+        {
+          "type": "h3",
+          "text": "Stone House for friends and family"
+        },
+        {
+          "type": "p",
+          "text": "The old Stone House accommodates up to six guests. It gives families and small groups a place to stay together instead of splitting across several cabins. Starlink internet is available here; the individual A-frames and Luxury Cabin don't have guest Wi-Fi."
+        },
+        {
+          "type": "p",
+          "text": "[Compare the stays at The Valley](/valley/)"
+        },
+        {
+          "type": "h2",
+          "text": "What happens between the cabins"
+        },
+        {
+          "type": "p",
+          "text": "Quite a lot, if you want it to. People meet at the shared fire pit, sit outside in the evening or wander off to enjoy the views. There is also a wood-fired outdoor hot tub on the site. Its use depends on the current arrangements and conditions, so check the details of your stay rather than assuming it's a private tub for your cabin."
+        },
+        {
+          "type": "p",
+          "text": "Some days everyone is outside; on others, the mountain feels very quiet. If complete isolation is your priority, our separate [forest Cabin near Bachevo](/cabin/) is the better choice."
+        },
+        {
+          "type": "h2",
+          "text": "A mountain stay takes a little planning"
+        },
+        {
+          "type": "p",
+          "text": "Your arrival point is near Chereshovo. You park there and cover the last stretch, approximately 2.5 km, on foot or using a transfer arranged in advance. The walk takes about 45 minutes in ordinary conditions. Don't attempt to drive a normal car all the way to The Valley."
+        },
+        {
+          "type": "p",
+          "text": "The access is part of what keeps this place different. It also means you should pack sensibly, think about luggage and allow extra time in bad weather."
+        },
+        {
+          "type": "h2",
+          "text": "Can a group book the entire Valley?"
+        },
+        {
+          "type": "p",
+          "text": "Yes. When all accommodation is available, a private booking can include five A-frames, the Luxury Cabin and Stone House, sleeping up to 18 guests across seven separate stays. That works well for a birthday, a family gathering or a small company retreat. For a whole-site reservation, no other guests share the village."
+        },
+        {
+          "type": "p",
+          "text": "[See private hire options](/retreats/the-valley/)"
+        },
+        {
+          "type": "h2",
+          "text": "Choose your dates, then come up the mountain"
+        },
+        {
+          "type": "p",
+          "text": "The Valley doesn't need a long itinerary. It needs the right company, the right clothes and a little willingness to let the day unfold."
+        },
+        {
+          "type": "p",
+          "text": "[See The Valley's accommodation and live dates](/valley/)"
+        }
+      ]
+    },
+    "bg": {
+      "title": "Къщички под наем в Родопите | Drift & Dwells",
+      "description": "Планински къщички под наем в Родопите край Черешово: A-frame къщички за двама, Luxury Cabin и каменна къща за семейства и приятели.",
+      "h1": "Къщички под наем в Родопите, далеч от курортния шум",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "В The Valley няма голям хотел и редици паркирани коли пред стаите. Има няколко малки къщички, стара каменна къща, общо огнище и планина, докъдето стига погледът."
+        },
+        {
+          "type": "p",
+          "text": "Намираме се край Черешово и Орцево, в Родопите, на около 30 км от Банско. Тук идват хора, на които не им трябва натоварена програма. Сутрешно кафе навън, разходка, книга, вечеря с приятели и време за разговор без постоянно бързане."
+        },
+        {
+          "type": "p",
+          "text": "Не е необходимо да наемате цялото място. Може да дойдете двама, със семейството или с приятели и да изберете къщичката, която ви подхожда."
+        },
+        {
+          "type": "p",
+          "text": "[Разгледайте The Valley и свободните дати](/bg/valley/)"
+        },
+        {
+          "type": "h2",
+          "text": "Къде може да отседнете"
+        },
+        {
+          "type": "h3",
+          "text": "A-frame къщички за двама"
+        },
+        {
+          "type": "p",
+          "text": "В The Valley има пет компактни A-frame къщички, всяка с място за двама. Подходящи са, ако търсите по-семпла почивка сред природата и искате да имате свое място за сън и почивка. Дворът и общите пространства се споделят с останалите гости."
+        },
+        {
+          "type": "h3",
+          "text": "Luxury Cabin за двама"
+        },
+        {
+          "type": "p",
+          "text": "[Luxury Cabin](/bg/valley/) е за хората, които искат повече удобства. Има отопление, съвременно оборудване и широка гледка към планината. Къщата е самостоятелна, но е част от The Valley, а не отделен имот, скрит далеч от другите."
+        },
+        {
+          "type": "h3",
+          "text": "Каменната къща за семейство или компания"
+        },
+        {
+          "type": "p",
+          "text": "Старата каменна къща побира до шестима души. Удобен избор е, когато искате да сте заедно под един покрив, вместо да се разпределяте по няколко къщички. Тук има Starlink интернет. В A-frame къщичките и Luxury Cabin няма Wi-Fi за гости."
+        },
+        {
+          "type": "p",
+          "text": "[Сравнете местата за настаняване](/bg/valley/)"
+        },
+        {
+          "type": "h2",
+          "text": "Мястото между къщичките също е част от почивката"
+        },
+        {
+          "type": "p",
+          "text": "Може да се съберете около общото огнище, да поседите навън или просто да се разходите заради гледката. На територията има и външна вана с подгряване на дърва. Ползването ѝ зависи от конкретните условия и организация, затова не я приемайте за лично удобство към всяка къщичка."
+        },
+        {
+          "type": "p",
+          "text": "Ако искате да сте напълно сами, без други гости наоколо, по-добрият избор е [The Cabin в гората край Бачево](/bg/cabin/)."
+        },
+        {
+          "type": "h2",
+          "text": "Как се стига до The Valley"
+        },
+        {
+          "type": "p",
+          "text": "Паркира се на определеното място край Черешово. Оттам остават около 2,5 км до къщичките, приблизително 45 минути пеша при нормални условия, или предварително уговорен трансфер. Не се опитвайте да стигнете с обикновен автомобил до самото селище."
+        },
+        {
+          "type": "p",
+          "text": "Това е една от причините мястото да е толкова спокойно. Но означава и да помислите за багажа, времето и пътя още преди да тръгнете."
+        },
+        {
+          "type": "h2",
+          "text": "Може ли да наемете цялата долина?"
+        },
+        {
+          "type": "p",
+          "text": "Да. При наличност на всички места за настаняване The Valley побира до 18 гости: пет A-frame къщички, Luxury Cabin и каменната къща. Може да организирате рожден ден, семейно събиране или фирмено пътуване, без други гости на територията."
+        },
+        {
+          "type": "p",
+          "text": "[Вижте възможностите за наемане на цялото място](/bg/valley/)"
+        },
+        {
+          "type": "h2",
+          "text": "Изберете дата и тръгнете към планината"
+        },
+        {
+          "type": "p",
+          "text": "Тук не е нужна дълга програма. Достатъчни са подходящи дрехи, добра компания и желание да прекарате деня малко по-бавно."
+        },
+        {
+          "type": "p",
+          "text": "[Проверете къщичките и свободните дати](/bg/valley/)"
+        }
+      ]
+    }
+  },
+  "a-frame-cabins-bulgaria": {
+    "en": {
+      "title": "A-Frame Cabins in Bulgaria's Rhodopes | Drift & Dwells",
+      "description": "Stay in an A-frame cabin for two at The Valley in Bulgaria's Rhodope Mountains. Simple interiors, big views and a shared mountain village.",
+      "h1": "A-frame cabins for two, high in the Rhodope Mountains",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Our A-frames don't try to be tiny luxury hotels. They're small places to sleep, wake up to a mountain view and spend more time outside than you normally would."
+        },
+        {
+          "type": "p",
+          "text": "There are five of them at The Valley, our little off-grid village near Chereshovo in Bulgaria's Rhodope Mountains. Each is made for two people. You have your own cabin, with the rest of the land shared between the guests staying here."
+        },
+        {
+          "type": "p",
+          "text": "It's a good setup for a couple who wants a few quiet days, a solo traveller who likes having space, or friends who would rather book neighbouring cabins than squeeze into one house."
+        },
+        {
+          "type": "p",
+          "text": "[Find an A-frame at The Valley](/valley/)"
+        },
+        {
+          "type": "h2",
+          "text": "Small on purpose"
+        },
+        {
+          "type": "p",
+          "text": "You don't come to an A-frame for a huge living room. You come for the feeling of being in a small, sheltered space with the mountains right outside."
+        },
+        {
+          "type": "p",
+          "text": "Morning is usually the best argument for staying: open the door, see what the weather is doing, make coffee and decide whether today is for walking or sitting still. In the evening, you can head to the shared fire area, meet the other guests if you feel like it, then return to your own place."
+        },
+        {
+          "type": "p",
+          "text": "It's worth being clear about privacy. Your cabin is private. The Valley itself isn't reserved exclusively for you unless you book the whole site. If you want absolute seclusion, see [The Cabin in the forest](/cabin/) instead."
+        },
+        {
+          "type": "h2",
+          "text": "What else is at The Valley?"
+        },
+        {
+          "type": "p",
+          "text": "Alongside the A-frames are a Luxury Cabin for two and a Stone House that accommodates up to six guests. The outdoor spaces, including the communal fire pit, are part of the wider village. A wood-fired hot tub is also on site, with use subject to the current arrangements and conditions."
+        },
+        {
+          "type": "p",
+          "text": "There's no guest Wi-Fi in the A-frames. Starlink is available in the Stone House. That makes these little cabins a good option if you'd prefer a weekend without constant notifications, while knowing there is a connected shared building on site."
+        },
+        {
+          "type": "p",
+          "text": "The A-frames are intentionally simpler than the [Luxury Cabin](/stays/lux-cabin/). If having more extensive private amenities is important to you, compare both before booking."
+        },
+        {
+          "type": "h2",
+          "text": "The journey is part of the stay"
+        },
+        {
+          "type": "p",
+          "text": "The Valley is around 30 km from Bansko, near Chereshovo and Ortsevo. You'll drive to the designated parking near Chereshovo, then continue approximately 2.5 km on foot or by pre-arranged transfer. Expect roughly 45 minutes of walking in normal conditions. Please don't drive an ordinary car past the parking point."
+        },
+        {
+          "type": "p",
+          "text": "Pack for mountain weather, not just the forecast in town. And because you're staying somewhere remote, read the information for your chosen cabin before you travel, including the precise facilities and any seasonal arrangements."
+        },
+        {
+          "type": "h2",
+          "text": "Coming with friends?"
+        },
+        {
+          "type": "p",
+          "text": "Booking more than one A-frame means each pair has its own space, but everyone can gather outside. When available, you can also book the entire Valley for a private group of up to 18 overnight guests across all accommodation."
+        },
+        {
+          "type": "p",
+          "text": "If you're booking for two, choose the dates that suit you and let the mountain provide the rest."
+        },
+        {
+          "type": "p",
+          "text": "[Explore the A-frames and check available dates](/valley/)"
+        }
+      ]
+    },
+    "bg": {
+      "title": "A-frame къщички под наем в Родопите | Drift & Dwells",
+      "description": "A-frame къщички за двама в The Valley, Родопите. Самостоятелно място за нощувка, красиви гледки и общи пространства сред планината.",
+      "h1": "A-frame къщички под наем, високо в Родопите",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Нашите A-frame къщички не са миниатюрни луксозни хотели. Те са малки места, в които да преспите, да се събудите с гледка към планината и да прекарвате повече време навън."
+        },
+        {
+          "type": "p",
+          "text": "В The Valley, близо до Черешово в Родопите, има пет такива къщички. Всяка е за двама души. Имате собствено място за нощувка, а теренът и общите пространства се споделят с другите гости."
+        },
+        {
+          "type": "p",
+          "text": "Подходящи са за двойка, която иска няколко спокойни дни, за човек, който пътува сам, или за приятели, които предпочитат да резервират две съседни къщички, вместо да спят всички в една стая."
+        },
+        {
+          "type": "p",
+          "text": "[Разгледайте A-frame къщичките в The Valley](/bg/valley/)"
+        },
+        {
+          "type": "h2",
+          "text": "Малки, и точно това им е хубавото"
+        },
+        {
+          "type": "p",
+          "text": "Не идвате в A-frame къщичка заради огромна всекидневна. Идвате заради усещането да сте на защитено, уютно място, а планината да е точно отвън."
+        },
+        {
+          "type": "p",
+          "text": "Сутрин отваряте вратата, виждате какво е времето, правите си кафе и решавате дали денят е за разходка, или за нищо особено. Вечер може да се съберете около общото огнище, да поговорите с други гости и после да се приберете в своята къщичка."
+        },
+        {
+          "type": "p",
+          "text": "Има една важна разлика: къщичката е самостоятелна, но цялата долина не е само ваша. Ако искате да няма никой друг наоколо, разгледайте [The Cabin в гората](/bg/cabin/)."
+        },
+        {
+          "type": "h2",
+          "text": "Какво друго има на място?"
+        },
+        {
+          "type": "p",
+          "text": "В The Valley има още Luxury Cabin за двама и каменна къща за до шестима души. Всички споделят външните пространства, включително общото огнище. На територията има и вана с подгряване на дърва, чието ползване зависи от конкретните условия и организация."
+        },
+        {
+          "type": "p",
+          "text": "В A-frame къщичките няма Wi-Fi за гости. Starlink има в каменната къща. Така може да прекарате уикенда без постоянни известия, но да знаете къде има интернет, ако ви потрябва."
+        },
+        {
+          "type": "p",
+          "text": "A-frame къщичките са по-семпли от [Luxury Cabin](/bg/valley/). Ако държите на повече удобства в самата къща, сравнете двата варианта, преди да резервирате."
+        },
+        {
+          "type": "h2",
+          "text": "Как се стига"
+        },
+        {
+          "type": "p",
+          "text": "The Valley е на около 30 км от Банско, край Черешово и Орцево. С кола се стига до определен паркинг близо до Черешово. След това има около 2,5 км пеша или предварително уговорен трансфер. При нормално време ходенето отнема приблизително 45 минути. Не продължавайте с обикновен автомобил след паркинга."
+        },
+        {
+          "type": "p",
+          "text": "Вземете дрехи за планина, не само за времето в града. Преди тръгване прочетете условията за конкретната къщичка и актуалната информация за достъпа."
+        },
+        {
+          "type": "h2",
+          "text": "А ако сте с приятели?"
+        },
+        {
+          "type": "p",
+          "text": "Може да резервирате няколко A-frame къщички и всяка двойка да има свое пространство, а вечер да се събирате навън. При наличност може да наемете и цялата долина за група до 18 души във всички места за настаняване."
+        },
+        {
+          "type": "p",
+          "text": "Ако идвате двама, остава само да изберете дати."
+        },
+        {
+          "type": "p",
+          "text": "[Вижте къщичките и проверете свободните дати](/bg/valley/)"
+        }
+      ]
+    }
+  },
+  "romantic-cabin-near-bansko": {
+    "en": {
+      "title": "Romantic Cabin Near Bansko for Two | Drift & Dwells",
+      "description": "Looking for a romantic cabin near Bansko? Discover a private forest cabin near Bachevo and a comfortable mountain cabin near Chereshovo.",
+      "h1": "Looking for a romantic cabin near Bansko?",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "You might be coming to Bansko for a few days and want one night somewhere quieter. Or perhaps you've been to town before and this time you're after the mountains, not the bars and busy streets."
+        },
+        {
+          "type": "p",
+          "text": "We're not in central Bansko. That's the point. Drift & Dwells has two places within the wider Bansko and Razlog area, both made for spending time together and both very different from a hotel room."
+        },
+        {
+          "type": "p",
+          "text": "One is a little cabin completely alone in the forest. The other is a private, more comfortable cabin looking out over the Rhodopes. Here's how to choose."
+        },
+        {
+          "type": "h2",
+          "text": "The Cabin near Bachevo: just the two of you"
+        },
+        {
+          "type": "p",
+          "text": "[The Cabin](/cabin/) is about 15 km from Bansko, near Bachevo. It sits in the forest, away from neighbours and everyday noise. Inside is a wood stove and a bed for two. Outside, the forest is yours to enjoy without other guests around."
+        },
+        {
+          "type": "p",
+          "text": "This is the choice for people who mean it when they say they want to get away. No guest Wi-Fi, limited solar electricity, no standard plug sockets and simple washing facilities with manually heated water. You'll be taking care of your own fire and working with the place rather than pressing buttons."
+        },
+        {
+          "type": "p",
+          "text": "The approach is along a rough forest road. We send a specific park-and-walk destination with your arrival instructions. Don't navigate directly to the building pin, and don't assume a low car will manage in poor weather."
+        },
+        {
+          "type": "p",
+          "text": "[See photos, details and dates for The Cabin](/cabin/)"
+        },
+        {
+          "type": "h2",
+          "text": "Luxury Cabin near Chereshovo: privacy with more comfort"
+        },
+        {
+          "type": "p",
+          "text": "If you'd rather have heating and modern amenities without feeling like you're in a busy resort, look at our [Luxury Cabin](/stays/lux-cabin/). It's around 30 km from Bansko, in The Valley, a small mountain village near Chereshovo in the Rhodopes."
+        },
+        {
+          "type": "p",
+          "text": "You have your own cabin and broad views, but the outside spaces are shared with guests staying in the A-frames and Stone House. There's a communal fire area, and a wood-fired hot tub on the property whose availability and use should be checked for your dates."
+        },
+        {
+          "type": "p",
+          "text": "Guests reach The Valley from parking near Chereshovo by a roughly 2.5 km walk or an arranged transfer. This is not a drive-up cabin. Starlink is in the Stone House only."
+        },
+        {
+          "type": "p",
+          "text": "[See Luxury Cabin and check dates](/stays/lux-cabin/)"
+        },
+        {
+          "type": "h2",
+          "text": "Which is better for a weekend for two?"
+        },
+        {
+          "type": "p",
+          "text": "For a truly secluded break, choose The Cabin. The experience is rustic and hands-on, with the forest all around you. For a stay where you can keep more of your everyday comforts, choose Luxury Cabin. You'll have a private place to sleep and the atmosphere of a small mountain village outside."
+        },
+        {
+          "type": "p",
+          "text": "If you're combining your stay with time in Bansko, remember that the distances above don't tell the whole story. The final approach to either property is different from an ordinary city drive. Leave time, follow the arrival instructions and plan around the weather."
+        },
+        {
+          "type": "h2",
+          "text": "A little surprise is enough"
+        },
+        {
+          "type": "p",
+          "text": "You don't have to plan an elaborate anniversary weekend. Tell your partner to pack warm clothes, something comfortable for indoors and whatever you want for breakfast. We'll provide the place. You can decide what to do once you arrive."
+        },
+        {
+          "type": "p",
+          "text": "[Explore The Cabin](/cabin/) · [Explore Luxury Cabin](/stays/lux-cabin/)"
+        }
+      ]
+    },
+    "bg": {
+      "title": "Романтична къщичка край Банско за двама | Drift & Dwells",
+      "description": "Търсите романтична къщичка край Банско? Изберете уединена къщичка в гората над Бачево или уютна къща с гледка в Родопите.",
+      "h1": "Романтична къщичка край Банско, но далеч от тълпите",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Може да идвате в района на Банско за няколко дни и да искате една вечер на по-тихо място. А може вече да познавате града и този път да търсите не заведения и оживени улици, а самата планина."
+        },
+        {
+          "type": "p",
+          "text": "Нашите къщички не са в центъра на Банско. Именно това ги прави различни. Drift & Dwells има две места в по-широкия район на Банско и Разлог, подходящи за почивка за двама. Едното е напълно усамотено в гората. Другото предлага повече удобства и гледка към Родопите."
+        },
+        {
+          "type": "h2",
+          "text": "The Cabin над Бачево: само двамата"
+        },
+        {
+          "type": "p",
+          "text": "[The Cabin](/bg/cabin/) е на около 15 км от Банско, над село Бачево. Няма съседи и градски шум. Вътре има печка на дърва и място за двама, а навън е само гората."
+        },
+        {
+          "type": "p",
+          "text": "Това е изборът за хората, които наистина искат да се откъснат. Няма Wi-Fi за гости, електричеството е ограничено, няма обикновени контакти, а топлата вода за миене се приготвя ръчно. Сами се грижите за огъня. Мястото е семпло и изисква малко повече участие от ваша страна."
+        },
+        {
+          "type": "p",
+          "text": "Последният участък е по неравен горски път. След резервация изпращаме точни указания до мястото за паркиране и подхода пеша. Не следвайте координатите на самата къща и не разчитайте, че нисък автомобил ще мине при лошо време."
+        },
+        {
+          "type": "p",
+          "text": "[Вижте снимки и свободни дати за The Cabin](/bg/cabin/)"
+        },
+        {
+          "type": "h2",
+          "text": "Luxury Cabin край Черешово: усамотение с повече удобства"
+        },
+        {
+          "type": "p",
+          "text": "Ако предпочитате отопление и съвременни удобства, но не искате да сте в голям курорт, разгледайте [Luxury Cabin](/bg/valley/). Тя е на около 30 км от Банско, в The Valley, малко планинско селище край Черешово в Родопите."
+        },
+        {
+          "type": "p",
+          "text": "Къщата е самостоятелна и има просторна гледка. Външните пространства обаче се споделят с гостите на A-frame къщичките и каменната къща. Има общо огнище и вана с подгряване на дърва на територията, чието ползване трябва да уточните за избраните дати."
+        },
+        {
+          "type": "p",
+          "text": "До The Valley се стига от паркинг край Черешово с около 2,5 км ходене или предварително организиран трансфер. Това не е къщичка, пред която спирате с автомобила. Starlink интернет има само в каменната къща."
+        },
+        {
+          "type": "p",
+          "text": "[Разгледайте Luxury Cabin и проверете датите](/bg/valley/)"
+        },
+        {
+          "type": "h2",
+          "text": "Коя е по-подходяща за вашия уикенд?"
+        },
+        {
+          "type": "p",
+          "text": "За пълно усамотение изберете The Cabin. Тук има гора, печка на дърва и истинско откъсване от обичайните удобства. За по-комфортна почивка изберете Luxury Cabin. Ще имате своя къща и около вас ще има малко планинско селище."
+        },
+        {
+          "type": "p",
+          "text": "Ако ще съчетаете престоя си с разходка в Банско, не гледайте само километрите. Достъпът до всяко от двете места е различен от обикновено градско шофиране. Оставете си време и следвайте указанията, които изпращаме."
+        },
+        {
+          "type": "h2",
+          "text": "Изненадата не трябва да е сложна"
+        },
+        {
+          "type": "p",
+          "text": "Не е нужно да организирате цял романтичен сценарий. Кажете на човека до вас да вземе топли дрехи, нещо удобно за вечерта и любимата си закуска. Ние ще осигурим мястото, а останалото ще решите на място."
+        },
+        {
+          "type": "p",
+          "text": "[Вижте The Cabin](/bg/cabin/) · [Вижте Luxury Cabin](/bg/valley/)"
+        }
+      ]
+    }
+  }
+}

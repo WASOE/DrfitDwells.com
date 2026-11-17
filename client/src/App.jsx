@@ -104,6 +104,7 @@ const RetreatVenueBulgaria = lazy(() => import('./pages/seo/RetreatVenueBulgaria
 const OffGridStaysBulgaria = lazy(() => import('./pages/seo/OffGridStaysBulgaria'))
 const DigitalDetoxBulgaria = lazy(() => import('./pages/seo/DigitalDetoxBulgaria'))
 const Enduro = lazy(() => import('./pages/seo/Enduro'))
+const CommercialSeoLanding = lazy(() => import('./pages/seo/CommercialSeoLanding'))
 const WinterVillagePage = lazy(() => import('./pages/winter-village/WinterVillagePage'))
 const CreatorPortal = lazy(() => import('./pages/creator/CreatorPortal'))
 
@@ -203,6 +204,16 @@ function App() {
               <Route path="/bg/digital-detox-bulgaria" element={<DigitalDetoxBulgaria />} />
               <Route path="/enduro" element={<Enduro />} />
               <Route path="/bg/enduro" element={<Enduro />} />
+              <Route path="/forest-cabin-for-two-bulgaria" element={<CommercialSeoLanding slug="forest-cabin-for-two-bulgaria" />} />
+              <Route path="/bg/forest-cabin-for-two-bulgaria" element={<CommercialSeoLanding slug="forest-cabin-for-two-bulgaria" />} />
+              <Route path="/romantic-mountain-getaway-bulgaria" element={<CommercialSeoLanding slug="romantic-mountain-getaway-bulgaria" />} />
+              <Route path="/bg/romantic-mountain-getaway-bulgaria" element={<CommercialSeoLanding slug="romantic-mountain-getaway-bulgaria" />} />
+              <Route path="/rhodope-mountain-cabins" element={<CommercialSeoLanding slug="rhodope-mountain-cabins" />} />
+              <Route path="/bg/rhodope-mountain-cabins" element={<CommercialSeoLanding slug="rhodope-mountain-cabins" />} />
+              <Route path="/a-frame-cabins-bulgaria" element={<CommercialSeoLanding slug="a-frame-cabins-bulgaria" />} />
+              <Route path="/bg/a-frame-cabins-bulgaria" element={<CommercialSeoLanding slug="a-frame-cabins-bulgaria" />} />
+              <Route path="/romantic-cabin-near-bansko" element={<CommercialSeoLanding slug="romantic-cabin-near-bansko" />} />
+              <Route path="/bg/romantic-cabin-near-bansko" element={<CommercialSeoLanding slug="romantic-cabin-near-bansko" />} />
               <Route path="/winter-village" element={<WinterVillagePage />} />
               <Route path="/bg/winter-village" element={<WinterVillagePage />} />
 

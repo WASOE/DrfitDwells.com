@@ -104,6 +104,6 @@ for (const bg of [false, true]) {
     const localGiftRoute = new URL(giftUrl).pathname;
     await page.goto(localGiftRoute);
     await expect(page).toHaveURL(new RegExp(`${localGiftRoute}/?$`));
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator('#root main').getByRole('heading', { level: 1 }).first()).toBeVisible();
   });
 }
