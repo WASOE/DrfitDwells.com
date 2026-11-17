@@ -15,8 +15,9 @@ const {
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
 } = require('../../../server/config/legalAcceptance');
 
-const CHECK_IN = '2026-11-16';
-const CHECK_OUT = '2026-11-18';
+// Always exercise a genuinely bookable future date in CI; fixed historical dates expire.
+const CHECK_IN = new Date(Date.now() + 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const CHECK_OUT = new Date(Date.now() + 37 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const BLOCKED = /https?:\/\/([^/]*\.)?(driftdwells\.com|stripe\.com)([:/]|$)/;
 
 test.describe.configure({ mode: 'serial' });
