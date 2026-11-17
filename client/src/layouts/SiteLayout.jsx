@@ -19,7 +19,14 @@ import { trackPageViewForPath } from "../tracking/funnel";
 
 /** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
 const HERO_PATHS = ['/', '/cabin', '/valley', '/winter-village'];
-const EDITORIAL_PATHS = ['/off-grid-cabins-bulgaria', '/digital-detox-bulgaria', '/retreat-venue-bulgaria'];
+const EDITORIAL_PATHS = [
+  '/off-grid-cabins-bulgaria', '/digital-detox-bulgaria', '/retreat-venue-bulgaria',
+  '/forest-cabin-for-two-bulgaria',
+  '/romantic-mountain-getaway-bulgaria',
+  '/rhodope-mountain-cabins',
+  '/a-frame-cabins-bulgaria',
+  '/romantic-cabin-near-bansko',
+];
 
 /** Festival/paid landings: keep consent, but don't let it steal first-paint LCP on 3G. */
 function PaidTrafficConsentBanner() {
