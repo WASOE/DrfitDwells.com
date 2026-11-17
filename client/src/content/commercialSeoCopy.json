@@ -2,7 +2,7 @@
   "forest-cabin-for-two-bulgaria": {
     "en": {
       "title": "Forest Cabin for Two in Bulgaria | Drift & Dwells",
-      "description": "A private forest cabin for two near Bansko. Wood stove, a wood-fired tub and no guest Wi-Fi. See what staying truly off-grid feels like.",
+      "description": "A secluded forest cabin for two near Bansko, with a wood stove, simple off-grid comforts and no guest Wi-Fi. Find your quiet weekend in Bulgaria.",
       "h1": "A little cabin in the forest. Just for two.",
       "blocks": [
         {
@@ -31,7 +31,7 @@
         },
         {
           "type": "p",
-          "text": "There's a wood-fired tub outside, too. It isn't a hotel jacuzzi waiting at the perfect temperature: it takes time, firewood and your attention to heat. That's part of the experience, but it's worth knowing before you book. In cold weather, heating it can take longer and may not be practical."
+          "text": "You'll be looking after the fire and keeping the space comfortable yourself. The routine is part of the stay, but it isn't for everyone. If you prefer hotel-style facilities, choose a more conventional place to sleep."
         },
         {
           "type": "p",
@@ -85,7 +85,7 @@
     },
     "bg": {
       "title": "Къщичка в гората за двама | Drift & Dwells",
-      "description": "Самостоятелна къщичка в гората край Банско за двама. Печка на дърва, външна вана с подгряване и без Wi-Fi за гости. Вижте подробностите.",
+      "description": "Самостоятелна къщичка в гората край Банско за двама. Печка на дърва, истинско усамотение и без Wi-Fi за гости. Разгледайте условията.",
       "h1": "Къщичка в гората за двама. И никой друг.",
       "blocks": [
         {
@@ -114,7 +114,7 @@
         },
         {
           "type": "p",
-          "text": "Навън има вана, която се подгрява с дърва. Това не е джакузи, което ви чака готово. За да затоплите водата, трябват часове, дърва и малко търпение. В студено време процесът е още по-бавен и понякога не е практичен. Казваме го предварително, защото искаме да знаете какво резервирате."
+          "text": "Тук сами се грижите за огъня и за уюта. Няма хотелски удобства, които да се появяват с натискането на бутон. Затова е важно да знаете предварително какво ви очаква."
         },
         {
           "type": "p",
@@ -191,11 +191,11 @@
         },
         {
           "type": "p",
-          "text": "Near Bachevo, about 15 km from Bansko, [The Cabin](/cabin/) is the most private stay we offer. It's tucked away among trees, with a wood stove inside and a wood-fired tub outdoors. There's no guest Wi-Fi and little reliable phone coverage. Once you're there, it's easy to forget about everything beyond the forest."
+          "text": "Near Bachevo, about 15 km from Bansko, [The Cabin](/cabin/) is the most private stay we offer. It's tucked away among trees, with a wood stove inside and no guest Wi-Fi. Mobile coverage can be patchy. Once you're there, it's easy to forget about everything beyond the forest."
         },
         {
           "type": "p",
-          "text": "It's also our most hands-on stay. You'll light the stove, heat washing water yourself and spend time getting the outdoor tub warm if you want to use it. There are no standard power outlets or hotel-style bathroom facilities. Some couples love doing these little things together. Others would rather spend the evening with a hot shower and a book."
+          "text": "It's also our most hands-on stay. You'll light the stove and heat washing water yourself. There are no standard power outlets or hotel-style bathroom facilities. Some couples love doing these little things together. Others would rather spend the evening with a hot shower and a book."
         },
         {
           "type": "p",
@@ -278,11 +278,11 @@
         },
         {
           "type": "p",
-          "text": "[The Cabin](/bg/cabin/) е над Бачево, на около 15 км от Банско. Това е най-усамотеното ни място. Вътре има печка на дърва, а навън вана, която също се подгрява с дърва. Няма Wi-Fi за гости, а телефонният обхват е слаб или липсва."
+          "text": "[The Cabin](/bg/cabin/) е над Бачево, на около 15 км от Банско. Това е най-усамотеното ни място. Вътре има печка на дърва, а наоколо само гора. Няма Wi-Fi за гости, а телефонният обхват на места е слаб."
         },
         {
           "type": "p",
-          "text": "Важно е обаче да знаете, че тук удобствата не идват с натискането на бутон. Сами палите печката, затопляте вода за миене и отделяте време за външната вана, ако решите да я ползвате. Няма обикновени контакти и стандартна хотелска баня."
+          "text": "Важно е обаче да знаете, че тук удобствата не идват с натискането на бутон. Сами палите печката и затопляте вода за миене. Няма обикновени контакти и стандартна хотелска баня."
         },
         {
           "type": "p",
@@ -743,7 +743,7 @@
         },
         {
           "type": "p",
-          "text": "[The Cabin](/cabin/) is about 15 km from Bansko, near Bachevo. It sits in the forest, away from neighbours and everyday noise. Inside is a wood stove and a bed for two. Outside, there's a wood-fired tub you can heat yourselves."
+          "text": "[The Cabin](/cabin/) is about 15 km from Bansko, near Bachevo. It sits in the forest, away from neighbours and everyday noise. Inside is a wood stove and a bed for two. Outside, the forest is yours to enjoy without other guests around."
         },
         {
           "type": "p",
@@ -822,7 +822,7 @@
         },
         {
           "type": "p",
-          "text": "[The Cabin](/bg/cabin/) е на около 15 км от Банско, над село Бачево. Няма съседи и градски шум. Вътре има печка на дърва и място за двама, а навън вана, която сами може да подгреете с дърва."
+          "text": "[The Cabin](/bg/cabin/) е на около 15 км от Банско, над село Бачево. Няма съседи и градски шум. Вътре има печка на дърва и място за двама, а навън е само гората."
         },
         {
           "type": "p",
