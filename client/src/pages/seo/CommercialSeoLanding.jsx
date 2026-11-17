@@ -2,18 +2,103 @@ import { Fragment } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import Seo from '../../components/Seo'
 import { getLanguageFromPath } from '../../utils/localizedRoutes'
-import copy from '../../content/commercialSeoCopy.json'
+import { getSiteUrl } from '../../utils/siteUrl'
+import { CONTACT_EMAIL } from '../../data/gmbLocations'
+import content from '../../content/commercialSeoCopy.json'
+import './ai-search.css'
 import './commercial-seo.css'
 
-const images = {
-  'forest-cabin-for-two-bulgaria': '/media/hero/cabin-summer-1200w.webp',
-  'romantic-mountain-getaway-bulgaria': '/media/hero/cabin-winter-1200w.webp',
-  'rhodope-mountain-cabins': '/media/seo/aframe-site-wide.jpeg',
-  'a-frame-cabins-bulgaria': '/media/seo/aframe-field-sunset.jpeg',
-  'romantic-cabin-near-bansko': '/media/hero/cabin-summer-1200w.webp'
+// Match the approved /retreat-venue-bulgaria/ editorial markup and stylesheet.
+// This component renders only the five newly added commercial page families.
+const photographs = {
+  "forest-cabin-for-two-bulgaria": [
+    [
+      "/media/ai-search/cabin-exterior-1200w.webp",
+      "The Cabin in the forest near Bachevo.",
+      "The Cabin сред гората край Бачево."
+    ],
+    [
+      "/media/ai-search/cabin-forest-1200w.webp",
+      "The secluded forest setting of The Cabin.",
+      "Усамотеното горско място на The Cabin."
+    ],
+    [
+      "/media/ai-search/cabin-stove-1200w.webp",
+      "The wood-burning stove at The Cabin.",
+      "Печката на дърва в The Cabin."
+    ]
+  ],
+  "romantic-mountain-getaway-bulgaria": [
+    [
+      "/media/ai-search/cabin-forest-1200w.webp",
+      "The Cabin surrounded by forest.",
+      "The Cabin, скрита сред дърветата."
+    ],
+    [
+      "/media/ai-search/cabin-exterior-1200w.webp",
+      "A private mountain stay at The Cabin.",
+      "Усамотена почивка в The Cabin."
+    ],
+    [
+      "/media/seo/aframe-field-sunset.jpeg",
+      "The A-frame cabins at The Valley at sunset.",
+      "A-frame къщичките в The Valley по залез."
+    ]
+  ],
+  "rhodope-mountain-cabins": [
+    [
+      "/media/seo/aframe-site-wide.jpeg",
+      "The A-frame village in the Rhodope Mountains.",
+      "A-frame селището в Родопите."
+    ],
+    [
+      "/media/seo/aframe-row-sunset.png",
+      "A-frame cabins across The Valley at sunset.",
+      "A-frame къщичките в The Valley по залез."
+    ],
+    [
+      "/media/seo/stone-house-sunset-site.jpeg",
+      "The Stone House in The Valley.",
+      "Каменната къща в The Valley."
+    ]
+  ],
+  "a-frame-cabins-bulgaria": [
+    [
+      "/media/seo/aframe-field-sunset.jpeg",
+      "The A-frame cabins at The Valley.",
+      "A-frame къщичките в The Valley."
+    ],
+    [
+      "/media/seo/aframe-row-sunset.png",
+      "The row of A-frames in the mountain valley.",
+      "Редицата A-frame къщички в планината."
+    ],
+    [
+      "/media/seo/aframe-bedroom-winter.jpeg",
+      "Inside an A-frame cabin in winter.",
+      "В A-frame къщичка през зимата."
+    ]
+  ],
+  "romantic-cabin-near-bansko": [
+    [
+      "/media/ai-search/cabin-exterior-1200w.webp",
+      "The Cabin near Bachevo, a quiet stay for two.",
+      "The Cabin край Бачево, усамотено място за двама."
+    ],
+    [
+      "/media/ai-search/cabin-forest-1200w.webp",
+      "Forest surroundings at The Cabin.",
+      "Гората около The Cabin."
+    ],
+    [
+      "/media/seo/aframe-field-sunset.jpeg",
+      "The A-frame cabins at The Valley near Chereshovo.",
+      "A-frame къщичките в The Valley край Черешово."
+    ]
+  ]
 }
 
-const preferredStay = {
+const stayRoutes = {
   'forest-cabin-for-two-bulgaria': '/cabin',
   'romantic-mountain-getaway-bulgaria': '/cabin',
   'rhodope-mountain-cabins': '/valley',
@@ -22,28 +107,73 @@ const preferredStay = {
 }
 
 function InlineCopy({ value }) {
-  const chunks = value.split(/(\[[^\]]+\]\(\/[^)]+\)|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean)
-  return chunks.map((chunk, index) => {
-    const internalLink = chunk.match(/^\[([^\]]+)\]\((\/[^)]+)\)$/)
-    if (internalLink) return <Link key={index} to={internalLink[2]}>{internalLink[1]}</Link>
-    if (chunk.startsWith('**') && chunk.endsWith('**')) return <strong key={index}>{chunk.slice(2, -2)}</strong>
-    if (chunk.startsWith('*') && chunk.endsWith('*')) return <em key={index}>{chunk.slice(1, -1)}</em>
-    return <Fragment key={index}>{chunk}</Fragment>
+  return value.split(/(\[[^\]]+\]\(\/[^)]+\)|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean).map((part, index) => {
+    const internal = part.match(/^\[([^\]]+)\]\((\/[^)]+)\)$/)
+    if (internal) return <Link key={index} to={internal[2]}>{internal[1]}</Link>
+    if (part.startsWith('**') && part.endsWith('**')) return <strong key={index}>{part.slice(2, -2)}</strong>
+    if (part.startsWith('*') && part.endsWith('*')) return <em key={index}>{part.slice(1, -1)}</em>
+    return <Fragment key={index}>{part}</Fragment>
   })
+}
+
+function Photo({ photo, language, hero = false }) {
+  const [src, en, bg] = photo
+  const caption = language === 'bg' ? bg : en
+  const srcSet = src.includes('-1200w.')
+    ? src.replace('-1200w.', '-720w.') + ' 720w, ' + src + ' 1200w'
+    : undefined
+  return (
+    <figure className={'ai-search-photos ai-search-photo' + (hero ? ' ai-search-hero-photo' : '')}>
+      <img
+        src={src}
+        srcSet={srcSet}
+        sizes={hero ? '(min-width: 1000px) 560px, 100vw' : '(min-width: 1000px) 540px, 100vw'}
+        alt={caption}
+        width="1200"
+        height="1500"
+        loading={hero ? 'eager' : 'lazy'}
+        decoding="async"
+      />
+      <figcaption>{caption}</figcaption>
+    </figure>
+  )
+}
+
+function SectionBlock({ block }) {
+  if (block.type === 'h3') return <h3><InlineCopy value={block.text} /></h3>
+  const standaloneLink = block.text.match(/^\[([^\]]+)\]\((\/[^)]+)\)$/)
+  if (standaloneLink) return (
+    <div className="ai-search-actions">
+      <Link to={standaloneLink[2]} className="ai-search-cta">{standaloneLink[1]}</Link>
+    </div>
+  )
+  return <p><InlineCopy value={block.text} /></p>
 }
 
 export default function CommercialSeoLanding({ slug }) {
   const { pathname } = useLocation()
   const language = getLanguageFromPath(pathname)
-  const page = copy[slug]?.[language]
-  if (!page) return null
+  const page = content[slug]?.[language]
+  const photos = photographs[slug]
+  if (!page || !photos) return null
 
-  const canonicalPath = '/' + slug
+  const basePath = '/' + slug
   const localized = (path) => language === 'bg' ? '/bg' + path : path
-  const canonical = 'https://driftdwells.com' + localized(canonicalPath) + '/'
-  const home = language === 'bg' ? '/bg/' : '/'
-  const image = images[slug]
-  const primaryStay = localized(preferredStay[slug]) + '/'
+  const origin = getSiteUrl()
+  const canonical = origin + localized(basePath) + '/'
+  const homePath = language === 'bg' ? '/bg/' : '/'
+  const firstSection = page.blocks.findIndex((block) => block.type === 'h2')
+  const introduction = page.blocks.slice(0, firstSection)
+  const firstParagraph = introduction[0]?.text || ''
+  const sentenceEnd = firstParagraph.indexOf('. ')
+  const heroIntro = sentenceEnd < 0 ? firstParagraph : firstParagraph.slice(0, sentenceEnd + 1)
+  const introContinuation = firstParagraph.slice(heroIntro.length).trim()
+  const sections = []
+  for (const block of page.blocks.slice(firstSection)) {
+    if (block.type === 'h2') sections.push({ heading: block.text, blocks: [] })
+    else if (sections.length) sections[sections.length - 1].blocks.push(block)
+  }
+  const stayPath = localized(stayRoutes[slug]) + '/'
   const schema = [
     {
       '@context': 'https://schema.org',
@@ -53,60 +183,85 @@ export default function CommercialSeoLanding({ slug }) {
       name: page.h1,
       description: page.description,
       inLanguage: language,
-      isPartOf: { '@type': 'WebSite', name: 'Drift & Dwells', url: 'https://driftdwells.com/' }
+      isPartOf: { '@type': 'WebSite', url: origin + '/', name: 'Drift & Dwells' },
+      primaryImageOfPage: {
+        '@type': 'ImageObject',
+        contentUrl: origin + photos[0][0],
+        caption: photos[0][language === 'bg' ? 2 : 1]
+      }
     },
     {
       '@context': 'https://schema.org',
       '@type': 'BreadcrumbList',
       itemListElement: [
-        { '@type': 'ListItem', position: 1, name: language === 'bg' ? 'Начало' : 'Home', item: 'https://driftdwells.com' + home },
+        { '@type': 'ListItem', position: 1, name: language === 'bg' ? 'Начало' : 'Home', item: origin + homePath },
         { '@type': 'ListItem', position: 2, name: page.h1, item: canonical }
       ]
     }
   ]
-  const intro = page.blocks.findIndex((block) => block.type === 'p')
-  const primary = page.blocks[intro]
-  const rest = page.blocks.filter((_, index) => index !== intro)
+  const labels = language === 'bg'
+    ? { explore: 'Разгледайте мястото и датите', guide: 'В този пътеводител', contact: 'Свържете се с нас' }
+    : { explore: 'Explore stays and availability', guide: 'In this guide', contact: 'Get in touch' }
 
   return (
-    <article className="dd-commercial">
-      <Seo title={page.title} description={page.description} canonicalPath={canonicalPath} ogImage={image} jsonLd={schema} />
-      <div className="dd-commercial-wrap">
-        <nav className="dd-commercial-breadcrumb" aria-label={language === 'bg' ? 'Навигация' : 'Breadcrumb'}>
-          <Link to={home}>{language === 'bg' ? 'Начало' : 'Home'}</Link>
-          <span aria-hidden="true">/</span>
-          <span aria-current="page">{page.h1}</span>
+    <article className="ai-search" data-kind="commercial">
+      <Seo title={page.title} description={page.description} canonicalPath={basePath} ogImage={photos[0][0]} jsonLd={schema} />
+      <div className="ai-search-container">
+        <nav aria-label={language === 'bg' ? 'Навигационна пътека' : 'Breadcrumb'}>
+          <ol className="ai-search-breadcrumb">
+            <li><Link to={homePath}>{language === 'bg' ? 'Начало' : 'Home'}</Link></li>
+            <li aria-current="page">{page.h1}</li>
+          </ol>
         </nav>
-        <header className="dd-commercial-hero">
-          <div className="dd-commercial-hero-copy">
-            <p className="dd-commercial-eyebrow">DRIFT & DWELLS · {language === 'bg' ? 'БЪЛГАРИЯ' : 'BULGARIA'}</p>
+        <div className="ai-search-hero">
+          <div className="ai-search-hero-copy">
+            <span className="ai-search-eyebrow">Drift &amp; Dwells · {language === 'bg' ? 'България' : 'Bulgaria'}</span>
             <h1>{page.h1}</h1>
-            {primary && <p className="dd-commercial-lede"><InlineCopy value={primary.text} /></p>}
-            <Link className="dd-commercial-button" to={primaryStay}>
-              {language === 'bg' ? 'Разгледайте свободните дати' : 'Explore stays and availability'}
-            </Link>
+            <p className="ai-search-hero-intro"><InlineCopy value={heroIntro} /></p>
+            <div className="ai-search-actions">
+              <Link className="ai-search-cta" to={stayPath}>{labels.explore}</Link>
+            </div>
           </div>
-          <img className="dd-commercial-hero-image" src={image} alt={page.h1} width="1200" height="800" loading="eager" decoding="async" />
-        </header>
-        <div className="dd-commercial-content">
-          {rest.map((block, index) => {
-            if (block.type === 'h2') return <h2 key={index}>{block.text}</h2>
-            if (block.type === 'h3') return <h3 key={index}>{block.text}</h3>
-            const action = block.text.match(/^\[([^\]]+)\]\((\/[^)]+)\)$/)
-            if (action) return <p className="dd-commercial-action" key={index}><Link to={action[2]}>{action[1]}</Link></p>
-            return <p key={index}><InlineCopy value={block.text} /></p>
-          })}
+          <Photo photo={photos[0]} language={language} hero />
         </div>
-        <section className="dd-commercial-footer">
-          <p className="dd-commercial-eyebrow">DRIFT & DWELLS</p>
-          <h2>{language === 'bg' ? 'Изберете своята почивка' : 'Find your place in the mountains'}</h2>
-          <Link className="dd-commercial-button" to={primaryStay}>
-            {language === 'bg' ? 'Вижте свободните дати' : 'Check availability'}
-          </Link>
-          <Link className="dd-commercial-secondary" to={localized('/off-grid-cabins-bulgaria') + '/'}>
-            {language === 'bg' ? 'Разгледайте всички места' : 'Explore all stays'}
-          </Link>
-        </section>
+
+        <div className="ai-search-summary">
+          {introContinuation && <p className="ai-search-intro-continuation"><InlineCopy value={introContinuation} /></p>}
+          {introduction.slice(1).map((block, index) => <SectionBlock block={block} key={index} />)}
+        </div>
+
+        <nav className="ai-search-contents" aria-label={labels.guide}>
+          <span className="ai-search-eyebrow">{labels.guide}</span>
+          <ol>{sections.map((section, index) => (
+            <li key={index}><a href={'#guide-' + (index + 1)}>{section.heading}</a></li>
+          ))}</ol>
+        </nav>
+
+        <div className="ai-search-editorial">
+          {sections.map((section, index) => (
+            <Fragment key={index}>
+              <section className="ai-search-section" id={'guide-' + (index + 1)}>
+                <div className="ai-search-section-heading">
+                  <span className="ai-search-eyebrow" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                  <h2>{section.heading}</h2>
+                </div>
+                <div className="ai-search-prose">
+                  {section.blocks.map((block, blockIndex) => <SectionBlock block={block} key={blockIndex} />)}
+                </div>
+              </section>
+              {index === 1 && (
+                <div className="ai-search-interlude">
+                  {photos.slice(1).map((photo) => <Photo key={photo[0]} photo={photo} language={language} />)}
+                </div>
+              )}
+            </Fragment>
+          ))}
+        </div>
+
+        <div className="ai-search-contact">
+          <span className="ai-search-eyebrow">{labels.contact}</span>
+          <a href={'mailto:' + CONTACT_EMAIL}>{CONTACT_EMAIL}</a>
+        </div>
       </div>
     </article>
   )
