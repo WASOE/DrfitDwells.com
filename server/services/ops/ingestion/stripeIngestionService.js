@@ -105,6 +105,22 @@ function isGiftVoucherPaymentMetadata(metadata) {
   return false;
 }
 
+const STRIPE_BILLING_PAYMENT_UNLINKED_RESOLUTION_NOTE =
+  'stripe_billing_payment_intent_handled_by_invoice_ingestion';
+
+function isStripeBillingPaymentIntent(event) {
+  const obj = event?.data?.object || {};
+  if (obj.object !== 'payment_intent') return false;
+
+  // Stripe Billing-generated PaymentIntents are handled by invoice ingestion, which
+  // carries the booking/installment linkage. Some Stripe API versions omit `invoice`
+  // from PI webhook payloads but retain Stripe's canonical description.
+  const invoiceId = typeof obj.invoice === 'string' ? obj.invoice : obj.invoice?.id;
+  if (invoiceId) return true;
+
+  return String(obj.description || '').trim().toLowerCase() === 'payment for invoice';
+}
+
 function extractPayoutReference(event) {
   const obj = event.data?.object || {};
   if (obj.object === 'payout') return obj.id || null;
@@ -173,6 +189,24 @@ async function upsertCanonicalPaymentFromEvent(event) {
       evidence: {
         eventType: event.type
       }
+    });
+    return null;
+  }
+
+  if (isStripeBillingPaymentIntent(event)) {
+    // Do not duplicate a split-installment invoice payment in the accommodation PI
+    // ledger. Preserve any historical row for audit and close an older false alert.
+    const existingPayment = await Payment.findOne({
+      provider: 'stripe',
+      providerReference: String(providerReference)
+    })
+      .select('_id')
+      .lean();
+    await resolvePaymentUnlinkedReviewsForNonPaidPayment({
+      paymentId: existingPayment?._id || null,
+      paymentIntentId: providerReference,
+      resolvedBy: 'stripe_ingestion_billing_classifier',
+      note: STRIPE_BILLING_PAYMENT_UNLINKED_RESOLUTION_NOTE
     });
     return null;
   }
@@ -647,6 +681,7 @@ async function processStripeWebhookEvent(event) {
     && event?.data?.object?.object === 'payment_intent'
     && event?.data?.object?.metadata?.type === 'gift_voucher';
   const isAccommodationSucceeded = isAccommodationPaymentIntentSucceededEvent(event);
+  const isBillingPaymentIntent = isStripeBillingPaymentIntent(event);
   const {
     isSplitInstallmentInvoiceEvent,
     processSplitInstallmentInvoiceEvent
@@ -661,6 +696,11 @@ async function processStripeWebhookEvent(event) {
     let paymentId = null;
     let accommodationSync = null;
     let splitInvoiceSync = null;
+    if (isBillingPaymentIntent) {
+      // Re-run the classifier on duplicate delivery so deployments can converge
+      // historical false alerts without mutating the correct invoice ledger.
+      await upsertCanonicalPaymentFromEvent(event);
+    }
     if (isAccommodationSucceeded) {
       const payment = await upsertCanonicalPaymentFromEvent(event);
       paymentId = payment ? String(payment._id) : null;
@@ -738,5 +778,7 @@ function assertAccommodationHandoffComplete(result) {
 }
 
 module.exports = {
-  processStripeWebhookEvent
+  processStripeWebhookEvent,
+  isStripeBillingPaymentIntent,
+  STRIPE_BILLING_PAYMENT_UNLINKED_RESOLUTION_NOTE
 };
