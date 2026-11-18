@@ -127,11 +127,48 @@ async function listActiveCheckoutHolds(checkoutSessionId) {
   }).lean();
 }
 
+/**
+ * Tombstone expired pre-payment checkout holds.
+ *
+ * Idempotent and bounded: only active checkout_hold rows whose expiresAt has
+ * passed are touched. Bookings and live holds (expiresAt > now) are never
+ * modified, so paid reservations and active checkout sessions are preserved.
+ */
+async function sweepExpiredCheckoutHolds({ now = new Date(), limit = 1000 } = {}) {
+  const expired = await AvailabilityBlock.find({
+    blockType: 'checkout_hold',
+    status: 'active',
+    expiresAt: { $lte: now }
+  })
+    .select('_id')
+    .limit(limit)
+    .lean();
+
+  if (!expired.length) return { scanned: 0, tombstoned: 0 };
+
+  const result = await AvailabilityBlock.updateMany(
+    {
+      _id: { $in: expired.map((block) => block._id) },
+      status: 'active'
+    },
+    {
+      $set: {
+        status: 'tombstoned',
+        tombstonedAt: now,
+        tombstoneReason: 'checkout_hold_expired'
+      }
+    }
+  );
+
+  return { scanned: expired.length, tombstoned: result.modifiedCount || 0 };
+}
+
 module.exports = {
   DEFAULT_CHECKOUT_HOLD_TTL_MS,
   mintCheckoutSessionId,
   createCheckoutHolds,
   releaseCheckoutHolds,
   convertCheckoutHoldsToFinalized,
-  listActiveCheckoutHolds
+  listActiveCheckoutHolds,
+  sweepExpiredCheckoutHolds
 };

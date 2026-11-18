@@ -138,6 +138,14 @@ function startPostConnectRuntime() {
   } catch (e) {
     console.error('[smtp-health] Scheduler startup failed:', e?.message || e);
   }
+
+  // Expired location-checkout holds must not linger on the Ops calendar.
+  try {
+    const { startCheckoutHoldSweeperIfEnabled } = require('./services/locationCheckout/checkoutHoldSweeper');
+    startCheckoutHoldSweeperIfEnabled();
+  } catch (e) {
+    console.error('[checkout-hold-sweeper] Scheduler startup failed:', e?.message || e);
+  }
 }
 
 // --- Directories ---
@@ -416,6 +424,12 @@ const shutdown = (signal) => {
     stopSmtpHealthSchedulerForTest();
   } catch (e) {
     console.error('[smtp-health] Shutdown stop failed:', e?.message || e);
+  }
+  try {
+    const { stopCheckoutHoldSweeperForTest } = require('./services/locationCheckout/checkoutHoldSweeper');
+    stopCheckoutHoldSweeperForTest();
+  } catch (e) {
+    console.error('[checkout-hold-sweeper] Shutdown stop failed:', e?.message || e);
   }
   const closeHttp = () => {
     const mongoose = require('mongoose');
