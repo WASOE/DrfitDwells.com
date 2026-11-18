@@ -6,6 +6,7 @@ import {
   STAY_MATCHES,
   buildAvailabilitySearch,
   buildBuyoutHandoff,
+  buildCombinationEnquiryHandoff,
 } from '../../data/homepagePlanner';
 
 function scrollToBooking() {
@@ -14,11 +15,14 @@ function scrollToBooking() {
 }
 
 /**
- * Continue into the existing date search or whole-Valley quote calendar.
- * Never invents or zeros children / babies / pets. Exact counts are preserved.
+ * Continue into the existing date search, the whole-Valley quote calendar, or a
+ * multi-unit group enquiry. Public checkout is one unit per transaction, so a
+ * combination is never sent to checkout. Never invents or zeros children / babies /
+ * pets, and never invents dates. Exact counts are preserved.
  *
  * @param {string} stayId
- * @param {{ adults?: number }} [options] — optional adults override from the planner only
+ * @param {{ adults?: number, units?: Array<{ id: string, count: number }> }} [options]
+ *   adults override and combination units come from the planner only
  */
 export function useHomeBookingHandoff() {
   const navigate = useNavigate();
@@ -57,6 +61,18 @@ export function useHomeBookingHandoff() {
     if (stayId === 'buyout') {
       const href = buildBuyoutHandoff({
         ...guests,
+        checkIn,
+        checkOut,
+        language,
+      });
+      if (href) navigate(href);
+      return;
+    }
+
+    if (stayId === 'combination') {
+      const href = buildCombinationEnquiryHandoff({
+        ...guests,
+        units: options.units,
         checkIn,
         checkOut,
         language,

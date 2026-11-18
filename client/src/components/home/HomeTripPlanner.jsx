@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { useSiteLanguage } from '../../hooks/useSiteLanguage';
 import { localizePath } from '../../utils/localizedRoutes';
 import {
-  PLANNER_STEPS,
   STAY_MATCHES,
   buildItinerary,
+  getPlannerSteps,
   recommendStay,
 } from '../../data/homepagePlanner';
 import { useHomeBookingHandoff } from './useHomeBookingHandoff';
@@ -27,7 +27,8 @@ export default function HomeTripPlanner() {
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
 
-  const current = PLANNER_STEPS[step];
+  const steps = getPlannerSteps(answers.party);
+  const current = steps[step];
   const selected = answers[current?.id];
 
   const choose = (value) => {
@@ -42,7 +43,7 @@ export default function HomeTripPlanner() {
 
   const continueStep = () => {
     if (!selected) return;
-    if (step < PLANNER_STEPS.length - 1) {
+    if (step < steps.length - 1) {
       setStep(step + 1);
       return;
     }
@@ -50,12 +51,21 @@ export default function HomeTripPlanner() {
       party: answers.party,
       mood: answers.mood,
       connectivity: answers.connectivity,
+      sharing: answers.sharing,
+      exclusivity: answers.exclusivity,
     });
-    setResult({ ...match, nights: answers.nights });
+    setResult({ ...match, nights: answers.nights, mood: answers.mood, connectivity: answers.connectivity });
   };
 
-  const itinerary = result ? buildItinerary(result.stayId, result.nights) : [];
+  const itinerary = result ? buildItinerary(result.stayId, result.nights, result.mood) : [];
   const stay = result ? STAY_MATCHES[result.stayId] : null;
+  const isCombination = result?.stayId === 'combination';
+  const unitLabel = (unit) => t(`planner.units.${unit.id}`, { count: unit.count });
+  const resultTitle = !result
+    ? ''
+    : isCombination
+      ? result.units.map(unitLabel).join(' + ')
+      : t(`planner.results.${result.stayId}.title`);
   const partyGrid = current?.id === 'party';
 
   return (
@@ -85,14 +95,47 @@ export default function HomeTripPlanner() {
             <div>
               <p className={`${eyebrowClass} mb-3`}>{t('planner.resultEyebrow')}</p>
               <h3 className="font-serif text-3xl sm:text-4xl text-[#1c1917] mb-3 tracking-tight">
-                {t(`planner.results.${result.stayId}.title`)}
+                {resultTitle}
               </h3>
-              <p className="text-stone-700 leading-relaxed mb-3">
-                {t(`planner.results.${result.stayId}.body`)}
-              </p>
+              {isCombination ? (
+                <div className="mb-3">
+                  <h4 className="text-sm font-semibold text-[#1c1917] mb-2">{t('planner.arrangement.title')}</h4>
+                  <ul className="space-y-1 text-sm text-stone-700 leading-relaxed">
+                    {result.units.map((unit) => (
+                      <li key={unit.id}>
+                        <span className="font-medium text-[#1c1917]">{unitLabel(unit)}</span>
+                        {' · '}
+                        {t('planner.arrangement.guests', { count: unit.guests })}
+                        {' — '}
+                        {t(`planner.arrangement.${unit.id}Note`)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-stone-700 leading-relaxed mb-3">
+                  {t(`planner.results.${result.stayId}.body`)}
+                </p>
+              )}
+              <p className="text-stone-700 leading-relaxed mb-3">{t(`planner.why.${result.whyKey}`)}</p>
               <p className="text-sm text-stone-600 mb-3">
                 {t('planner.partySummary', { count: result.party })}
               </p>
+              {result.alternative ? (
+                <p className="text-sm text-stone-600 leading-relaxed mb-3">
+                  {t(`planner.alternatives.${result.alternative}`)}
+                </p>
+              ) : null}
+              {result.upgradeBuyout ? (
+                <p className="text-sm text-stone-600 leading-relaxed mb-4">
+                  <Link
+                    to={localizePath(STAY_MATCHES.buyout.path, language)}
+                    className="underline underline-offset-4 text-[#1c1917]"
+                  >
+                    {t('planner.upgradeBuyout')}
+                  </Link>
+                </p>
+              ) : null}
               {result.offlineMismatch ? (
                 <p className="text-sm text-stone-600 leading-relaxed mb-4">{t('planner.offlineMismatch')}</p>
               ) : null}
@@ -116,7 +159,9 @@ export default function HomeTripPlanner() {
                   </li>
                 ))}
               </ol>
-              <p className="text-xs text-stone-500 leading-relaxed mb-6">{t('planner.disclaimer')}</p>
+              <p className="text-xs text-stone-500 leading-relaxed mb-6">
+                {isCombination ? t('planner.enquiryNote') : t('planner.disclaimer')}
+              </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Link to={localizePath(stay.path, language)} className={primaryCtaClass}>
                   {t('planner.explore')}
@@ -124,9 +169,9 @@ export default function HomeTripPlanner() {
                 <button
                   type="button"
                   className={secondaryCtaClass}
-                  onClick={() => handoff(result.stayId, { adults: result.searchAdults })}
+                  onClick={() => handoff(result.stayId, { adults: result.searchAdults, units: result.units })}
                 >
-                  {t('planner.checkDates')}
+                  {isCombination ? t('planner.askAboutDates') : t('planner.checkDates')}
                 </button>
               </div>
               <button
@@ -140,7 +185,7 @@ export default function HomeTripPlanner() {
           ) : (
             <div>
               <div className="flex gap-2 mb-6" aria-hidden="true">
-                {PLANNER_STEPS.map((item, index) => (
+                {steps.map((item, index) => (
                   <span
                     key={item.id}
                     className={`h-1 flex-1 ${index <= step ? 'bg-[#1c1917]' : 'bg-[#E5E5E0]'}`}
@@ -150,7 +195,7 @@ export default function HomeTripPlanner() {
               <p className={`${eyebrowClass} mb-3`}>
                 {t('planner.questionProgress', {
                   current: String(step + 1).padStart(2, '0'),
-                  total: '04',
+                  total: String(steps.length).padStart(2, '0'),
                 })}
               </p>
               <h3 className="font-serif text-2xl sm:text-3xl text-[#1c1917] mb-2 tracking-tight">
@@ -197,7 +242,7 @@ export default function HomeTripPlanner() {
                   onClick={continueStep}
                   disabled={!selected}
                 >
-                  {step === PLANNER_STEPS.length - 1 ? t('planner.seeMatch') : t('planner.continue')}
+                  {step === steps.length - 1 ? t('planner.seeMatch') : t('planner.continue')}
                 </button>
               </div>
             </div>
