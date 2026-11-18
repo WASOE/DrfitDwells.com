@@ -20,11 +20,15 @@ const {
   getOpsPushSchedulerWorkerState,
   computeBackoffMs,
   setAwaitExecuteForTests,
-  ENV_FLAG
+  ENV_FLAG,
+  ENV_MAX_DELIVERY_AGE_MS,
+  OBSOLETE_JOB_REASON,
+  DEFAULT_MAX_DELIVERY_AGE_MS
 } = require('../services/ops/push/opsPushSchedulerWorker');
 const { __setSendOpsPushSafelyForTesting, __resetSendOpsPushSafelyForTesting } = require('../services/ops/push/opsPushScheduledNotifications');
 
 let mongoServer;
+let sendCalls = 0;
 
 function pastDate(secondsAgo = 1) {
   return new Date(Date.now() - secondsAgo * 1000);
@@ -86,10 +90,15 @@ test.after(async () => {
 test.beforeEach(async () => {
   stopOpsPushSchedulerWorkerForTest();
   setAwaitExecuteForTests(true);
-  __setSendOpsPushSafelyForTesting(async () => ({
-    skipped: true,
-    reason: 'vapid_not_configured'
-  }));
+  sendCalls = 0;
+  __setSendOpsPushSafelyForTesting(async () => {
+    sendCalls += 1;
+    return {
+      skipped: true,
+      reason: 'vapid_not_configured'
+    };
+  });
+  delete process.env[ENV_MAX_DELIVERY_AGE_MS];
   await OpsPushScheduledJob.deleteMany({});
   await Booking.deleteMany({});
   await Cabin.deleteMany({});
@@ -129,6 +138,84 @@ test('future scheduled jobs are not claimed', async () => {
   const result = await tickOnce({ now: new Date() });
   assert.equal(result.candidatesCount, 0);
   assert.equal(result.claimed, 0);
+});
+
+test('obsolete scheduled jobs are suppressed without sending', async () => {
+  const booking = await createFixtureBooking();
+  const job = await OpsPushScheduledJob.create({
+    jobType: 'cleaning_checkout_day',
+    bookingId: booking._id,
+    propertyKind: 'cabin',
+    scheduledFor: pastDate(2 * 86400),
+    scheduledForSofia: '2026-10-17T08:00:00+03:00',
+    status: 'scheduled',
+    dedupeKey: `ops_push_cleaning_checkout:${booking._id}:2026-10-17`
+  });
+
+  const result = await tickOnce({ now: new Date() });
+  assert.equal(result.claimed, 0);
+  assert.equal(result.expired, 1);
+  assert.equal(sendCalls, 0);
+
+  const updated = await OpsPushScheduledJob.findById(job._id).lean();
+  assert.equal(updated.status, 'suppressed');
+  assert.equal(updated.lastError, OBSOLETE_JOB_REASON);
+  assert.equal(updated.lastResult.reason, OBSOLETE_JOB_REASON);
+});
+
+test('restart cannot resend sent jobs or reflush obsolete backlog', async () => {
+  const booking = await createFixtureBooking();
+  const oldJob = await OpsPushScheduledJob.create({
+    jobType: 'arrival_reminder_admin',
+    bookingId: booking._id,
+    propertyKind: 'cabin',
+    scheduledFor: pastDate(3 * 86400),
+    scheduledForSofia: '2026-10-20T09:00:00+03:00',
+    status: 'scheduled',
+    dedupeKey: `ops_push_arrival_admin:${booking._id}:2026-10-20`
+  });
+  const freshJob = await OpsPushScheduledJob.create({
+    jobType: 'arrival_reminder_admin',
+    bookingId: booking._id,
+    propertyKind: 'cabin',
+    scheduledFor: pastDate(5),
+    scheduledForSofia: '2027-01-01T09:00:00+02:00',
+    status: 'scheduled',
+    dedupeKey: `ops_push_arrival_admin:${booking._id}:2027-01-01`
+  });
+
+  const first = await tickOnce({ now: new Date() });
+  assert.equal(first.claimed, 1);
+  assert.equal(first.expired, 1);
+  assert.equal(sendCalls, 1);
+
+  const second = await tickOnce({ now: new Date() });
+  assert.equal(second.claimed, 0);
+  assert.equal(second.expired, 0);
+  assert.equal(sendCalls, 1);
+
+  stopOpsPushSchedulerWorkerForTest();
+  const afterRestart = await tickOnce({ now: new Date() });
+  assert.equal(afterRestart.claimed, 0);
+  assert.equal(afterRestart.expired, 0);
+  assert.equal(sendCalls, 1);
+
+  assert.equal((await OpsPushScheduledJob.findById(freshJob._id).lean()).status, 'sent');
+  assert.equal((await OpsPushScheduledJob.findById(oldJob._id).lean()).status, 'suppressed');
+});
+
+test('max delivery age is configurable and defaults to six hours', () => {
+  process.env[ENV_MAX_DELIVERY_AGE_MS] = '900000';
+  const started = startOpsPushSchedulerWorkerIfEnabled();
+  assert.equal(started.started, true);
+  assert.equal(getOpsPushSchedulerWorkerState().maxDeliveryAgeMs, 900000);
+  stopOpsPushSchedulerWorkerForTest();
+  delete process.env[ENV_MAX_DELIVERY_AGE_MS];
+
+  process.env[ENV_FLAG] = '1';
+  startOpsPushSchedulerWorkerIfEnabled();
+  assert.equal(getOpsPushSchedulerWorkerState().maxDeliveryAgeMs, DEFAULT_MAX_DELIVERY_AGE_MS);
+  stopOpsPushSchedulerWorkerForTest();
 });
 
 test('sweepStaleClaimedOnce reschedules with backoff', async () => {

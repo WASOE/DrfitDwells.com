@@ -59,6 +59,28 @@ module.exports = {
       }
     },
     {
+      name: 'driftdwells-ops-push-worker',
+      // cwd is server/ so dotenv loads the protected server/.env.
+      cwd: __dirname + '/server',
+      script: 'scripts/runOpsPushWorker.js',
+      interpreter: 'node',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      restart_delay: 5000,
+      max_restarts: 20,
+      min_uptime: '10s',
+      kill_timeout: 10000,
+      env: {
+        NODE_ENV: 'development',
+        OPS_PUSH_SCHEDULER_WORKER_ENABLED: '0'
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        OPS_PUSH_SCHEDULER_WORKER_ENABLED: '1'
+      }
+    },
+    {
       name: 'driftdwells-confirmation-worker',
       cwd: __dirname,
       script: 'server/scripts/runBookingConfirmationDeliveryWorker.js',

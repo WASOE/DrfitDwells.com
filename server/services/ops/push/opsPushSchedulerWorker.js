@@ -11,11 +11,17 @@ const ENV_SWEEPER_TICK_MS = 'OPS_PUSH_SCHEDULER_WORKER_SWEEPER_TICK_MS';
 const ENV_BATCH_SIZE = 'OPS_PUSH_SCHEDULER_WORKER_BATCH_SIZE';
 const ENV_VISIBILITY_TIMEOUT_MS = 'OPS_PUSH_SCHEDULER_WORKER_VISIBILITY_TIMEOUT_MS';
 const ENV_WORKER_ID = 'OPS_PUSH_SCHEDULER_WORKER_ID';
+const ENV_MAX_DELIVERY_AGE_MS = 'OPS_PUSH_SCHEDULER_MAX_DELIVERY_AGE_MS';
 
 const DEFAULT_TICK_MS = 60_000;
 const DEFAULT_SWEEPER_TICK_MS = 120_000;
 const DEFAULT_BATCH_SIZE = 50;
 const DEFAULT_VISIBILITY_TIMEOUT_MS = 5 * 60_000;
+// Scheduled Ops pushes are time-sensitive ("arrival tomorrow", "checkout today").
+// Anything older than this is obsolete and must never be delivered, especially
+// after a restart that replays a backlog.
+const DEFAULT_MAX_DELIVERY_AGE_MS = 6 * 60 * 60_000;
+const OBSOLETE_JOB_REASON = 'scheduled_for_expired';
 const BACKOFF_BASE_MS = 5 * 60_000;
 const BACKOFF_CAP_MS = 30 * 60_000;
 
@@ -29,9 +35,11 @@ const state = {
   sweeperTickMs: DEFAULT_SWEEPER_TICK_MS,
   batchSize: DEFAULT_BATCH_SIZE,
   visibilityTimeoutMs: DEFAULT_VISIBILITY_TIMEOUT_MS,
+  maxDeliveryAgeMs: DEFAULT_MAX_DELIVERY_AGE_MS,
   lastTickAt: null,
   lastSweepAt: null,
   lastTickClaimedCount: 0,
+  lastTickExpiredCount: 0,
   lastTickLostCount: 0,
   lastSweepRescheduledCount: 0,
   lastSweepFailedCount: 0,
@@ -70,7 +78,8 @@ function readEnvConfig() {
     tickMs: parsePositiveIntEnv(ENV_TICK_MS, DEFAULT_TICK_MS),
     sweeperTickMs: parsePositiveIntEnv(ENV_SWEEPER_TICK_MS, DEFAULT_SWEEPER_TICK_MS),
     batchSize: parsePositiveIntEnv(ENV_BATCH_SIZE, DEFAULT_BATCH_SIZE),
-    visibilityTimeoutMs: parsePositiveIntEnv(ENV_VISIBILITY_TIMEOUT_MS, DEFAULT_VISIBILITY_TIMEOUT_MS)
+    visibilityTimeoutMs: parsePositiveIntEnv(ENV_VISIBILITY_TIMEOUT_MS, DEFAULT_VISIBILITY_TIMEOUT_MS),
+    maxDeliveryAgeMs: parsePositiveIntEnv(ENV_MAX_DELIVERY_AGE_MS, DEFAULT_MAX_DELIVERY_AGE_MS)
   };
 }
 
@@ -109,9 +118,34 @@ async function executeClaimedJob(job) {
 }
 
 async function tickOnce({ now = new Date() } = {}) {
-  const result = { candidatesCount: 0, claimed: 0, lost: 0, errors: 0 };
+  const result = { candidatesCount: 0, claimed: 0, lost: 0, errors: 0, expired: 0 };
   const workerId = ensureWorkerId();
+  const cutoff = new Date(now.getTime() - state.maxDeliveryAgeMs);
   try {
+    // Terminal suppression, never delivery: a restart must not replay a backlog.
+    // Rows stay in the collection for audit, so notification history is preserved.
+    const expiredResult = await OpsPushScheduledJob.updateMany(
+      { status: 'scheduled', scheduledFor: { $lte: cutoff } },
+      {
+        $set: {
+          status: 'suppressed',
+          lastError: OBSOLETE_JOB_REASON,
+          lastResult: { suppressed: true, reason: OBSOLETE_JOB_REASON },
+          claimedBy: null,
+          claimedAt: null,
+          visibilityTimeoutAt: null
+        }
+      }
+    );
+    result.expired = expiredResult.modifiedCount || 0;
+    if (result.expired > 0) {
+      logLine('log', 'obsolete_backlog_suppressed', {
+        count: result.expired,
+        cutoff: cutoff.toISOString(),
+        maxDeliveryAgeMs: state.maxDeliveryAgeMs
+      });
+    }
+
     const candidates = await OpsPushScheduledJob.find({
       status: 'scheduled',
       scheduledFor: { $lte: now }
@@ -123,6 +157,11 @@ async function tickOnce({ now = new Date() } = {}) {
     result.candidatesCount = candidates.length;
 
     for (const cand of candidates) {
+      // Defense in depth against a race with the bulk suppression above.
+      if (cand.scheduledFor && cand.scheduledFor <= cutoff) {
+        result.expired += 1;
+        continue;
+      }
       try {
         const claimed = await claimDueJob({
           jobId: cand._id,
@@ -157,6 +196,7 @@ async function tickOnce({ now = new Date() } = {}) {
 
     state.lastTickAt = now;
     state.lastTickClaimedCount = result.claimed;
+    state.lastTickExpiredCount = result.expired;
     state.lastTickLostCount = result.lost;
     state.lastTickError = null;
   } catch (err) {
@@ -229,6 +269,7 @@ function startOpsPushSchedulerWorkerIfEnabled() {
   state.sweeperTickMs = cfg.sweeperTickMs;
   state.batchSize = cfg.batchSize;
   state.visibilityTimeoutMs = cfg.visibilityTimeoutMs;
+  state.maxDeliveryAgeMs = cfg.maxDeliveryAgeMs;
 
   if (!cfg.enabled) {
     state.startedAt = null;
@@ -247,7 +288,8 @@ function startOpsPushSchedulerWorkerIfEnabled() {
     tickMs: state.tickMs,
     sweeperTickMs: state.sweeperTickMs,
     batchSize: state.batchSize,
-    visibilityTimeoutMs: state.visibilityTimeoutMs
+    visibilityTimeoutMs: state.visibilityTimeoutMs,
+    maxDeliveryAgeMs: state.maxDeliveryAgeMs
   });
 
   Promise.resolve()
@@ -298,9 +340,11 @@ function getOpsPushSchedulerWorkerState() {
     sweeperTickMs: state.sweeperTickMs,
     batchSize: state.batchSize,
     visibilityTimeoutMs: state.visibilityTimeoutMs,
+    maxDeliveryAgeMs: state.maxDeliveryAgeMs,
     lastTickAt: state.lastTickAt,
     lastSweepAt: state.lastSweepAt,
     lastTickClaimedCount: state.lastTickClaimedCount,
+    lastTickExpiredCount: state.lastTickExpiredCount,
     lastTickLostCount: state.lastTickLostCount,
     lastSweepRescheduledCount: state.lastSweepRescheduledCount,
     lastSweepFailedCount: state.lastSweepFailedCount,
@@ -319,8 +363,11 @@ module.exports = {
   computeBackoffMs,
   setAwaitExecuteForTests,
   ENV_FLAG,
+  ENV_MAX_DELIVERY_AGE_MS,
+  OBSOLETE_JOB_REASON,
   DEFAULT_TICK_MS,
   DEFAULT_SWEEPER_TICK_MS,
   DEFAULT_BATCH_SIZE,
-  DEFAULT_VISIBILITY_TIMEOUT_MS
+  DEFAULT_VISIBILITY_TIMEOUT_MS,
+  DEFAULT_MAX_DELIVERY_AGE_MS
 };
