@@ -293,10 +293,24 @@ function isMultiInventoryParentCabin(cabin, multiTypeIds) {
 async function buildBlocksForRange(normalized, propertyId) {
   const scope = await resolveCalendarPropertyScope(propertyId);
 
+  // Checkout holds are pre-payment reservations. Once expiresAt has passed they
+  // must not render on the Ops calendar. This mirrors the guest-facing clause in
+  // publicAvailabilityService so Ops and public availability never disagree.
+  const now = new Date();
   const filters = {
     startDate: { $lt: normalized.endDate },
     endDate: { $gt: normalized.startDate },
-    status: 'active'
+    status: 'active',
+    $and: [
+      {
+        $or: [
+          { blockType: { $ne: 'checkout_hold' } },
+          { expiresAt: null },
+          { expiresAt: { $exists: false } },
+          { expiresAt: { $gt: now } }
+        ]
+      }
+    ]
   };
   if (scope.blockCabinId) filters.cabinId = scope.blockCabinId;
 
