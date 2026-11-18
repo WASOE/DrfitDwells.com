@@ -8,7 +8,10 @@ const Payment = require('../models/Payment');
 const ManualReviewItem = require('../models/ManualReviewItem');
 const StripeEventEvidence = require('../models/StripeEventEvidence');
 const CheckoutFinalizationJob = require('../models/CheckoutFinalizationJob');
-const { processStripeWebhookEvent } = require('../services/ops/ingestion/stripeIngestionService');
+const {
+  processStripeWebhookEvent,
+  STRIPE_BILLING_PAYMENT_UNLINKED_RESOLUTION_NOTE
+} = require('../services/ops/ingestion/stripeIngestionService');
 const { openManualReviewItem } = require('../services/ops/ingestion/manualReviewService');
 const {
   isDefinitivelySuccessfulPaymentStatus,
@@ -39,7 +42,9 @@ function makeStripeEvent({
   amountCents = 0,
   amountReceivedCents = amountCents,
   status = null,
-  metadata = {}
+  metadata = {},
+  description = null,
+  invoice = null
 }) {
   const object = {
     object: 'payment_intent',
@@ -50,6 +55,8 @@ function makeStripeEvent({
     metadata
   };
   if (status != null) object.status = status;
+  if (description != null) object.description = description;
+  if (invoice != null) object.invoice = invoice;
   return {
     id,
     type,
@@ -359,6 +366,65 @@ test('9. succeeded unlinked accommodation payment creates payment_unlinked', asy
   assert.ok(review);
   assert.equal(review.evidence.paymentIntentId, paymentIntentId);
   assert.equal(review.evidence.checkoutId, 'chk_test_succeeded_unlinked_1');
+});
+
+test('9a. Stripe Billing invoice PaymentIntent is excluded from accommodation payments', async () => {
+  const paymentIntentId = 'pi_test_billing_invoice_1';
+  await processStripeWebhookEvent(
+    makeStripeEvent({
+      id: 'evt_test_billing_invoice_1',
+      type: 'payment_intent.succeeded',
+      paymentIntentId,
+      amountCents: 11880,
+      amountReceivedCents: 11880,
+      status: 'succeeded',
+      description: 'Payment for Invoice'
+    })
+  );
+
+  assert.equal(await Payment.countDocuments({ providerReference: paymentIntentId }), 0);
+  assert.equal(await ManualReviewItem.countDocuments({ category: 'payment_unlinked' }), 0);
+  assert.equal(await Booking.countDocuments({}), 0);
+  assert.equal(await CheckoutFinalizationJob.countDocuments({}), 0);
+});
+
+test('9aa. Stripe Billing classification resolves a false historical unlinked alert', async () => {
+  const paymentIntentId = 'pi_test_billing_invoice_existing_1';
+  const event = makeStripeEvent({
+    id: 'evt_test_billing_invoice_existing_1',
+    type: 'payment_intent.succeeded',
+    paymentIntentId,
+    amountCents: 11880,
+    amountReceivedCents: 11880,
+    status: 'succeeded',
+    invoice: 'in_test_billing_invoice_1'
+  });
+  await processStripeWebhookEvent(event);
+
+  const payment = await Payment.create({
+    provider: 'stripe',
+    providerReference: paymentIntentId,
+    status: 'paid',
+    amount: 118.8,
+    currency: 'eur',
+    source: 'webhook'
+  });
+  await seedOpenPaymentUnlinked({
+    paymentId: payment._id,
+    paymentIntentId,
+    sourceReference: 'evt_seed_billing_false_alert_1'
+  });
+
+  const replay = await processStripeWebhookEvent(event);
+
+  const review = await ManualReviewItem.findOne({
+    category: 'payment_unlinked',
+    entityId: String(payment._id)
+  }).lean();
+  assert.equal(review.status, 'resolved');
+  assert.equal(review.resolution.note, STRIPE_BILLING_PAYMENT_UNLINKED_RESOLUTION_NOTE);
+  assert.equal(await Payment.countDocuments({ providerReference: paymentIntentId }), 1);
+  assert.equal(replay.deduped, true);
 });
 
 test('9b. succeeded after resolved still reopens payment_unlinked when still unlinked', async () => {
