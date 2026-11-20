@@ -34,6 +34,7 @@ import {
   effectiveDisplayNightlyFromStayTotal
 } from '../utils/lodgingPrice';
 import { resolveListingStaySlug } from '../utils/stayRoutes';
+import CabinPriorityListModal from '../components/cabinPriority/CabinPriorityListModal';
 
 const SearchBar = lazy(() => import('../components/SearchBar'));
 
@@ -179,7 +180,10 @@ const SearchResults = () => {
   const [showDateAdjustBanner, setShowDateAdjustBanner] = useState(false);
   const [searchPromoMeta, setSearchPromoMeta] = useState(null);
   const [suggestionsByListingKey, setSuggestionsByListingKey] = useState({});
+  const [priorityOpen, setPriorityOpen] = useState(false);
+  const [priorityDates, setPriorityDates] = useState({ checkIn: null, checkOut: null });
   const { t } = useTranslation('booking');
+  const { t: tPriority } = useTranslation('cabinPriority');
   const searchRequestGuard = useMemo(() => createLastRequestWinsGuard(), []);
 
   // Check if we're returning to craft flow
@@ -894,6 +898,21 @@ const SearchResults = () => {
                             {status.disabledCta}
                           </p>
                         )}
+                        {isDateUnavailable && listingSlug === 'the-cabin' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPriorityDates({
+                                checkIn: currentSearchParams.checkIn,
+                                checkOut: currentSearchParams.checkOut
+                              });
+                              setPriorityOpen(true);
+                            }}
+                            className="w-full bg-stone-900 text-[#F1ECE2] py-3 px-2 text-center text-sm font-semibold uppercase tracking-[0.15em] hover:bg-black transition-colors leading-snug"
+                          >
+                            {tPriority('open')}
+                          </button>
+                        )}
                         {hasDateSuggestion && (
                           <>
                             <p className="text-xs text-stone-600 leading-snug">
@@ -951,6 +970,13 @@ const SearchResults = () => {
         </div>
         </div>
       </div>
+      <CabinPriorityListModal
+        open={priorityOpen}
+        onClose={() => setPriorityOpen(false)}
+        checkIn={priorityDates.checkIn}
+        checkOut={priorityDates.checkOut}
+        sourcePage="search"
+      />
     </>
   );
 };

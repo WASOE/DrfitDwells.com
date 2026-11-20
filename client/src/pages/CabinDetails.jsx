@@ -12,6 +12,7 @@ import MosaicGallery from '../components/MosaicGallery';
 const ReviewsSection = lazy(() => import('../components/reviews/ReviewsSection'));
 const MapArrival = lazy(() => import('../components/MapArrival'));
 import StickyBookingBar from '../components/StickyBookingBar';
+import CabinPriorityListModal from '../components/cabinPriority/CabinPriorityListModal';
 import { StayLodgingPriceBlock } from '../components/booking/StayLodgingPriceBlock';
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
@@ -262,6 +263,7 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp, loadingFal
   const { setBasicInfo } = useBookingContext();
   const { openModal: openDateModal, setGuestPromoCode } = useBookingSearch();
   const { t } = useTranslation('booking');
+  const { t: tPriority } = useTranslation('cabinPriority');
   const { language: siteLanguage } = useSiteLanguage();
 
   // Check if we're returning to craft flow
@@ -276,6 +278,7 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp, loadingFal
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxFilter, setLightboxFilter] = useState('all'); // 'all' or space tag
   const [gridScrollPosition, setGridScrollPosition] = useState(0); // Save scroll for back navigation
+  const [priorityOpen, setPriorityOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [selectedExpKeys, setSelectedExpKeys] = useState(new Set());
   const [cabinQuote, setCabinQuote] = useState(null);
@@ -744,6 +747,13 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp, loadingFal
   const quoteUsesNonEntityLodging = lodgingPresentation.usesNonEntityLodging;
   const stayRequestUnavailable = lodgingPresentation.stayUnavailable;
   const bookingActionDisabled = lodgingPresentation.bookingDisabled;
+  const isTheCabinStay = effectiveStaySlug === 'the-cabin';
+  const showPriorityCta = Boolean(
+    isTheCabinStay &&
+    bookingActionDisabled &&
+    searchCriteria.checkIn &&
+    searchCriteria.checkOut
+  );
 
   const quoteGrandBeforePromo =
     !cabinQuote?.promo?.invalidReason &&
@@ -1567,21 +1577,25 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp, loadingFal
           <div className="flex-shrink-0">
             <button
               type="button"
-              onClick={bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
-              disabled={bookingActionDisabled}
+              onClick={showPriorityCta ? () => setPriorityOpen(true) : bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
+              disabled={showPriorityCta ? false : bookingActionDisabled}
               data-testid="cabin-details-booking-cta-mobile"
-              aria-disabled={bookingActionDisabled ? 'true' : 'false'}
+              aria-disabled={showPriorityCta ? 'false' : bookingActionDisabled ? 'true' : 'false'}
               className={`w-full sm:w-auto px-6 py-3 rounded-xl bg-[#81887A] text-white font-semibold text-sm transition-all shadow-sm min-h-[44px] touch-manipulation ${
-                bookingActionDisabled
-                  ? 'opacity-50 cursor-not-allowed'
-                  : 'hover:opacity-95 hover:shadow-md'
+                showPriorityCta
+                  ? 'hover:opacity-95 hover:shadow-md'
+                  : bookingActionDisabled
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'hover:opacity-95 hover:shadow-md'
               }`}
             >
-              {bookingActionDisabled
-                ? t('search.unavailableForDates')
-                : searchCriteria.checkIn && searchCriteria.checkOut
-                  ? t('details.continueToPayment')
-                  : t('modal.footerSelectDates')}
+              {showPriorityCta
+                ? tPriority('open')
+                : bookingActionDisabled
+                  ? t('search.unavailableForDates')
+                  : searchCriteria.checkIn && searchCriteria.checkOut
+                    ? t('details.continueToPayment')
+                    : t('modal.footerSelectDates')}
             </button>
           </div>
         </div>
@@ -1819,20 +1833,22 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp, loadingFal
                   type="button"
                   data-booking-primary-cta="true"
                   data-testid="cabin-details-booking-cta"
-                  onClick={bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
-                  disabled={bookingActionDisabled}
-                  aria-disabled={bookingActionDisabled ? 'true' : 'false'}
+                  onClick={showPriorityCta ? () => setPriorityOpen(true) : bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
+                  disabled={showPriorityCta ? false : bookingActionDisabled}
+                  aria-disabled={showPriorityCta ? 'false' : bookingActionDisabled ? 'true' : 'false'}
                   className={`w-full mt-5 py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm transition-all shadow-sm ${
-                    bookingActionDisabled
+                    bookingActionDisabled && !showPriorityCta
                       ? 'opacity-50 cursor-not-allowed'
                       : 'hover:opacity-95'
                   }`}
                 >
-                  {bookingActionDisabled
-                    ? t('search.unavailableForDates')
-                    : !searchCriteria.checkIn || !searchCriteria.checkOut
-                      ? t('modal.footerSelectDates')
-                      : t('details.continueToPaymentShort')}
+                  {showPriorityCta
+                    ? tPriority('open')
+                    : bookingActionDisabled
+                      ? t('search.unavailableForDates')
+                      : !searchCriteria.checkIn || !searchCriteria.checkOut
+                        ? t('modal.footerSelectDates')
+                        : t('details.continueToPaymentShort')}
                 </button>
               </>
             ) : pricing ? (
@@ -1846,15 +1862,17 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp, loadingFal
                 <button
                   type="button"
                   data-testid="cabin-details-booking-cta"
-                  disabled={bookingActionDisabled}
-                  onClick={bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
+                  disabled={showPriorityCta ? false : bookingActionDisabled}
+                  onClick={showPriorityCta ? () => setPriorityOpen(true) : bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
                   className={`w-full mt-5 py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm transition-all shadow-sm ${
-                    bookingActionDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-95'
+                    bookingActionDisabled && !showPriorityCta ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-95'
                   }`}
                 >
-                  {bookingActionDisabled
-                    ? t('search.unavailableForDates')
-                    : t('modal.footerSelectDates')}
+                  {showPriorityCta
+                    ? tPriority('open')
+                    : bookingActionDisabled
+                      ? t('search.unavailableForDates')
+                      : t('modal.footerSelectDates')}
                 </button>
               </>
             ) : (
@@ -2287,14 +2305,23 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp, loadingFal
             : undefined
         }
         buttonLabel={
-          bookingActionDisabled
-            ? t('search.unavailableForDates')
-            : searchCriteria.checkIn && searchCriteria.checkOut
-              ? t('details.continueToPaymentShort')
-              : t('modal.footerSelectDates')
+          showPriorityCta
+            ? tPriority('open')
+            : bookingActionDisabled
+              ? t('search.unavailableForDates')
+              : searchCriteria.checkIn && searchCriteria.checkOut
+                ? t('details.continueToPaymentShort')
+                : t('modal.footerSelectDates')
         }
-        buttonDisabled={bookingActionDisabled}
-        onButtonClick={bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
+        buttonDisabled={showPriorityCta ? false : bookingActionDisabled}
+        onButtonClick={showPriorityCta ? () => setPriorityOpen(true) : bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
+      />
+      <CabinPriorityListModal
+        open={priorityOpen}
+        onClose={() => setPriorityOpen(false)}
+        checkIn={searchCriteria.checkIn}
+        checkOut={searchCriteria.checkOut}
+        sourcePage="stay-details"
       />
     </div>
   );

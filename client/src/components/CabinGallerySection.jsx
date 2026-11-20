@@ -39,8 +39,9 @@ const normalizeSrc = (u) => {
   return `/uploads/cabins/${u}`;
 };
 
-const CabinGallerySection = ({ openModal }) => {
+const CabinGallerySection = ({ openModal, onPriorityClick }) => {
   const { t } = useTranslation('cabin');
+  const { t: tPriority } = useTranslation('cabinPriority');
   const [cabin, setCabin] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -317,6 +318,15 @@ const CabinGallerySection = ({ openModal }) => {
           >
             {t('vibe.cta')}
           </button>
+          {onPriorityClick && (
+            <button
+              type="button"
+              onClick={onPriorityClick}
+              className="mt-4 block mx-auto text-sm font-medium text-[#F1ECE2]/80 underline underline-offset-4 hover:text-[#F1ECE2]"
+            >
+              {tPriority('open')}
+            </button>
+          )}
         </motion.div>
       </div>
 

@@ -9,6 +9,7 @@ import { useBookingSearch } from '../context/BookingSearchContext';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import AuthorityStrip from '../components/AuthorityStrip';
 import CabinGallerySection from '../components/CabinGallerySection';
+import CabinPriorityListModal from '../components/cabinPriority/CabinPriorityListModal';
 import HeroSeasonToggle from '../components/HeroSeasonToggle';
 import { useSeason } from '../context/SeasonContext';
 import { CABIN_MEDIA } from '../config/mediaConfig';
@@ -45,6 +46,8 @@ const TheCabin = () => {
   const trustBadgesRef = useRef(null);
   const _trustBadgesInView = useInView(trustBadgesRef, { once: true, margin: '-50px' });
   const { t } = useTranslation('cabin');
+  const { t: tPriority } = useTranslation('cabinPriority');
+  const [priorityOpen, setPriorityOpen] = useState(false);
 
   // Smooth scroll to section
   const scrollToReality = () => {
@@ -375,6 +378,23 @@ const TheCabin = () => {
               {t('hero.ctaSecondary')}
             </button>
           </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+            className="mt-7 max-w-xl mx-auto px-4 text-[#F1ECE2]/85"
+          >
+            <p className="font-serif text-lg md:text-xl">{tPriority('heroTitle')}</p>
+            <p className="mt-2 text-sm md:text-[15px] leading-relaxed">{tPriority('heroBody')}</p>
+            <button
+              type="button"
+              onClick={() => setPriorityOpen(true)}
+              className="mt-3 text-sm font-medium underline underline-offset-4 hover:text-white"
+            >
+              {tPriority('open')}
+            </button>
+          </motion.div>
         </div>
 
         {/* Scroll Indicator */}
@@ -690,11 +710,16 @@ const TheCabin = () => {
       </section>
 
         {/* Section: The Vibe - Gallery with amenities/areas filter and image viewer */}
-        <CabinGallerySection openModal={openModal} />
+        <CabinGallerySection openModal={openModal} onPriorityClick={() => setPriorityOpen(true)} />
 
         {/* Section: Living Notes - Real reviews */}
         <LivingNotesSection />
       </div>
+      <CabinPriorityListModal
+        open={priorityOpen}
+        onClose={() => setPriorityOpen(false)}
+        sourcePage="cabin"
+      />
     </>
   );
 };
