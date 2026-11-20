@@ -2463,7 +2463,8 @@ const ConfirmBooking = () => {
       skipped: false,
       finalizeIntentHash: persistRes.data.finalizeIntentHash,
       sessionVersion: Number(ensureRes.data.sessionVersion) || nextSessionVersion,
-      metadataSync: persistRes.data.metadataSync || null
+      metadataSync: persistRes.data.metadataSync || null,
+      clientSecret: nextSecret
     };
   }, [
     checkoutId,
@@ -2575,8 +2576,12 @@ const ConfirmBooking = () => {
     setError(null);
     setStripeError(null);
     try {
+      let paymentSync = null;
       if (shouldPersistFinalizeIntent()) {
-        await persistFinalizeIntentAndSyncPayment();
+        paymentSync = await persistFinalizeIntentAndSyncPayment();
+      }
+      if (paymentSync?.clientSecret && paymentSync.clientSecret !== clientSecret) {
+        throw new Error('Payment details were refreshed. Please press Confirm and pay again.');
       }
       const pendingBase = {
         cabinId: bookingEntityId,
@@ -2700,7 +2705,8 @@ const ConfirmBooking = () => {
     navigate,
     t,
     persistFinalizeIntentAndSyncPayment,
-    checkoutId
+    checkoutId,
+    clientSecret
   ]);
 
   const hasGuestInfo =
