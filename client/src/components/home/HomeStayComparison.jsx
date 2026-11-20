@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import CabinPriorityListModal from '../cabinPriority/CabinPriorityListModal';
 import { HOME_IMAGES } from '../../data/homepageMedia';
 import { capacityExceeded } from '../../data/homepagePlanner';
 import { localizePath } from '../../utils/localizedRoutes';
@@ -35,8 +37,9 @@ const STAYS = [
   },
 ];
 
-function StayCard({ stay, t, language, partyTotal, handoff }) {
+function StayCard({ stay, t, language, partyTotal, handoff, onPriority }) {
   const overCapacity = capacityExceeded(stay.stayId, partyTotal);
+  const { t: tPriority } = useTranslation('cabinPriority');
 
   return (
     <article className="bg-white border border-[#E4DFD5] overflow-hidden flex flex-col min-w-0 shadow-[0_8px_28px_rgba(28,25,23,0.08)] h-full">
@@ -71,6 +74,18 @@ function StayCard({ stay, t, language, partyTotal, handoff }) {
             </div>
           ))}
         </dl>
+        {stay.id === 'cabin' && onPriority && (
+          <div className="mb-5 border-t border-[#E5E5E0] pt-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-[#7A7367]">{tPriority('label')}</p>
+            <button
+              type="button"
+              onClick={onPriority}
+              className="mt-1.5 text-sm font-medium text-[#1c1917] underline underline-offset-4 hover:text-[#626d56]"
+            >
+              {tPriority('open')}
+            </button>
+          </div>
+        )}
         {overCapacity ? (
           <p className="mb-5 text-sm text-[#1c1917] leading-relaxed" role="status">
             {t(`stays.${stay.id}.capacityNote`, { count: partyTotal })}
@@ -92,10 +107,11 @@ function StayCard({ stay, t, language, partyTotal, handoff }) {
 export default function HomeStayComparison() {
   const { t } = useTranslation('home');
   const { language } = useSiteLanguage();
-  const { adults, children, babies } = useBookingSearch();
+  const { adults, children, babies, checkIn, checkOut } = useBookingSearch();
   const handoff = useHomeBookingHandoff();
   const partyTotal = Math.max(1, (adults || 0) + (children || 0) + (babies || 0));
   const [cabin, valley] = STAYS;
+  const [priorityOpen, setPriorityOpen] = useState(false);
 
   return (
     <section id="stays" className="bg-[#F9F8F6] py-14 md:py-20 lg:py-[6.5rem]" aria-labelledby="home-stays-title">
@@ -109,7 +125,7 @@ export default function HomeStayComparison() {
         </div>
 
         <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-7 lg:gap-8 items-stretch">
-          <StayCard stay={cabin} t={t} language={language} partyTotal={partyTotal} handoff={handoff} />
+          <StayCard stay={cabin} t={t} language={language} partyTotal={partyTotal} handoff={handoff} onPriority={() => setPriorityOpen(true)} />
 
           <div className="flex lg:hidden items-center justify-center py-2" aria-hidden="true">
             <span className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-[#D7D2C7] bg-white font-serif text-sm tracking-[0.14em] text-[#1c1917] shadow-sm">
@@ -130,6 +146,13 @@ export default function HomeStayComparison() {
         </div>
 
       </div>
+      <CabinPriorityListModal
+        open={priorityOpen}
+        onClose={() => setPriorityOpen(false)}
+        checkIn={checkIn}
+        checkOut={checkOut}
+        sourcePage="home"
+      />
     </section>
   );
 }
