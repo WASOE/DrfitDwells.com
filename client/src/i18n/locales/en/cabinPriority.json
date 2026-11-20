@@ -34,5 +34,16 @@
   "optional": "optional",
   "errorEmail": "Enter a valid email address.",
   "errorConsent": "Please confirm you agree to receive Cabin availability updates.",
-  "errorGeneric": "Something went wrong. Please try again."
+  "errorGeneric": "Something went wrong. Please try again.",
+  "unsubscribe": {
+    "title": "Cabin updates",
+    "body": "Confirm that you no longer want to receive The Cabin priority list emails.",
+    "confirm": "Unsubscribe from Cabin updates",
+    "working": "Updating…",
+    "success": "You are unsubscribed from Cabin updates.",
+    "already": "You are already unsubscribed from Cabin updates.",
+    "invalid": "This unsubscribe link is no longer valid.",
+    "expired": "This unsubscribe link has expired.",
+    "home": "Back to Drift & Dwells"
+  }
 }

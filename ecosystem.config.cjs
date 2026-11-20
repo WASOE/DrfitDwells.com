@@ -59,6 +59,27 @@ module.exports = {
       }
     },
     {
+      name: 'driftdwells-cabin-priority-email-worker',
+      cwd: __dirname + '/server',
+      script: 'scripts/runCabinPriorityEmailWorker.js',
+      interpreter: 'node',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      restart_delay: 10000,
+      max_restarts: 20,
+      min_uptime: '10s',
+      kill_timeout: 10000,
+      env: {
+        NODE_ENV: 'development',
+        CABIN_PRIORITY_EMAIL_WORKER_ENABLED: '0'
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        CABIN_PRIORITY_EMAIL_WORKER_ENABLED: '1'
+      }
+    },
+    {
       name: 'driftdwells-ops-push-worker',
       // cwd is server/ so dotenv loads the protected server/.env.
       cwd: __dirname + '/server',
