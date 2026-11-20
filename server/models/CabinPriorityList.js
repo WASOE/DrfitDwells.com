@@ -63,12 +63,38 @@ const cabinPriorityListSchema = new mongoose.Schema(
       type: Date,
       required: true
     },
+    status: {
+      type: String,
+      enum: ['active', 'unsubscribed'],
+      default: 'active',
+      index: true
+    },
+    unsubscribedAt: {
+      type: Date,
+      default: null
+    },
     emailDelivery: {
       status: {
         type: String,
-        enum: ['pending', 'sent', 'failed'],
+        enum: ['pending', 'sending', 'sent', 'failed'],
         default: 'pending'
       },
+      attempts: { type: Number, default: 0 },
+      claimedAt: Date,
+      nextAttemptAt: Date,
+      attemptedAt: Date,
+      sentAt: Date,
+      lastError: { type: String, maxlength: 500 }
+    },
+    guestEmail: {
+      status: {
+        type: String,
+        enum: ['none', 'pending', 'sending', 'sent', 'failed'],
+        default: 'none'
+      },
+      attempts: { type: Number, default: 0 },
+      claimedAt: Date,
+      nextAttemptAt: Date,
       attemptedAt: Date,
       sentAt: Date,
       lastError: { type: String, maxlength: 500 }

@@ -1,6 +1,7 @@
 'use strict';
 
 const CabinPriorityList = require('../../models/CabinPriorityList');
+const { deliverBoth } = require('./deliveryService');
 
 const MONTHS = Object.freeze([
   'january', 'february', 'march', 'april', 'may', 'june',
@@ -86,58 +87,30 @@ function validateCabinPriorityList(body = {}) {
   };
 }
 
-function formatDate(date) {
-  if (!date) return null;
-  return new Date(date).toISOString().slice(0, 10);
-}
-
-function notificationPayload(lead) {
-  const lines = [
-    `Email: ${lead.email}`,
-    `Cabin: ${lead.cabinId}`,
-    `Preferred month: ${lead.preferredMonth || 'flexible / not specified'}`,
-    `Selected dates: ${
-      lead.checkIn && lead.checkOut
-        ? `${formatDate(lead.checkIn)} to ${formatDate(lead.checkOut)}`
-        : 'not provided'
-    }`,
-    `Language: ${lead.language}`,
-    `Source: ${lead.sourcePage || 'unknown'} ${lead.sourcePath || ''}`.trim(),
-    `UTM source: ${lead.attribution?.utmSource || '-'}`,
-    `UTM medium: ${lead.attribution?.utmMedium || '-'}`,
-    `UTM campaign: ${lead.attribution?.utmCampaign || '-'}`,
-    `Landing path: ${lead.attribution?.landingPath || '-'}`,
-    `Consent: ${lead.consent ? 'yes' : 'no'} at ${new Date(lead.consentAt).toISOString()}`
-  ];
+function preferenceUpdate(value, now) {
   return {
-    subject: 'New Cabin priority list signup',
-    text: lines.join('\n'),
-    html: `<h2>New Cabin priority list signup</h2><ul>${lines
-      .map((line) => `<li>${line.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</li>`)
-      .join('')}</ul>`
+    preferredMonth: value.preferredMonth,
+    checkIn: value.checkIn,
+    checkOut: value.checkOut,
+    language: value.language,
+    sourcePath: value.sourcePath,
+    sourcePage: value.sourcePage,
+    attribution: value.attribution,
+    consent: true,
+    consentAt: now
   };
 }
 
-async function sendSignupNotification(lead, emailService) {
-  const service = emailService || require('../emailService');
-  const payload = notificationPayload(lead);
-  try {
-    const result = await service.sendEmail({
-      to: 'jose@driftdwells.com',
-      subject: payload.subject,
-      text: payload.text,
-      html: payload.html,
-      trigger: 'cabin_priority_list',
-      skipIdempotencyWindow: true,
-      omitBodyFromLogs: true
-    });
-    const sent = Boolean(result?.success) && result.method === 'sent';
-    return sent
-      ? { status: 'sent' }
-      : { status: 'failed', error: result?.error || `Email not sent (${result?.method || 'unknown'})` };
-  } catch (error) {
-    return { status: 'failed', error: String(error?.message || error).slice(0, 500) };
-  }
+function freshPendingLane() {
+  return {
+    status: 'pending',
+    attempts: 0,
+    claimedAt: null,
+    nextAttemptAt: null,
+    attemptedAt: null,
+    sentAt: null,
+    lastError: null
+  };
 }
 
 async function createCabinPriorityList(body, { emailService = null } = {}) {
@@ -146,52 +119,44 @@ async function createCabinPriorityList(body, { emailService = null } = {}) {
 
   const value = validated.value;
   const now = new Date();
+  const existing = await CabinPriorityList.findOne({ email: value.email, cabinId: value.cabinId });
 
-  let lead = await CabinPriorityList.findOne({ email: value.email, cabinId: value.cabinId });
-  let created = false;
+  if (existing) {
+    existing.set(preferenceUpdate(value, now));
 
-  if (lead) {
-    Object.assign(lead, {
-      preferredMonth: value.preferredMonth,
-      checkIn: value.checkIn,
-      checkOut: value.checkOut,
-      language: value.language,
-      sourcePath: value.sourcePath,
-      sourcePage: value.sourcePage,
-      attribution: value.attribution,
-      consent: true,
-      consentAt: lead.consentAt || now
-    });
-    await lead.save();
-    return { ok: true, duplicate: true, id: lead._id };
+    if (existing.status === 'unsubscribed') {
+      // Explicit re-opt-in: restore consent and allow exactly one new welcome email.
+      existing.status = 'active';
+      existing.unsubscribedAt = null;
+      existing.set('guestEmail', freshPendingLane());
+      existing.set('emailDelivery', freshPendingLane());
+      await existing.save();
+      await deliverBoth(existing._id, { emailService });
+      return { ok: true, duplicate: false, rejoined: true, id: existing._id };
+    }
+
+    await existing.save();
+    return { ok: true, duplicate: true, id: existing._id };
   }
 
+  let lead;
   try {
     lead = await CabinPriorityList.create({
       ...value,
       consent: true,
-      consentAt: now
+      consentAt: now,
+      status: 'active',
+      guestEmail: freshPendingLane(),
+      emailDelivery: freshPendingLane()
     });
-    created = true;
   } catch (error) {
     if (error?.code !== 11000) throw error;
-    lead = await CabinPriorityList.findOne({ email: value.email, cabinId: value.cabinId });
-    if (!lead) throw error;
-    return { ok: true, duplicate: true, id: lead._id };
+    const duplicate = await CabinPriorityList.findOne({ email: value.email, cabinId: value.cabinId });
+    if (!duplicate) throw error;
+    return { ok: true, duplicate: true, id: duplicate._id };
   }
 
-  // Save first. A notification failure must never erase the lead or fail the request.
-  if (created) {
-    const delivery = await sendSignupNotification(lead, emailService);
-    lead.emailDelivery = {
-      status: delivery.status,
-      attemptedAt: new Date(),
-      sentAt: delivery.status === 'sent' ? new Date() : undefined,
-      lastError: delivery.error
-    };
-    await lead.save();
-  }
-
+  await deliverBoth(lead._id, { emailService });
   return { ok: true, duplicate: false, id: lead._id };
 }
 

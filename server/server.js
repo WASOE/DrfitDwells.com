@@ -333,6 +333,7 @@ app.use('/api/public', requireDb, require('./routes/publicRecoveryPreferenceRout
 app.use('/api/public/build-enquiries', requireDb, require('./routes/publicBuildEnquiryRoutes'));
 app.use('/api/public/corporate-gift-leads', requireDb, require('./routes/publicCorporateGiftLeadRoutes'));
 app.use('/api/public/cabin-priority-list', requireDb, require('./routes/publicCabinPriorityListRoutes'));
+app.use('/api/public/cabin-priority/unsubscribe', requireDb, require('./routes/publicCabinPriorityUnsubscribeRoutes'));
 app.use('/api/availability', requireDb, availabilityRoutes);
 app.use('/api/creator-referral-visits', requireDb, creatorReferralVisitRoutes);
 app.use('/api/creator-portal', requireDb, creatorPortalRoutes);

@@ -35,6 +35,7 @@ const Build = lazy(() => import('./pages/Build'))
 const Terms = lazy(() => import('./pages/legal/Terms'))
 const Privacy = lazy(() => import('./pages/legal/Privacy'))
 const CommunicationPreferences = lazy(() => import('./pages/CommunicationPreferences'))
+const CabinPriorityUnsubscribe = lazy(() => import('./pages/CabinPriorityUnsubscribe'))
 const BookingContinuation = lazy(() => import('./pages/BookingContinuation'))
 const CancellationPolicy = lazy(() => import('./pages/legal/CancellationPolicy'))
 const Career = lazy(() => import('./pages/legal/Career'))
@@ -163,6 +164,8 @@ function App() {
                 element={<CommunicationPreferences />}
               />
               <Route path="/bg/communication-preferences/:token" element={<CommunicationPreferences />} />
+              <Route path="/cabin-priority/unsubscribe/:token" element={<CabinPriorityUnsubscribe />} />
+              <Route path="/bg/cabin-priority/unsubscribe/:token" element={<CabinPriorityUnsubscribe />} />
               <Route path="/booking-continuation/:token" element={<BookingContinuation />} />
               <Route path="/bg/booking-continuation/:token" element={<BookingContinuation />} />
               <Route path="/cancellation-policy" element={<CancellationPolicy />} />
